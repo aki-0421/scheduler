@@ -1,0 +1,821 @@
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::{Executor, SqlitePool};
+
+use crate::db::migrations::{MIGRATOR, SCHEMA_VERSION};
+use crate::model::*;
+use crate::time::{now_rfc3339, validate_timezone};
+use crate::util::validate_slug;
+use crate::{Result, SchedulerError, ValidationError};
+
+#[derive(Debug, Clone)]
+pub struct SchedulerDb {
+    pool: SqlitePool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdempotentInsert<T> {
+    pub value: T,
+    pub inserted: bool,
+}
+
+impl SchedulerDb {
+    pub async fn connect(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        backup_database(path)?;
+
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .foreign_keys(true)
+            .busy_timeout(Duration::from_millis(5_000));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(options)
+            .await?;
+        configure_sqlite(&pool, true).await?;
+        run_migrations(&pool).await?;
+        Ok(Self { pool })
+    }
+
+    pub async fn connect_in_memory() -> Result<Self> {
+        let options = SqliteConnectOptions::new()
+            .filename(":memory:")
+            .create_if_missing(true)
+            .foreign_keys(true)
+            .busy_timeout(Duration::from_millis(5_000));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await?;
+        configure_sqlite(&pool, false).await?;
+        run_migrations(&pool).await?;
+        Ok(Self { pool })
+    }
+
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    pub async fn run_migrations(&self) -> Result<()> {
+        run_migrations(&self.pool).await
+    }
+
+    pub async fn create_project(&self, project: &Project) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO projects (
+                id, name, path, kind, git_root, git_remote_url, default_branch, trusted_at,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&project.id)
+        .bind(&project.name)
+        .bind(&project.path)
+        .bind(project.kind)
+        .bind(&project.git_root)
+        .bind(&project.git_remote_url)
+        .bind(&project.default_branch)
+        .bind(&project.trusted_at)
+        .bind(&project.created_at)
+        .bind(&project.updated_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_project(&self, id: &str) -> Result<Option<Project>> {
+        Ok(sqlx::query_as::<_, Project>(
+            "SELECT id, name, path, kind, git_root, git_remote_url, default_branch, trusted_at,
+                    created_at, updated_at
+             FROM projects WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
+    pub async fn update_project(&self, project: &Project) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE projects
+             SET name = ?, path = ?, kind = ?, git_root = ?, git_remote_url = ?,
+                 default_branch = ?, trusted_at = ?, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(&project.name)
+        .bind(&project.path)
+        .bind(project.kind)
+        .bind(&project.git_root)
+        .bind(&project.git_remote_url)
+        .bind(&project.default_branch)
+        .bind(&project.trusted_at)
+        .bind(&project.updated_at)
+        .bind(&project.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn delete_project(&self, id: &str) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM projects WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn create_task(&self, task: &Task) -> Result<()> {
+        self.validate_task(task).await?;
+        sqlx::query(
+            "INSERT INTO tasks (
+                id, slug, name, description, status, kind, cron_expr, run_at, timezone,
+                next_run_at, last_scheduled_for, schedule_status, schedule_error, prompt_body,
+                prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
+                base_ref, model, reasoning_effort, sandbox_mode, approval_policy,
+                allow_schedule_cli, schedule_cli_capabilities, missed_policy, missed_window_days,
+                overlap_policy, max_runtime_sec, max_retries, retry_backoff_sec, cleanup_policy,
+                cleanup_after_days, created_by, created_by_run_id, created_at, updated_at,
+                deleted_at
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )",
+        )
+        .bind(&task.id)
+        .bind(&task.slug)
+        .bind(&task.name)
+        .bind(&task.description)
+        .bind(task.status)
+        .bind(task.kind)
+        .bind(&task.cron_expr)
+        .bind(&task.run_at)
+        .bind(&task.timezone)
+        .bind(&task.next_run_at)
+        .bind(&task.last_scheduled_for)
+        .bind(task.schedule_status)
+        .bind(&task.schedule_error)
+        .bind(&task.prompt_body)
+        .bind(&task.prompt_hash)
+        .bind(task.inject_scheduler_instructions)
+        .bind(task.target_mode)
+        .bind(&task.project_id)
+        .bind(&task.repo_path)
+        .bind(&task.base_ref)
+        .bind(&task.model)
+        .bind(&task.reasoning_effort)
+        .bind(task.sandbox_mode)
+        .bind(task.approval_policy)
+        .bind(task.allow_schedule_cli)
+        .bind(&task.schedule_cli_capabilities)
+        .bind(task.missed_policy)
+        .bind(task.missed_window_days)
+        .bind(task.overlap_policy)
+        .bind(task.max_runtime_sec)
+        .bind(task.max_retries)
+        .bind(task.retry_backoff_sec)
+        .bind(task.cleanup_policy)
+        .bind(task.cleanup_after_days)
+        .bind(&task.created_by)
+        .bind(&task.created_by_run_id)
+        .bind(&task.created_at)
+        .bind(&task.updated_at)
+        .bind(&task.deleted_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_task(&self, id: &str) -> Result<Option<Task>> {
+        Ok(sqlx::query_as::<_, Task>(TASK_SELECT_BY_ID)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?)
+    }
+
+    pub async fn get_task_by_slug(&self, slug: &str) -> Result<Option<Task>> {
+        Ok(sqlx::query_as::<_, Task>(TASK_SELECT_BY_SLUG)
+            .bind(slug)
+            .fetch_optional(&self.pool)
+            .await?)
+    }
+
+    pub async fn update_task(&self, task: &Task) -> Result<bool> {
+        self.validate_task(task).await?;
+        let result = sqlx::query(
+            "UPDATE tasks SET
+                slug = ?, name = ?, description = ?, status = ?, kind = ?, cron_expr = ?,
+                run_at = ?, timezone = ?, next_run_at = ?, last_scheduled_for = ?,
+                schedule_status = ?, schedule_error = ?, prompt_body = ?, prompt_hash = ?,
+                inject_scheduler_instructions = ?, target_mode = ?, project_id = ?,
+                repo_path = ?, base_ref = ?, model = ?, reasoning_effort = ?, sandbox_mode = ?,
+                approval_policy = ?, allow_schedule_cli = ?, schedule_cli_capabilities = ?,
+                missed_policy = ?, missed_window_days = ?, overlap_policy = ?,
+                max_runtime_sec = ?, max_retries = ?, retry_backoff_sec = ?, cleanup_policy = ?,
+                cleanup_after_days = ?, created_by = ?, created_by_run_id = ?, updated_at = ?,
+                deleted_at = ?
+             WHERE id = ?",
+        )
+        .bind(&task.slug)
+        .bind(&task.name)
+        .bind(&task.description)
+        .bind(task.status)
+        .bind(task.kind)
+        .bind(&task.cron_expr)
+        .bind(&task.run_at)
+        .bind(&task.timezone)
+        .bind(&task.next_run_at)
+        .bind(&task.last_scheduled_for)
+        .bind(task.schedule_status)
+        .bind(&task.schedule_error)
+        .bind(&task.prompt_body)
+        .bind(&task.prompt_hash)
+        .bind(task.inject_scheduler_instructions)
+        .bind(task.target_mode)
+        .bind(&task.project_id)
+        .bind(&task.repo_path)
+        .bind(&task.base_ref)
+        .bind(&task.model)
+        .bind(&task.reasoning_effort)
+        .bind(task.sandbox_mode)
+        .bind(task.approval_policy)
+        .bind(task.allow_schedule_cli)
+        .bind(&task.schedule_cli_capabilities)
+        .bind(task.missed_policy)
+        .bind(task.missed_window_days)
+        .bind(task.overlap_policy)
+        .bind(task.max_runtime_sec)
+        .bind(task.max_retries)
+        .bind(task.retry_backoff_sec)
+        .bind(task.cleanup_policy)
+        .bind(task.cleanup_after_days)
+        .bind(&task.created_by)
+        .bind(&task.created_by_run_id)
+        .bind(&task.updated_at)
+        .bind(&task.deleted_at)
+        .bind(&task.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn delete_task(&self, id: &str, deleted_at: &str) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE tasks
+             SET status = 'deleted', deleted_at = ?, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(deleted_at)
+        .bind(deleted_at)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn find_active_tasks_due(&self, now: &str) -> Result<Vec<Task>> {
+        Ok(sqlx::query_as::<_, Task>(TASK_SELECT_ACTIVE_DUE)
+            .bind(now)
+            .fetch_all(&self.pool)
+            .await?)
+    }
+
+    pub async fn create_run(&self, run: &Run) -> Result<()> {
+        bind_run(sqlx::query(INSERT_RUN_SQL), run)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    pub async fn create_run_idempotent(&self, run: &Run) -> Result<IdempotentInsert<Run>> {
+        let inserted = bind_run(sqlx::query(INSERT_OR_IGNORE_RUN_SQL), run)
+            .execute(&self.pool)
+            .await?
+            .rows_affected()
+            > 0;
+        let value = self
+            .get_run_by_idempotency_key(&run.task_id, run.scheduled_for.as_deref(), run.attempt)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)?;
+
+        Ok(IdempotentInsert { value, inserted })
+    }
+
+    pub async fn get_run(&self, id: &str) -> Result<Option<Run>> {
+        Ok(sqlx::query_as::<_, Run>(RUN_SELECT_BY_ID)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?)
+    }
+
+    pub async fn get_run_by_idempotency_key(
+        &self,
+        task_id: &str,
+        scheduled_for: Option<&str>,
+        attempt: i64,
+    ) -> Result<Option<Run>> {
+        let query = if let Some(scheduled_for) = scheduled_for {
+            sqlx::query_as::<_, Run>(RUN_SELECT_BY_IDEMPOTENCY_KEY)
+                .bind(task_id)
+                .bind(scheduled_for)
+                .bind(attempt)
+        } else {
+            sqlx::query_as::<_, Run>(RUN_SELECT_BY_NULL_SCHEDULE_KEY)
+                .bind(task_id)
+                .bind(attempt)
+        };
+
+        Ok(query.fetch_optional(&self.pool).await?)
+    }
+
+    pub async fn update_run(&self, run: &Run) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE runs SET
+                task_id = ?, trigger_type = ?, scheduled_for = ?, attempt = ?, status = ?,
+                status_reason = ?, queued_at = ?, started_at = ?, ended_at = ?, duration_ms = ?,
+                target_mode = ?, workspace_path = ?, worktree_path = ?, branch_name = ?,
+                base_ref = ?, commit_before = ?, commit_after = ?, codex_command_json = ?,
+                codex_session_id = ?, pid = ?, exit_code = ?, signal = ?, stdout_log_path = ?,
+                stderr_log_path = ?, events_jsonl_path = ?, last_message_path = ?,
+                stdout_tail = ?, stderr_tail = ?, result_summary = ?, findings_count = ?,
+                created_schedule_count = ?, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(&run.task_id)
+        .bind(run.trigger_type)
+        .bind(&run.scheduled_for)
+        .bind(run.attempt)
+        .bind(run.status)
+        .bind(&run.status_reason)
+        .bind(&run.queued_at)
+        .bind(&run.started_at)
+        .bind(&run.ended_at)
+        .bind(run.duration_ms)
+        .bind(run.target_mode)
+        .bind(&run.workspace_path)
+        .bind(&run.worktree_path)
+        .bind(&run.branch_name)
+        .bind(&run.base_ref)
+        .bind(&run.commit_before)
+        .bind(&run.commit_after)
+        .bind(&run.codex_command_json)
+        .bind(&run.codex_session_id)
+        .bind(run.pid)
+        .bind(run.exit_code)
+        .bind(&run.signal)
+        .bind(&run.stdout_log_path)
+        .bind(&run.stderr_log_path)
+        .bind(&run.events_jsonl_path)
+        .bind(&run.last_message_path)
+        .bind(&run.stdout_tail)
+        .bind(&run.stderr_tail)
+        .bind(&run.result_summary)
+        .bind(run.findings_count)
+        .bind(run.created_schedule_count)
+        .bind(&run.updated_at)
+        .bind(&run.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn delete_run(&self, id: &str) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM runs WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn list_runs_for_task(&self, task_id: &str) -> Result<Vec<Run>> {
+        Ok(sqlx::query_as::<_, Run>(RUN_SELECT_BY_TASK)
+            .bind(task_id)
+            .fetch_all(&self.pool)
+            .await?)
+    }
+
+    pub async fn create_run_event(&self, event: &RunEvent) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO run_events (
+                id, run_id, event_index, source, level, event_type, message, payload_json,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&event.id)
+        .bind(&event.run_id)
+        .bind(event.event_index)
+        .bind(event.source)
+        .bind(&event.level)
+        .bind(&event.event_type)
+        .bind(&event.message)
+        .bind(&event.payload_json)
+        .bind(&event.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_run_events(&self, run_id: &str) -> Result<Vec<RunEvent>> {
+        Ok(sqlx::query_as::<_, RunEvent>(
+            "SELECT id, run_id, event_index, source, level, event_type, message, payload_json,
+                    created_at
+             FROM run_events WHERE run_id = ? ORDER BY event_index ASC",
+        )
+        .bind(run_id)
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    pub async fn delete_run_event(&self, id: &str) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM run_events WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn create_run_artifact(&self, artifact: &RunArtifact) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO run_artifacts (
+                id, run_id, kind, path, title, mime_type, size_bytes, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&artifact.id)
+        .bind(&artifact.run_id)
+        .bind(artifact.kind)
+        .bind(&artifact.path)
+        .bind(&artifact.title)
+        .bind(&artifact.mime_type)
+        .bind(artifact.size_bytes)
+        .bind(&artifact.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_run_artifacts(&self, run_id: &str) -> Result<Vec<RunArtifact>> {
+        Ok(sqlx::query_as::<_, RunArtifact>(
+            "SELECT id, run_id, kind, path, title, mime_type, size_bytes, created_at
+             FROM run_artifacts WHERE run_id = ? ORDER BY created_at ASC, id ASC",
+        )
+        .bind(run_id)
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    pub async fn create_task_audit_event(&self, event: &TaskAuditEvent) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO task_audit_events (
+                id, task_id, actor_type, actor_id, action, before_json, after_json, reason,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&event.id)
+        .bind(&event.task_id)
+        .bind(event.actor_type)
+        .bind(&event.actor_id)
+        .bind(&event.action)
+        .bind(&event.before_json)
+        .bind(&event.after_json)
+        .bind(&event.reason)
+        .bind(&event.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_task_audit_events(&self, task_id: &str) -> Result<Vec<TaskAuditEvent>> {
+        Ok(sqlx::query_as::<_, TaskAuditEvent>(
+            "SELECT id, task_id, actor_type, actor_id, action, before_json, after_json, reason,
+                    created_at
+             FROM task_audit_events WHERE task_id = ? ORDER BY created_at DESC, id DESC",
+        )
+        .bind(task_id)
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    pub async fn create_schedule_capability_token(
+        &self,
+        token: &ScheduleCapabilityToken,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO schedule_capability_tokens (
+                id, run_id, task_id, token_hash, capabilities_json, expires_at, max_creates,
+                create_count, revoked_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&token.id)
+        .bind(&token.run_id)
+        .bind(&token.task_id)
+        .bind(&token.token_hash)
+        .bind(&token.capabilities_json)
+        .bind(&token.expires_at)
+        .bind(token.max_creates)
+        .bind(token.create_count)
+        .bind(&token.revoked_at)
+        .bind(&token.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_schedule_capability_token_by_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<ScheduleCapabilityToken>> {
+        Ok(sqlx::query_as::<_, ScheduleCapabilityToken>(
+            "SELECT id, run_id, task_id, token_hash, capabilities_json, expires_at, max_creates,
+                    create_count, revoked_at, created_at
+             FROM schedule_capability_tokens WHERE token_hash = ?",
+        )
+        .bind(token_hash)
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
+    pub async fn revoke_schedule_capability_token(
+        &self,
+        token_hash: &str,
+        revoked_at: &str,
+    ) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE schedule_capability_tokens SET revoked_at = ? WHERE token_hash = ?",
+        )
+        .bind(revoked_at)
+        .bind(token_hash)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn delete_expired_schedule_capability_tokens(&self, older_than: &str) -> Result<u64> {
+        let result = sqlx::query("DELETE FROM schedule_capability_tokens WHERE expires_at <= ?")
+            .bind(older_than)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    pub async fn get_setting_row(&self, key: &str) -> Result<Option<Setting>> {
+        Ok(sqlx::query_as::<_, Setting>(
+            "SELECT key, value_json, updated_at FROM settings WHERE key = ?",
+        )
+        .bind(key)
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
+    pub async fn get_setting<T>(&self, key: &str) -> Result<Option<T>>
+    where
+        T: DeserializeOwned,
+    {
+        let Some(row) = self.get_setting_row(key).await? else {
+            return Ok(None);
+        };
+        Ok(Some(serde_json::from_str(&row.value_json)?))
+    }
+
+    pub async fn set_setting<T>(&self, key: &str, value: &T) -> Result<()>
+    where
+        T: Serialize,
+    {
+        let value_json = serde_json::to_string(value)?;
+        let updated_at = now_rfc3339();
+        sqlx::query(
+            "INSERT INTO settings (key, value_json, updated_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(key) DO UPDATE SET
+                value_json = excluded.value_json,
+                updated_at = excluded.updated_at",
+        )
+        .bind(key)
+        .bind(value_json)
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_setting(&self, key: &str) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM settings WHERE key = ?")
+            .bind(key)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn validate_task(&self, task: &Task) -> Result<()> {
+        validate_slug(&task.slug)?;
+        validate_timezone(&task.timezone)?;
+
+        if task.kind == TaskKind::Once && empty_opt(task.run_at.as_deref()) {
+            return Err(SchedulerError::Validation(ValidationError::MissingRunAt));
+        }
+
+        if task.kind == TaskKind::Cron && empty_opt(task.cron_expr.as_deref()) {
+            return Err(SchedulerError::Validation(ValidationError::MissingCronExpr));
+        }
+
+        if task.target_mode != RunTargetMode::Chat
+            && empty_opt(task.project_id.as_deref())
+            && empty_opt(task.repo_path.as_deref())
+        {
+            return Err(SchedulerError::Validation(ValidationError::MissingTarget));
+        }
+
+        if task.target_mode == RunTargetMode::RepoWorktree {
+            if let Some(project_id) = task.project_id.as_deref() {
+                let project = self.get_project(project_id).await?;
+                if !matches!(project.map(|project| project.kind), Some(ProjectKind::Git)) {
+                    return Err(SchedulerError::Validation(
+                        ValidationError::RepoWorktreeRequiresGitProject,
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn empty_opt(value: Option<&str>) -> bool {
+    value.map(str::trim).unwrap_or_default().is_empty()
+}
+
+pub fn backup_database(path: &Path) -> Result<Option<PathBuf>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let Some(parent) = path.parent() else {
+        return Ok(None);
+    };
+
+    let backup_dir = parent.join("backups");
+    std::fs::create_dir_all(&backup_dir)?;
+
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("scheduler");
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("sqlite3");
+    let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let backup_path = backup_dir.join(format!("{stem}-{timestamp}.{extension}"));
+    std::fs::copy(path, &backup_path)?;
+
+    Ok(Some(backup_path))
+}
+
+async fn configure_sqlite(pool: &SqlitePool, use_wal: bool) -> Result<()> {
+    pool.execute("PRAGMA foreign_keys = ON").await?;
+    pool.execute("PRAGMA busy_timeout = 5000").await?;
+    if use_wal {
+        pool.execute("PRAGMA journal_mode = WAL").await?;
+    }
+    Ok(())
+}
+
+async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+    MIGRATOR.run(pool).await?;
+    sqlx::query(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, description, status, kind, cron_expr,
+    run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
+    prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
+    base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
+    schedule_cli_capabilities, missed_policy, missed_window_days, overlap_policy, max_runtime_sec,
+    max_retries, retry_backoff_sec, cleanup_policy, cleanup_after_days, created_by,
+    created_by_run_id, created_at, updated_at, deleted_at
+    FROM tasks WHERE id = ?";
+
+const TASK_SELECT_BY_SLUG: &str = "SELECT id, slug, name, description, status, kind, cron_expr,
+    run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
+    prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
+    base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
+    schedule_cli_capabilities, missed_policy, missed_window_days, overlap_policy, max_runtime_sec,
+    max_retries, retry_backoff_sec, cleanup_policy, cleanup_after_days, created_by,
+    created_by_run_id, created_at, updated_at, deleted_at
+    FROM tasks WHERE slug = ?";
+
+const TASK_SELECT_ACTIVE_DUE: &str = "SELECT id, slug, name, description, status, kind, cron_expr,
+    run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
+    prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
+    base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
+    schedule_cli_capabilities, missed_policy, missed_window_days, overlap_policy, max_runtime_sec,
+    max_retries, retry_backoff_sec, cleanup_policy, cleanup_after_days, created_by,
+    created_by_run_id, created_at, updated_at, deleted_at
+    FROM tasks
+    WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ?
+    ORDER BY next_run_at ASC, id ASC";
+
+const RUN_SELECT_BY_ID: &str = "SELECT id, task_id, trigger_type, scheduled_for, attempt, status,
+    status_reason, queued_at, started_at, ended_at, duration_ms, target_mode, workspace_path,
+    worktree_path, branch_name, base_ref, commit_before, commit_after, codex_command_json,
+    codex_session_id, pid, exit_code, signal, stdout_log_path, stderr_log_path, events_jsonl_path,
+    last_message_path, stdout_tail, stderr_tail, result_summary, findings_count,
+    created_schedule_count, created_at, updated_at
+    FROM runs WHERE id = ?";
+
+const RUN_SELECT_BY_IDEMPOTENCY_KEY: &str = "SELECT id, task_id, trigger_type, scheduled_for,
+    attempt, status, status_reason, queued_at, started_at, ended_at, duration_ms, target_mode,
+    workspace_path, worktree_path, branch_name, base_ref, commit_before, commit_after,
+    codex_command_json, codex_session_id, pid, exit_code, signal, stdout_log_path,
+    stderr_log_path, events_jsonl_path, last_message_path, stdout_tail, stderr_tail,
+    result_summary, findings_count, created_schedule_count, created_at, updated_at
+    FROM runs WHERE task_id = ? AND scheduled_for = ? AND attempt = ?";
+
+const RUN_SELECT_BY_NULL_SCHEDULE_KEY: &str = "SELECT id, task_id, trigger_type, scheduled_for,
+    attempt, status, status_reason, queued_at, started_at, ended_at, duration_ms, target_mode,
+    workspace_path, worktree_path, branch_name, base_ref, commit_before, commit_after,
+    codex_command_json, codex_session_id, pid, exit_code, signal, stdout_log_path,
+    stderr_log_path, events_jsonl_path, last_message_path, stdout_tail, stderr_tail,
+    result_summary, findings_count, created_schedule_count, created_at, updated_at
+    FROM runs WHERE task_id = ? AND scheduled_for IS NULL AND attempt = ?
+    ORDER BY created_at DESC LIMIT 1";
+
+const RUN_SELECT_BY_TASK: &str = "SELECT id, task_id, trigger_type, scheduled_for, attempt, status,
+    status_reason, queued_at, started_at, ended_at, duration_ms, target_mode, workspace_path,
+    worktree_path, branch_name, base_ref, commit_before, commit_after, codex_command_json,
+    codex_session_id, pid, exit_code, signal, stdout_log_path, stderr_log_path, events_jsonl_path,
+    last_message_path, stdout_tail, stderr_tail, result_summary, findings_count,
+    created_schedule_count, created_at, updated_at
+    FROM runs WHERE task_id = ?
+    ORDER BY started_at DESC, created_at DESC";
+
+const INSERT_RUN_SQL: &str = "INSERT INTO runs (
+    id, task_id, trigger_type, scheduled_for, attempt, status, status_reason, queued_at,
+    started_at, ended_at, duration_ms, target_mode, workspace_path, worktree_path, branch_name,
+    base_ref, commit_before, commit_after, codex_command_json, codex_session_id, pid, exit_code,
+    signal, stdout_log_path, stderr_log_path, events_jsonl_path, last_message_path, stdout_tail,
+    stderr_tail, result_summary, findings_count, created_schedule_count, created_at, updated_at
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?
+)";
+
+const INSERT_OR_IGNORE_RUN_SQL: &str = "INSERT OR IGNORE INTO runs (
+    id, task_id, trigger_type, scheduled_for, attempt, status, status_reason, queued_at,
+    started_at, ended_at, duration_ms, target_mode, workspace_path, worktree_path, branch_name,
+    base_ref, commit_before, commit_after, codex_command_json, codex_session_id, pid, exit_code,
+    signal, stdout_log_path, stderr_log_path, events_jsonl_path, last_message_path, stdout_tail,
+    stderr_tail, result_summary, findings_count, created_schedule_count, created_at, updated_at
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?
+)";
+
+fn bind_run<'q>(
+    query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    run: &'q Run,
+) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
+    query
+        .bind(&run.id)
+        .bind(&run.task_id)
+        .bind(run.trigger_type)
+        .bind(&run.scheduled_for)
+        .bind(run.attempt)
+        .bind(run.status)
+        .bind(&run.status_reason)
+        .bind(&run.queued_at)
+        .bind(&run.started_at)
+        .bind(&run.ended_at)
+        .bind(run.duration_ms)
+        .bind(run.target_mode)
+        .bind(&run.workspace_path)
+        .bind(&run.worktree_path)
+        .bind(&run.branch_name)
+        .bind(&run.base_ref)
+        .bind(&run.commit_before)
+        .bind(&run.commit_after)
+        .bind(&run.codex_command_json)
+        .bind(&run.codex_session_id)
+        .bind(run.pid)
+        .bind(run.exit_code)
+        .bind(&run.signal)
+        .bind(&run.stdout_log_path)
+        .bind(&run.stderr_log_path)
+        .bind(&run.events_jsonl_path)
+        .bind(&run.last_message_path)
+        .bind(&run.stdout_tail)
+        .bind(&run.stderr_tail)
+        .bind(&run.result_summary)
+        .bind(run.findings_count)
+        .bind(run.created_schedule_count)
+        .bind(&run.created_at)
+        .bind(&run.updated_at)
+}
