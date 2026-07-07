@@ -734,6 +734,20 @@ async fn finish_run(
         .map(|started| (ended_at - started).num_milliseconds().max(0));
     run.exit_code = result.exit_code;
     run.signal = result.signal;
+    run.codex_session_id = result.codex_session_id;
+    if result.workspace_path.is_some() {
+        run.workspace_path = result.workspace_path;
+    }
+    run.worktree_path = result.worktree_path;
+    run.branch_name = result.branch_name;
+    if result.base_ref.is_some() {
+        run.base_ref = result.base_ref;
+    }
+    run.commit_before = result.commit_before;
+    run.commit_after = result.commit_after;
+    if let Some(command_json) = result.codex_command_json {
+        run.codex_command_json = command_json;
+    }
     run.stdout_tail = result.stdout_tail;
     run.stderr_tail = result.stderr_tail;
     run.result_summary = result.result_summary;

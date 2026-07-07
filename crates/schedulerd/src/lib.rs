@@ -7,8 +7,8 @@ pub mod rpc;
 pub use config::{init_tracing, AppPaths, CliArgs, DaemonConfig};
 pub use daemon::{start_daemon, DaemonEvent, DaemonHandle};
 pub use executor::{
-    ExecutionRequest, ExecutionResult, ExecutionStatus, FailureKind, MockBehavior, MockExecutor,
-    RunExecutor,
+    CodexExecutor, ExecutionRequest, ExecutionResult, ExecutionStatus, FailureKind, MockBehavior,
+    MockExecutor, RunExecutor,
 };
 
 pub fn service_name() -> &'static str {

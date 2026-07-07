@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,7 +8,7 @@ use scheduler_core::model::*;
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
 use scheduler_core::util::sha256_hex;
 use schedulerd::executor::{MockBehavior, MockExecutor};
-use schedulerd::{rpc, start_daemon, DaemonConfig, DaemonHandle, ExecutionResult};
+use schedulerd::{rpc, start_daemon, CodexExecutor, DaemonConfig, DaemonHandle, ExecutionResult};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -69,6 +70,15 @@ fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
             cleanup_after_days: None,
         },
     }
+}
+
+fn codex_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("codex-runner")
+        .join("tests")
+        .join("fixtures")
+        .join(name)
 }
 
 fn sample_task_table(slug: &str, kind: TaskKind) -> Task {
@@ -869,6 +879,102 @@ async fn permanent_failure_is_not_retried() {
     assert!(!runs
         .iter()
         .any(|run| run.trigger_type == TriggerType::Retry));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn codex_executor_run_now_persists_runner_outcome_end_to_end() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let config = DaemonConfig::for_data_dir(temp_dir.path())
+        .with_tick_interval(Duration::from_secs(3600))
+        .with_due_grace(Duration::from_secs(5))
+        .with_shutdown_grace(Duration::from_millis(20));
+    let db = scheduler_core::db::SchedulerDb::connect(&config.paths.db_path)
+        .await
+        .expect("db");
+    db.set_setting(
+        "runner.codex_path",
+        &codex_fixture("dummy-codex-success.sh")
+            .to_string_lossy()
+            .to_string(),
+    )
+    .await
+    .expect("set codex path");
+    drop(db);
+
+    let executor_db = scheduler_core::db::SchedulerDb::connect(&config.paths.db_path)
+        .await
+        .expect("executor db");
+    let executor =
+        CodexExecutor::new(executor_db, config.paths.clone(), "0.1.0-test").with_app_cli_dir(None);
+    let handle = start_daemon(config, Arc::new(executor))
+        .await
+        .expect("start daemon");
+
+    let task = sample_task_dto("codex-e2e", TaskKind::Manual);
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams { task, actor: None },
+    )
+    .await
+    .expect("create task");
+    let queued: RunResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_RUN_NOW,
+        TaskIdParams {
+            id: created.task.id.clone(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("run now");
+
+    let runs = wait_for_task_runs(
+        &handle,
+        &created.task.id,
+        |runs| {
+            runs.iter()
+                .any(|run| run.id == queued.run.id && run.status == RunStatus::Succeeded)
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let run = runs
+        .into_iter()
+        .find(|run| run.id == queued.run.id)
+        .expect("stored run");
+    assert_eq!(run.status, RunStatus::Succeeded);
+    assert_eq!(run.exit_code, Some(0));
+    assert_eq!(run.codex_session_id.as_deref(), Some("sess_dummy_success"));
+    assert_eq!(run.result_summary.as_deref(), Some("done\n"));
+    assert!(run
+        .stdout_tail
+        .as_deref()
+        .unwrap_or_default()
+        .contains("done"));
+    assert!(run
+        .stderr_tail
+        .as_deref()
+        .unwrap_or_default()
+        .contains("prompt: Check project status."));
+    assert!(run
+        .last_message_path
+        .as_deref()
+        .is_some_and(|path| std::fs::read_to_string(path).unwrap_or_default() == "done\n"));
+
+    let events = handle
+        .db()
+        .list_run_events(&run.id)
+        .await
+        .expect("run events");
+    assert!(events.iter().any(|event| {
+        event.source == RunEventSource::Daemon && event.event_type == "runner.process_started"
+    }));
+    assert!(events.iter().any(|event| {
+        event.source == RunEventSource::CodexJsonl && event.event_type == "codex.json_event"
+    }));
 
     handle.shutdown().await;
 }

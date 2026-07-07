@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use clap::Parser;
+use scheduler_core::db::SchedulerDb;
 use schedulerd::lock::{LockAcquire, SingleInstanceLock};
-use schedulerd::{init_tracing, start_daemon, CliArgs, DaemonConfig, MockExecutor};
+use schedulerd::{init_tracing, start_daemon, CliArgs, CodexExecutor, DaemonConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -25,7 +26,12 @@ async fn main() -> anyhow::Result<()> {
         "daemon starting"
     );
 
-    let executor = Arc::new(MockExecutor::succeeding());
+    let executor_db = SchedulerDb::connect(&config.paths.db_path).await?;
+    let executor = Arc::new(CodexExecutor::new(
+        executor_db,
+        config.paths.clone(),
+        config.version.clone(),
+    ));
     let handle = start_daemon(config, executor).await?;
     wait_for_shutdown_signal().await;
     handle.shutdown().await;
