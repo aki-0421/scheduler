@@ -194,6 +194,25 @@ export function TaskWizard({
     });
   }
 
+  function updateTargetMode(value: TaskDraft["targetMode"]) {
+    setDraft((current) => ({
+      ...current,
+      targetMode: value,
+      sandboxMode:
+        value !== "chat" && current.sandboxMode === "read-only"
+          ? "workspace-write"
+          : value === "chat" && current.sandboxMode === "workspace-write"
+            ? "read-only"
+            : current.sandboxMode,
+    }));
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.targetMode;
+      delete next.repoPath;
+      return next;
+    });
+  }
+
   function validateCurrentStep() {
     const stepErrors = validateTaskDraftStep(draft, step);
     setErrors(stepErrors);
@@ -228,7 +247,6 @@ export function TaskWizard({
         maxRuntimeSec: 3,
         maxRetries: 3,
         dangerConfirmed: 3,
-        maxCreatedSchedules: 4,
       };
       setStep(stepByKey[firstKey] ?? 0);
       toast.error("Resolve validation errors before saving.");
@@ -356,7 +374,7 @@ export function TaskWizard({
               label="Target mode"
               value={draft.targetMode}
               values={targetModes}
-              onChange={(value) => update("targetMode", value)}
+              onChange={updateTargetMode}
             />
             {draft.targetMode === "repo-local" ? (
               <Alert variant="warning">
@@ -688,28 +706,13 @@ export function TaskWizard({
                 />
               ))}
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field
-                label="Max created schedules per run"
-                htmlFor="max-created-schedules"
-                error={errors.maxCreatedSchedules}
-              >
-                <Input
-                  id="max-created-schedules"
-                  type="number"
-                  min={0}
-                  max={50}
-                  value={draft.maxCreatedSchedules}
-                  onChange={(event) =>
-                    update("maxCreatedSchedules", Number(event.currentTarget.value))
-                  }
-                />
-              </Field>
+            <div className="grid gap-4">
+              {/* TODO: Restore max-created-schedules when TaskDto carries this permission field. */}
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div>
-                  <Label htmlFor="force-paused">Force newly created task as paused</Label>
+                  <Label htmlFor="force-paused">Create this task as paused</Label>
                   <p className="mt-1 text-xs text-muted-foreground text-pretty">
-                    Useful for untrusted repository paths and review-first workflows.
+                    Saves this task with status=paused for review-first workflows.
                   </p>
                 </div>
                 <Switch

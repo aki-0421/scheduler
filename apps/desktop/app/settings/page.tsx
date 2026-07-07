@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useSetSetting, useSettings } from "@/lib/queries";
+import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
 import {
   approvalPolicies,
   cleanupPolicies,
@@ -33,6 +33,7 @@ import {
 
 export default function SettingsPage() {
   const settings = useSettings();
+  const health = useHealth();
   const setSetting = useSetSetting();
   const [form, setForm] = useState<SchedulerSettings>(settings.data);
 
@@ -238,6 +239,33 @@ export default function SettingsPage() {
                 </SelectContent>
               </Select>
             </Field>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Runtime paths</CardTitle>
+            <CardDescription>Read-only daemon paths used by the local scheduler.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm">
+            <div className="grid gap-1">
+              <span className="text-muted-foreground">Socket path</span>
+              <code className="rounded-md bg-muted px-2 py-1 text-xs">
+                ~/Library/Application Support/Codex Scheduler/scheduler.sock
+              </code>
+            </div>
+            <div className="grid gap-1">
+              <span className="text-muted-foreground">Database path</span>
+              <code className="rounded-md bg-muted px-2 py-1 text-xs">
+                ~/Library/Application Support/Codex Scheduler/scheduler.sqlite3
+              </code>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Schema version</span>
+              <span className="tabular-nums">
+                {health.data?.dbSchemaVersion ?? "unknown"}
+              </span>
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -101,6 +101,7 @@ export default function ProjectsPage() {
                   <TableHead>Path</TableHead>
                   <TableHead>Default branch</TableHead>
                   <TableHead>Trusted at</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -116,6 +117,12 @@ export default function ProjectsPage() {
                     <TableCell>{project.defaultBranch ?? "—"}</TableCell>
                     <TableCell className="tabular-nums">
                       {formatDateTime(project.trustedAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {/* TODO: Enable untrust when a project_untrust IPC command exists. */}
+                      <Button variant="outline" size="sm" disabled>
+                        Untrust
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

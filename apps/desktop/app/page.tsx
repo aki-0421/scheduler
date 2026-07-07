@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, AlertCircle, Clock, ListTodo, Play, Plus } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  Clock,
+  ListTodo,
+  PauseCircle,
+  Play,
+  Plus,
+  Stethoscope,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
 import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
@@ -23,12 +33,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime, formatDuration, formatTaskSchedule, isRunActive } from "@/lib/format";
-import { useHealth, useRuns, useTasks } from "@/lib/queries";
+import { useHealth, useRuns, useSetSetting, useSettings, useTasks } from "@/lib/queries";
 
 export default function DashboardPage() {
   const tasks = useTasks();
   const runs = useRuns();
   const health = useHealth();
+  const settings = useSettings();
+  const setSetting = useSetSetting();
   const taskList = tasks.data ?? [];
   const runList = runs.data ?? [];
   const nextRuns = taskList
@@ -69,6 +81,37 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              toast.info("Run due check will be wired when the daemon tick IPC lands.")
+            }
+          >
+            <Clock className="size-4" aria-hidden="true" />
+            Run due check now
+          </Button>
+          <Button
+            variant="outline"
+            disabled={setSetting.isPending}
+            onClick={() =>
+              setSetting.mutate(
+                { key: "scheduler.enabled", value: false },
+                {
+                  onSuccess: () => toast.success("Schedules paused"),
+                  onError: (error) =>
+                    toast.error("Could not pause schedules", {
+                      description:
+                        error instanceof Error
+                          ? error.message
+                          : "Settings command failed.",
+                    }),
+                },
+              )
+            }
+          >
+            <PauseCircle className="size-4" aria-hidden="true" />
+            Pause all schedules
+          </Button>
           <Button asChild>
             <Link href="/tasks/new">
               <Plus className="size-4" aria-hidden="true" />
@@ -81,7 +124,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-sm">
@@ -132,6 +175,20 @@ export default function DashboardPage() {
           <CardContent>
             <p className="text-2xl font-semibold tabular-nums">{requiringReview}</p>
             <p className="mt-1 text-xs text-muted-foreground">triage conditions matched</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center justify-between text-sm">
+              Codex CLI health
+              <Stethoscope className="size-4 text-muted-foreground" aria-hidden="true" />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Badge variant="outline">{settings.data["runner.codex_path"]}</Badge>
+            <p className="mt-2 text-xs text-muted-foreground">
+              doctor check pending M5 backend wiring
+            </p>
           </CardContent>
         </Card>
       </div>
