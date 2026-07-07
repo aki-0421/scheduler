@@ -3,6 +3,7 @@ pub const APP_NAME: &str = "Codex Scheduler";
 pub mod db;
 pub mod error;
 pub mod model;
+pub mod schedule;
 pub mod time;
 pub mod util;
 
