@@ -4,6 +4,7 @@ use scheduler_core::time::now_rfc3339;
 use scheduler_core::util::{prompt_hash, unique_slug};
 use scheduler_core::{SchedulerError, ValidationError};
 use serde_json::json;
+use std::fs;
 use tempfile::TempDir;
 
 async fn temp_db() -> (TempDir, SchedulerDb) {
@@ -224,6 +225,18 @@ async fn task_crud_and_validation() {
         SchedulerError::Validation(ValidationError::MissingTarget)
     ));
 
+    let mut invalid_worktree = sample_task("invalid-worktree");
+    invalid_worktree.target_mode = RunTargetMode::RepoWorktree;
+    invalid_worktree.repo_path = Some("/tmp/repo".to_owned());
+    let err = db
+        .create_task(&invalid_worktree)
+        .await
+        .expect_err("repo-worktree requires a git project_id");
+    assert!(matches!(
+        err,
+        SchedulerError::Validation(ValidationError::RepoWorktreeRequiresGitProject)
+    ));
+
     let deleted_at = now_rfc3339();
     assert!(db
         .delete_task(&task.id, &deleted_at)
@@ -266,6 +279,77 @@ async fn idempotent_run_create_reuses_existing_row() {
         .await
         .expect("runs for task");
     assert_eq!(runs.len(), 1);
+}
+
+#[tokio::test]
+async fn manual_runs_use_regular_insert_not_idempotent_create() {
+    let (_temp_dir, db) = temp_db().await;
+    let task = sample_task("manual-run-source");
+    db.create_task(&task).await.expect("create task");
+
+    let mut first_run = sample_run(&task.id, "2026-07-08T00:00:00Z");
+    first_run.trigger_type = TriggerType::Manual;
+    first_run.scheduled_for = None;
+
+    let err = db
+        .create_run_idempotent(&first_run)
+        .await
+        .expect_err("manual run has no stable scheduled_for");
+    assert!(matches!(
+        err,
+        SchedulerError::Validation(ValidationError::IdempotentRunRequiresScheduledFor)
+    ));
+
+    db.create_run(&first_run)
+        .await
+        .expect("insert first manual run");
+
+    let mut second_run = first_run.clone();
+    second_run.id = new_run_id();
+    db.create_run(&second_run)
+        .await
+        .expect("insert second manual run");
+
+    let runs = db
+        .list_runs_for_task(&task.id)
+        .await
+        .expect("runs for task");
+    assert_eq!(runs.len(), 2);
+}
+
+#[tokio::test]
+async fn backup_is_created_only_when_existing_database_needs_migration() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db_path = temp_dir.path().join("scheduler.sqlite3");
+    let backup_dir = temp_dir.path().join("backups");
+
+    let db = SchedulerDb::connect(&db_path)
+        .await
+        .expect("initial migration");
+    drop(db);
+    assert_eq!(backup_count(&backup_dir), 0);
+
+    let db = SchedulerDb::connect(&db_path)
+        .await
+        .expect("no-op migration");
+    drop(db);
+    assert_eq!(backup_count(&backup_dir), 0);
+
+    let legacy_path = temp_dir.path().join("legacy.sqlite3");
+    fs::File::create(&legacy_path).expect("legacy placeholder");
+    let db = SchedulerDb::connect(&legacy_path)
+        .await
+        .expect("legacy migration");
+    drop(db);
+    assert_eq!(backup_count(&backup_dir), 1);
+}
+
+fn backup_count(backup_dir: &std::path::Path) -> usize {
+    if !backup_dir.exists() {
+        return 0;
+    }
+
+    fs::read_dir(backup_dir).expect("read backup dir").count()
 }
 
 #[test]

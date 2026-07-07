@@ -11,6 +11,7 @@ use crate::model::*;
 use crate::time::{now_rfc3339, validate_timezone};
 use crate::util::validate_slug;
 use crate::{Result, SchedulerError, ValidationError};
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct SchedulerDb {
@@ -26,10 +27,10 @@ pub struct IdempotentInsert<T> {
 impl SchedulerDb {
     pub async fn connect(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
+        let existed_before_connect = path.exists();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        backup_database(path)?;
 
         let options = SqliteConnectOptions::new()
             .filename(path)
@@ -42,6 +43,9 @@ impl SchedulerDb {
             .connect_with(options)
             .await?;
         configure_sqlite(&pool, true).await?;
+        if existed_before_connect && has_pending_migration(&pool).await? {
+            backup_database(&pool, path).await?;
+        }
         run_migrations(&pool).await?;
         Ok(Self { pool })
     }
@@ -310,14 +314,32 @@ impl SchedulerDb {
             .map_err(Into::into)
     }
 
+    /// Creates an idempotent scheduled run keyed by `(task_id, scheduled_for, attempt)`.
+    ///
+    /// This API is intentionally limited to scheduled/catch-up enqueue paths where
+    /// `scheduled_for` is a stable non-null instant. Manual, CLI, and retry runs
+    /// should use `create_run` so each invocation records a distinct run.
     pub async fn create_run_idempotent(&self, run: &Run) -> Result<IdempotentInsert<Run>> {
-        let inserted = bind_run(sqlx::query(INSERT_OR_IGNORE_RUN_SQL), run)
+        let scheduled_for = run.scheduled_for.as_deref().ok_or_else(|| {
+            SchedulerError::Validation(ValidationError::IdempotentRunRequiresScheduledFor)
+        })?;
+
+        if !matches!(
+            run.trigger_type,
+            TriggerType::Schedule | TriggerType::Catchup
+        ) {
+            return Err(SchedulerError::Validation(
+                ValidationError::IdempotentRunRequiresScheduledTrigger,
+            ));
+        }
+
+        let inserted = bind_run(sqlx::query(INSERT_RUN_ON_IDEMPOTENCY_CONFLICT_SQL), run)
             .execute(&self.pool)
             .await?
             .rows_affected()
             > 0;
         let value = self
-            .get_run_by_idempotency_key(&run.task_id, run.scheduled_for.as_deref(), run.attempt)
+            .get_run_by_idempotency_key(&run.task_id, scheduled_for, run.attempt)
             .await?
             .ok_or(sqlx::Error::RowNotFound)?;
 
@@ -334,21 +356,15 @@ impl SchedulerDb {
     pub async fn get_run_by_idempotency_key(
         &self,
         task_id: &str,
-        scheduled_for: Option<&str>,
+        scheduled_for: &str,
         attempt: i64,
     ) -> Result<Option<Run>> {
-        let query = if let Some(scheduled_for) = scheduled_for {
-            sqlx::query_as::<_, Run>(RUN_SELECT_BY_IDEMPOTENCY_KEY)
-                .bind(task_id)
-                .bind(scheduled_for)
-                .bind(attempt)
-        } else {
-            sqlx::query_as::<_, Run>(RUN_SELECT_BY_NULL_SCHEDULE_KEY)
-                .bind(task_id)
-                .bind(attempt)
-        };
-
-        Ok(query.fetch_optional(&self.pool).await?)
+        Ok(sqlx::query_as::<_, Run>(RUN_SELECT_BY_IDEMPOTENCY_KEY)
+            .bind(task_id)
+            .bind(scheduled_for)
+            .bind(attempt)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     pub async fn update_run(&self, run: &Run) -> Result<bool> {
@@ -813,13 +829,21 @@ impl SchedulerDb {
         }
 
         if task.target_mode == RunTargetMode::RepoWorktree {
-            if let Some(project_id) = task.project_id.as_deref() {
-                let project = self.get_project(project_id).await?;
-                if !matches!(project.map(|project| project.kind), Some(ProjectKind::Git)) {
-                    return Err(SchedulerError::Validation(
-                        ValidationError::RepoWorktreeRequiresGitProject,
-                    ));
-                }
+            let Some(project_id) = task
+                .project_id
+                .as_deref()
+                .filter(|id| !id.trim().is_empty())
+            else {
+                return Err(SchedulerError::Validation(
+                    ValidationError::RepoWorktreeRequiresGitProject,
+                ));
+            };
+
+            let project = self.get_project(project_id).await?;
+            if !matches!(project.map(|project| project.kind), Some(ProjectKind::Git)) {
+                return Err(SchedulerError::Validation(
+                    ValidationError::RepoWorktreeRequiresGitProject,
+                ));
             }
         }
 
@@ -831,7 +855,7 @@ fn empty_opt(value: Option<&str>) -> bool {
     value.map(str::trim).unwrap_or_default().is_empty()
 }
 
-pub fn backup_database(path: &Path) -> Result<Option<PathBuf>> {
+pub async fn backup_database(pool: &SqlitePool, path: &Path) -> Result<Option<PathBuf>> {
     if !path.exists() {
         return Ok(None);
     }
@@ -852,8 +876,16 @@ pub fn backup_database(path: &Path) -> Result<Option<PathBuf>> {
         .and_then(|value| value.to_str())
         .unwrap_or("sqlite3");
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-    let backup_path = backup_dir.join(format!("{stem}-{timestamp}.{extension}"));
-    std::fs::copy(path, &backup_path)?;
+    let backup_path = backup_dir.join(format!("{stem}-{timestamp}-{}.{extension}", Uuid::now_v7()));
+    let backup_path_sql = backup_path.to_string_lossy().into_owned();
+
+    sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(pool)
+        .await?;
+    sqlx::query("VACUUM main INTO ?")
+        .bind(backup_path_sql)
+        .execute(pool)
+        .await?;
 
     Ok(Some(backup_path))
 }
@@ -873,6 +905,13 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
         .execute(pool)
         .await?;
     Ok(())
+}
+
+async fn has_pending_migration(pool: &SqlitePool) -> Result<bool> {
+    let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(pool)
+        .await?;
+    Ok(user_version < SCHEMA_VERSION)
 }
 
 const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, description, status, kind, cron_expr,
@@ -929,15 +968,6 @@ const RUN_SELECT_BY_IDEMPOTENCY_KEY: &str = "SELECT id, task_id, trigger_type, s
     result_summary, findings_count, created_schedule_count, created_at, updated_at
     FROM runs WHERE task_id = ? AND scheduled_for = ? AND attempt = ?";
 
-const RUN_SELECT_BY_NULL_SCHEDULE_KEY: &str = "SELECT id, task_id, trigger_type, scheduled_for,
-    attempt, status, status_reason, queued_at, started_at, ended_at, duration_ms, target_mode,
-    workspace_path, worktree_path, branch_name, base_ref, commit_before, commit_after,
-    codex_command_json, codex_session_id, pid, exit_code, signal, stdout_log_path,
-    stderr_log_path, events_jsonl_path, last_message_path, stdout_tail, stderr_tail,
-    result_summary, findings_count, created_schedule_count, created_at, updated_at
-    FROM runs WHERE task_id = ? AND scheduled_for IS NULL AND attempt = ?
-    ORDER BY created_at DESC LIMIT 1";
-
 const RUN_SELECT_BY_TASK: &str = "SELECT id, task_id, trigger_type, scheduled_for, attempt, status,
     status_reason, queued_at, started_at, ended_at, duration_ms, target_mode, workspace_path,
     worktree_path, branch_name, base_ref, commit_before, commit_after, codex_command_json,
@@ -958,7 +988,7 @@ const INSERT_RUN_SQL: &str = "INSERT INTO runs (
     ?, ?, ?, ?
 )";
 
-const INSERT_OR_IGNORE_RUN_SQL: &str = "INSERT OR IGNORE INTO runs (
+const INSERT_RUN_ON_IDEMPOTENCY_CONFLICT_SQL: &str = "INSERT INTO runs (
     id, task_id, trigger_type, scheduled_for, attempt, status, status_reason, queued_at,
     started_at, ended_at, duration_ms, target_mode, workspace_path, worktree_path, branch_name,
     base_ref, commit_before, commit_after, codex_command_json, codex_session_id, pid, exit_code,
@@ -967,7 +997,7 @@ const INSERT_OR_IGNORE_RUN_SQL: &str = "INSERT OR IGNORE INTO runs (
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
     ?, ?, ?, ?
-)";
+) ON CONFLICT(task_id, scheduled_for, attempt) DO NOTHING";
 
 fn bind_run<'q>(
     query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,

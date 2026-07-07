@@ -41,6 +41,12 @@ pub enum ValidationError {
     #[error("target_mode='repo-worktree' requires a git project")]
     RepoWorktreeRequiresGitProject,
 
+    #[error("idempotent run creation requires scheduled_for")]
+    IdempotentRunRequiresScheduledFor,
+
+    #[error("idempotent run creation is only for schedule or catchup triggers")]
+    IdempotentRunRequiresScheduledTrigger,
+
     #[error("invalid timezone: {0}")]
     InvalidTimezone(String),
 
