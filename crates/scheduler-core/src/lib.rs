@@ -1,17 +1,12 @@
 pub const APP_NAME: &str = "Codex Scheduler";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SchedulerMode {
-    Chat,
-    RepoLocal,
-    RepoWorktree,
-}
+pub mod error;
+pub mod model;
+pub mod time;
+pub mod util;
 
-#[derive(Debug, thiserror::Error)]
-pub enum SchedulerError {
-    #[error("scheduler scaffold is not implemented yet")]
-    NotImplemented,
-}
+pub use error::{Result, SchedulerError, ValidationError};
+pub use model::enums::RunTargetMode as SchedulerMode;
 
 pub fn crate_ready() -> bool {
     true
