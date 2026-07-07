@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   projectDtoSchema,
+  projectUntrustResultSchema,
   runDtoSchema,
   taskDtoSchema,
   taskResultSchema,
@@ -98,6 +99,42 @@ describe("DTO schemas", () => {
 
     expect(project.gitRoot).toBe("/tmp/repo");
     expect(project.defaultBranch).toBe("main");
+  });
+
+  it("normalizes project.untrust result counts", () => {
+    const camelCase = projectUntrustResultSchema.parse({
+      project: {
+        id: "proj_1",
+        name: "repo",
+        path: "/tmp/repo",
+        kind: "git",
+        gitRoot: "/tmp/repo",
+        gitRemoteUrl: null,
+        defaultBranch: "main",
+        trustedAt: null,
+        createdAt: "2026-07-08T00:00:00Z",
+        updatedAt: "2026-07-08T00:00:00Z",
+      },
+      affectedTaskCount: 2,
+    });
+    const snakeCase = projectUntrustResultSchema.parse({
+      project: {
+        id: "proj_1",
+        name: "repo",
+        path: "/tmp/repo",
+        kind: "git",
+        gitRoot: "/tmp/repo",
+        gitRemoteUrl: null,
+        defaultBranch: "main",
+        trustedAt: null,
+        createdAt: "2026-07-08T00:00:00Z",
+        updatedAt: "2026-07-08T00:00:00Z",
+      },
+      affected_task_count: 3,
+    });
+
+    expect(camelCase.affectedTaskCount).toBe(2);
+    expect(snakeCase.affectedTaskCount).toBe(3);
   });
 
   it("normalizes task audit events from task.get results", () => {

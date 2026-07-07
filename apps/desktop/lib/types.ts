@@ -298,6 +298,16 @@ export const projectListResultSchema = z.object({
   projects: z.array(projectDtoSchema),
 });
 export const projectTrustResultSchema = z.object({ project: projectDtoSchema });
+export const projectUntrustResultSchema = z
+  .object({
+    project: projectDtoSchema,
+    affectedTaskCount: z.number().int().optional(),
+    affected_task_count: z.number().int().optional(),
+  })
+  .transform((result) => ({
+    project: result.project,
+    affectedTaskCount: result.affectedTaskCount ?? result.affected_task_count ?? 0,
+  }));
 export const settingsGetResultSchema = z.object({
   settings: z.array(settingDtoSchema),
 });
@@ -326,6 +336,7 @@ export type HealthDto = z.infer<typeof healthDtoSchema>;
 export type DaemonDiagnostics = z.infer<typeof daemonDiagnosticsSchema>;
 export type DaemonTickNowResult = z.infer<typeof daemonTickNowResultSchema>;
 export type RunTailLogResult = z.infer<typeof runTailLogResultSchema>;
+export type ProjectUntrustResult = z.infer<typeof projectUntrustResultSchema>;
 
 // TODO: Display Codex command lines here when RunDto exposes codexCommandJson.
 

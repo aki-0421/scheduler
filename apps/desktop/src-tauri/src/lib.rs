@@ -29,6 +29,7 @@ const DAEMON_LOG_TAIL_BYTES: u64 = 64 * 1024;
 const LOG_EXPORT_TAIL_BYTES: usize = 256 * 1024;
 const PROMPT_FILE_MAX_BYTES: u64 = 200 * 1024;
 const RUN_STATUS_NOTIFICATION_INTERVAL: Duration = Duration::from_secs(15);
+const METHOD_PROJECT_UNTRUST: &str = "project.untrust";
 
 #[derive(Debug)]
 struct AppState {
@@ -1057,6 +1058,22 @@ async fn project_trust(
 }
 
 #[tauri::command]
+async fn project_untrust(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+) -> CommandResult<Value> {
+    state
+        .daemon
+        .proxy(
+            &app,
+            METHOD_PROJECT_UNTRUST,
+            json!({ "projectId": project_id }),
+        )
+        .await
+}
+
+#[tauri::command]
 async fn settings_get(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1152,6 +1169,7 @@ pub fn run() {
             run_tail_log,
             project_list,
             project_trust,
+            project_untrust,
             settings_get,
             settings_set,
             project_pick_folder,

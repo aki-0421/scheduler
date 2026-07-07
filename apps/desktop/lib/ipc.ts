@@ -8,6 +8,7 @@ import {
   logStreamSchema,
   projectListResultSchema,
   projectTrustResultSchema,
+  projectUntrustResultSchema,
   runListResultSchema,
   runResultSchema,
   runStatusSchema,
@@ -213,6 +214,14 @@ export const ipcClient = {
   async projectTrust(path: string) {
     const result = await call("project_trust", { path }, projectTrustResultSchema);
     return result.project;
+  },
+
+  projectUntrust(projectId: string) {
+    return call(
+      "project_untrust",
+      { projectId },
+      projectUntrustResultSchema,
+    );
   },
 
   projectPickFolder() {

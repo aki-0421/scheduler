@@ -210,6 +210,16 @@ export function useTrustProject() {
   });
 }
 
+export function useUntrustProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => ipcClient.projectUntrust(projectId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+    },
+  });
+}
+
 export function useSetSetting() {
   const queryClient = useQueryClient();
   return useMutation<SettingDto, Error, SettingMutationInput, { previous?: SchedulerSettings }>({

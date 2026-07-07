@@ -5,6 +5,17 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/format";
-import { useProjects, useTasks, useTrustProject } from "@/lib/queries";
+import { useProjects, useTasks, useTrustProject, useUntrustProject } from "@/lib/queries";
 import type { ProjectDto } from "@/lib/types";
 
 export default function ProjectsPage() {
@@ -32,6 +43,7 @@ export default function ProjectsPage() {
   const projects = useProjects();
   const tasks = useTasks();
   const trustProject = useTrustProject();
+  const untrustProject = useUntrustProject();
   const projectList = projects.data ?? [];
   const taskList = tasks.data ?? [];
 
@@ -59,6 +71,21 @@ export default function ProjectsPage() {
       },
       onError: (error) =>
         toast.error("プロジェクトを信頼できませんでした", {
+          description:
+            error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
+        }),
+    });
+  }
+
+  function untrust(project: ProjectDto) {
+    untrustProject.mutate(project.id, {
+      onSuccess: (result) => {
+        toast.success("プロジェクトの信頼を解除しました", {
+          description: `影響タスク ${result.affectedTaskCount.toLocaleString("ja-JP")} 件`,
+        });
+      },
+      onError: (error) =>
+        toast.error("プロジェクトの信頼を解除できませんでした", {
           description:
             error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
         }),
@@ -113,35 +140,71 @@ export default function ProjectsPage() {
                   <TableHead>パス</TableHead>
                   <TableHead>active タスク</TableHead>
                   <TableHead>default branch</TableHead>
+                  <TableHead>信頼状態</TableHead>
                   <TableHead>信頼日時</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projectList.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell className="font-medium">{project.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{project.kind}</Badge>
-                    </TableCell>
-                    <TableCell className="max-w-xl truncate font-mono text-xs">
-                      {project.path}
-                    </TableCell>
-                    <TableCell className="tabular-nums">
-                      {activeTaskCount(project)}
-                    </TableCell>
-                    <TableCell>{project.defaultBranch ?? "—"}</TableCell>
-                    <TableCell className="tabular-nums">
-                      {formatDateTime(project.trustedAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {/* TODO: Enable untrust when a project_untrust IPC command exists. */}
-                      <Button variant="outline" size="sm" disabled>
-                        信頼解除
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {projectList.map((project) => {
+                  const affectedTaskCount = activeTaskCount(project);
+                  return (
+                    <TableRow key={project.id}>
+                      <TableCell className="font-medium">{project.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{project.kind}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-xl truncate font-mono text-xs">
+                        {project.path}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {affectedTaskCount.toLocaleString("ja-JP")}
+                      </TableCell>
+                      <TableCell>{project.defaultBranch ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={project.trustedAt ? "success" : "warning"}>
+                          {project.trustedAt ? "信頼済み" : "未信頼"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {formatDateTime(project.trustedAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={!project.trustedAt || untrustProject.isPending}
+                            >
+                              信頼解除
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                プロジェクトの信頼を解除しますか？
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                このプロジェクトを信頼解除すると、参照中のタスクは実行時に失敗します
+                                （影響タスク {affectedTaskCount.toLocaleString("ja-JP")} 件）。
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => untrust(project)}
+                              >
+                                信頼解除
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           ) : (

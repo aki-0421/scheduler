@@ -427,6 +427,16 @@ function updateTaskStatus(idValue: string, status: TaskStatus) {
   return { task: clone(task) };
 }
 
+function activeTaskCountForProject(project: ProjectDto) {
+  return tasks.filter(
+    (task) =>
+      task.status === "active" &&
+      (task.target.projectId === project.id ||
+        task.target.repoPath === project.path ||
+        task.target.repoPath === project.gitRoot),
+  ).length;
+}
+
 function createRun(taskId: string, status: RunStatus = "queued") {
   const task = taskById(taskId);
   const run: RunDto = {
@@ -626,6 +636,17 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       };
       projects = [project, ...projects.filter((item) => item.path !== path)];
       return { project: clone(project) };
+    }
+    case "project_untrust": {
+      const projectId = String(input.projectId ?? "").trim();
+      const project = projects.find((item) => item.id === projectId);
+      if (!project) {
+        throw new Error(`Project not found: ${projectId}`);
+      }
+      const affectedTaskCount = activeTaskCountForProject(project);
+      project.trustedAt = undefined;
+      project.updatedAt = new Date().toISOString();
+      return { project: clone(project), affectedTaskCount };
     }
     case "project_pick_folder":
       return projects[0]?.path;
