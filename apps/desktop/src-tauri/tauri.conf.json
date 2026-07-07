@@ -2,11 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Codex Scheduler",
   "version": "0.1.0",
-  "identifier": "com.codex-scheduler.app",
+  "identifier": "com.local.codex-scheduler",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm sidecars:prepare && pnpm dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm sidecars:prepare && pnpm build",
     "frontendDist": "../out"
   },
   "app": {
@@ -21,12 +21,16 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {
     "active": true,
     "targets": ["app"],
+    "externalBin": [
+      "binaries/codex-schedulerd",
+      "binaries/codex-schedule"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

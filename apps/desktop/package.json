@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
+    "sidecars:prepare": "node scripts/prepare-sidecars.mjs",
     "test": "node -e \"console.log('No desktop tests configured')\"",
     "tauri": "tauri"
   },

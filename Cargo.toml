@@ -12,7 +12,7 @@ resolver = "2"
 edition = "2021"
 rust-version = "1.83"
 license = "MIT OR Apache-2.0"
-repository = "https://example.invalid/codex-scheduler"
+repository = "https://github.com/aki-0421/scheduler.git"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }

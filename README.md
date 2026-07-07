@@ -22,6 +22,8 @@ Run the desktop app during development:
 pnpm --filter desktop tauri dev
 ```
 
+The Tauri config bundles `codex-schedulerd` and `codex-schedule` as sidecars. `pnpm --filter desktop tauri dev` and Tauri builds run `pnpm sidecars:prepare` first, which builds those Rust binaries and copies them into `apps/desktop/src-tauri/binaries/` with Tauri's target-triple suffix.
+
 Run Rust tests:
 
 ```bash
