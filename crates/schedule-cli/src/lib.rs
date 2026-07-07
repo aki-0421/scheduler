@@ -575,6 +575,7 @@ fn map_rpc_error(error: JsonRpcError) -> CliError {
 }
 
 async fn create_task(paths: &AppPaths, cmd: &CreateCommand) -> Result<CommandOutput, CliError> {
+    ensure_write_token_if_scheduled()?;
     validate_task_fields(&cmd.fields, ValidationMode::Create)?;
     let client = RpcClient::new(paths.socket_path.clone());
     let existing: TaskListResult = client
@@ -599,10 +600,11 @@ async fn create_task(paths: &AppPaths, cmd: &CreateCommand) -> Result<CommandOut
         )
         .await
         .map_err(write_requires_daemon)?;
-    task_output(created.task)
+    task_summary_output(created.task)
 }
 
 async fn update_task(paths: &AppPaths, cmd: &UpdateCommand) -> Result<CommandOutput, CliError> {
+    ensure_write_token_if_scheduled()?;
     validate_task_fields(&cmd.fields, ValidationMode::Patch)?;
     validate_clear_flags(&cmd.clear, &cmd.fields)?;
     let client = RpcClient::new(paths.socket_path.clone());
@@ -622,7 +624,7 @@ async fn update_task(paths: &AppPaths, cmd: &UpdateCommand) -> Result<CommandOut
         )
         .await
         .map_err(write_requires_daemon)?;
-    task_output(updated.task)
+    task_summary_output(updated.task)
 }
 
 async fn update_current_task(
@@ -631,15 +633,7 @@ async fn update_current_task(
 ) -> Result<CommandOutput, CliError> {
     let task_id = std::env::var("CODEX_SCHEDULER_CURRENT_TASK_ID")
         .map_err(|_| CliError::permission_denied("CODEX_SCHEDULER_CURRENT_TASK_ID is not set"))?;
-    if std::env::var("CODEX_SCHEDULER_RUN_TOKEN")
-        .ok()
-        .filter(|token| !token.trim().is_empty())
-        .is_none()
-    {
-        return Err(CliError::permission_denied(
-            "CODEX_SCHEDULER_RUN_TOKEN is required for update-current",
-        ));
-    }
+    ensure_write_token_if_scheduled()?;
 
     validate_task_fields(&cmd.fields, ValidationMode::Patch)?;
     validate_clear_flags(&cmd.clear, &cmd.fields)?;
@@ -663,7 +657,7 @@ async fn update_current_task(
         )
         .await
         .map_err(write_requires_daemon)?;
-    task_output(updated.task)
+    task_summary_output(updated.task)
 }
 
 async fn list_tasks(paths: &AppPaths, cmd: &ListCommand) -> Result<CommandOutput, CliError> {
@@ -678,7 +672,10 @@ async fn list_tasks(paths: &AppPaths, cmd: &ListCommand) -> Result<CommandOutput
         Err(err) => return Err(err),
     };
     Ok(CommandOutput {
-        json: json!({ "ok": true, "tasks": tasks }),
+        json: json!({
+            "ok": true,
+            "tasks": tasks.iter().map(task_summary_json).collect::<Vec<_>>(),
+        }),
         human: format_task_table(&tasks),
     })
 }
@@ -702,6 +699,7 @@ async fn task_status_action(
     label: &str,
     cmd: &TaskActionCommand,
 ) -> Result<CommandOutput, CliError> {
+    ensure_write_token_if_scheduled()?;
     let client = RpcClient::new(paths.socket_path.clone());
     let params = TaskIdParams {
         id: cmd.id.clone(),
@@ -715,12 +713,13 @@ async fn task_status_action(
         .await
         .map_err(write_requires_daemon)?;
     Ok(CommandOutput {
-        json: json!({ "ok": true, "task": result.task }),
+        json: json!({ "ok": true, "task": task_summary_json(&result.task) }),
         human: format!("{} {}", result.task.id, label),
     })
 }
 
 async fn delete_task(paths: &AppPaths, cmd: &TaskActionCommand) -> Result<CommandOutput, CliError> {
+    ensure_write_token_if_scheduled()?;
     let client = RpcClient::new(paths.socket_path.clone());
     let params = TaskIdParams {
         id: cmd.id.clone(),
@@ -740,6 +739,7 @@ async fn delete_task(paths: &AppPaths, cmd: &TaskActionCommand) -> Result<Comman
 }
 
 async fn run_now(paths: &AppPaths, cmd: &TaskActionCommand) -> Result<CommandOutput, CliError> {
+    ensure_write_token_if_scheduled()?;
     let client = RpcClient::new(paths.socket_path.clone());
     let params = TaskIdParams {
         id: cmd.id.clone(),
@@ -1585,6 +1585,31 @@ fn task_output(task: TaskDto) -> Result<CommandOutput, CliError> {
     })
 }
 
+fn task_summary_output(task: TaskDto) -> Result<CommandOutput, CliError> {
+    Ok(CommandOutput {
+        json: json!({ "ok": true, "task": task_summary_json(&task) }),
+        human: format_task_line(&task),
+    })
+}
+
+fn task_summary_json(task: &TaskDto) -> Value {
+    json!({
+        "id": task.id,
+        "slug": task.slug,
+        "name": task.name,
+        "kind": task.kind,
+        "status": task.status,
+        "nextRunAt": task.next_run_at,
+        "timezone": task.timezone,
+        "targetMode": task.target.mode,
+        "cronExpr": task.cron_expr,
+        "runAt": task.run_at,
+        "projectId": task.target.project_id,
+        "repoPath": task.target.repo_path,
+        "baseRef": task.target.base_ref,
+    })
+}
+
 fn run_output(run: RunDto) -> Result<CommandOutput, CliError> {
     Ok(CommandOutput {
         json: json!({ "ok": true, "run": run }),
@@ -1627,11 +1652,7 @@ fn format_run_line(run: &RunDto) -> String {
 }
 
 fn current_actor() -> RpcActor {
-    if std::env::var("CODEX_SCHEDULER_RUN_TOKEN")
-        .ok()
-        .filter(|token| !token.trim().is_empty())
-        .is_some()
-    {
+    if scheduled_run_context_present() {
         RpcActor {
             actor_type: AuditActorType::ScheduledRun,
             actor_id: std::env::var("CODEX_SCHEDULER_CURRENT_RUN_ID").ok(),
@@ -1642,6 +1663,42 @@ fn current_actor() -> RpcActor {
             actor_id: None,
         }
     }
+}
+
+fn scheduled_run_context_present() -> bool {
+    std::env::var("CODEX_SCHEDULER_RUN_TOKEN")
+        .ok()
+        .filter(|token| !token.trim().is_empty())
+        .is_some()
+        || std::env::var("CODEX_SCHEDULER_CURRENT_TASK_ID")
+            .ok()
+            .filter(|task_id| !task_id.trim().is_empty())
+            .is_some()
+        || std::env::var("CODEX_SCHEDULER_CURRENT_RUN_ID")
+            .ok()
+            .filter(|run_id| !run_id.trim().is_empty())
+            .is_some()
+}
+
+fn ensure_write_token_if_scheduled() -> Result<(), CliError> {
+    let task_context = std::env::var("CODEX_SCHEDULER_CURRENT_TASK_ID")
+        .ok()
+        .filter(|task_id| !task_id.trim().is_empty())
+        .is_some();
+    let run_context = std::env::var("CODEX_SCHEDULER_CURRENT_RUN_ID")
+        .ok()
+        .filter(|run_id| !run_id.trim().is_empty())
+        .is_some();
+    let token = std::env::var("CODEX_SCHEDULER_RUN_TOKEN")
+        .ok()
+        .filter(|token| !token.trim().is_empty())
+        .is_some();
+    if (task_context || run_context) && !token {
+        return Err(CliError::permission_denied(
+            "CODEX_SCHEDULER_RUN_TOKEN is required for scheduled-run write commands",
+        ));
+    }
+    Ok(())
 }
 
 fn add_invocation_metadata<T: Serialize>(params: T, reason: Option<&str>) -> Value {

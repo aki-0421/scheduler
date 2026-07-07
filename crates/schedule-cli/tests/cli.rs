@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::db::SchedulerDb;
+use scheduler_core::ipc::{JsonRpcErrorCode, METHOD_SETTINGS_SET};
 use scheduler_core::model::{
     new_run_id, new_schedule_capability_token_id, ApprovalPolicy, CleanupPolicy, MissedPolicy,
     OverlapPolicy, Run, RunStatus, RunTargetMode, SandboxMode, ScheduleCapabilityToken, Task,
@@ -13,7 +14,7 @@ use scheduler_core::model::{
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
 use scheduler_core::util::sha256_hex;
 use schedulerd::{start_daemon, DaemonConfig, DaemonHandle, MockExecutor};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tempfile::TempDir;
 
 async fn start_test_daemon() -> (TempDir, DaemonHandle) {
@@ -52,6 +53,22 @@ fn cli_output_with_token(
         .env("CODEX_SCHEDULER_CURRENT_TASK_ID", task_id)
         .env("CODEX_SCHEDULER_CURRENT_RUN_ID", run_id)
         .env("CODEX_SCHEDULER_RUN_TOKEN", token)
+        .output()
+        .expect("run codex-schedule")
+}
+
+fn cli_output_scheduled_without_token(
+    temp_dir: &TempDir,
+    args: &[&str],
+    task_id: &str,
+    run_id: &str,
+) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
+        .args(args)
+        .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
+        .env("CODEX_SCHEDULER_CURRENT_TASK_ID", task_id)
+        .env("CODEX_SCHEDULER_CURRENT_RUN_ID", run_id)
+        .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
         .output()
         .expect("run codex-schedule")
 }
@@ -201,6 +218,7 @@ async fn create_once_create_cron_and_list_json() {
     let once_json = json_stdout(&once);
     assert_eq!(once_json["ok"], true);
     assert_eq!(once_json["task"]["kind"], "once");
+    assert!(once_json["task"].get("prompt").is_none());
 
     let cron = cli_output(
         &temp_dir,
@@ -227,6 +245,7 @@ async fn create_once_create_cron_and_list_json() {
     assert_eq!(cron_json["ok"], true);
     assert_eq!(cron_json["task"]["kind"], "cron");
     assert_eq!(cron_json["task"]["cronExpr"], "0 9 * * 1-5");
+    assert!(cron_json["task"].get("prompt").is_none());
 
     let list = cli_output(&temp_dir, &["list", "--json"]);
     assert!(
@@ -237,6 +256,11 @@ async fn create_once_create_cron_and_list_json() {
     let list_json = json_stdout(&list);
     assert_eq!(list_json["ok"], true);
     assert!(list_json["tasks"].as_array().expect("tasks").len() >= 2);
+    assert!(list_json["tasks"]
+        .as_array()
+        .expect("tasks")
+        .iter()
+        .all(|task| task.get("prompt").is_none()));
 
     handle.shutdown().await;
 }
@@ -389,6 +413,135 @@ async fn create_with_token_over_max_creates_exits_4() {
     handle.shutdown().await;
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn token_without_run_now_pause_or_delete_capability_exits_4() {
+    let (temp_dir, handle) = start_test_daemon().await;
+    let created = cli_output(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "restricted token task",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Restricted prompt.",
+            "--json",
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let created_json = json_stdout(&created);
+    let task_id = created_json["task"]["id"].as_str().expect("task id");
+    let token = "token_control_denied";
+    let run_id = seed_schedule_token(&handle, task_id, token, &["schedule:create"], 0, 5).await;
+
+    for args in [
+        vec!["run-now", task_id, "--json"],
+        vec!["pause", task_id, "--json"],
+        vec!["delete", task_id, "--json"],
+    ] {
+        let denied = cli_output_with_token(&temp_dir, &args, task_id, &run_id, token);
+        assert_eq!(
+            denied.status.code(),
+            Some(4),
+            "args={args:?} stderr={}",
+            String::from_utf8_lossy(&denied.stderr)
+        );
+        let value = json_stdout(&denied);
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["error"]["code"], "permission_denied");
+    }
+
+    handle.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scheduled_run_project_trust_and_settings_set_are_denied() {
+    let (temp_dir, handle) = start_test_daemon().await;
+    let created = cli_output(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "scheduled control source",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Source prompt.",
+            "--json",
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let created_json = json_stdout(&created);
+    let task_id = created_json["task"]["id"].as_str().expect("task id");
+    let token = "token_control_rpc_denied";
+    let run_id = seed_schedule_token(
+        &handle,
+        task_id,
+        token,
+        &["schedule:create", "schedule:update-any", "schedule:run-now"],
+        0,
+        5,
+    )
+    .await;
+
+    let repo_path = temp_dir.path().join("repo");
+    std::fs::create_dir_all(&repo_path).expect("repo dir");
+    let trust_denied = cli_output_with_token(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "repo create denied",
+            "--manual",
+            "--repo",
+            repo_path.to_str().expect("repo path"),
+            "--worktree",
+            "--prompt",
+            "Repo prompt.",
+            "--json",
+        ],
+        task_id,
+        &run_id,
+        token,
+    );
+    assert_eq!(trust_denied.status.code(), Some(4));
+    let value = json_stdout(&trust_denied);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "permission_denied");
+
+    let settings_response = schedulerd::rpc::call_raw(
+        &handle.socket_path(),
+        METHOD_SETTINGS_SET,
+        json!({
+            "key": "scheduler.enabled",
+            "value": false,
+            "actor": {
+                "actorType": "scheduled-run",
+                "actorId": run_id,
+            },
+            "token": token,
+            "currentTaskId": task_id,
+            "currentRunId": run_id,
+            "reason": "scheduled settings denied",
+        }),
+    )
+    .await
+    .expect("settings.set response");
+    let error = settings_response.error.expect("settings.set error");
+    assert_eq!(error.code, JsonRpcErrorCode::PermissionDenied.code());
+
+    handle.shutdown().await;
+}
+
 #[tokio::test]
 async fn list_falls_back_to_sqlite_when_daemon_unavailable() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -408,6 +561,7 @@ async fn list_falls_back_to_sqlite_when_daemon_unavailable() {
     let value = json_stdout(&output);
     assert_eq!(value["ok"], true);
     assert_eq!(value["tasks"][0]["id"], task.id);
+    assert!(value["tasks"][0].get("prompt").is_none());
 }
 
 #[test]
@@ -475,6 +629,30 @@ fn update_current_without_token_exits_4() {
         .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
         .output()
         .expect("run update-current");
+    assert_eq!(output.status.code(), Some(4));
+    let value = json_stdout(&output);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "permission_denied");
+}
+
+#[test]
+fn scheduled_write_without_token_exits_4_locally() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output = cli_output_scheduled_without_token(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "scheduled write no token",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "No token.",
+            "--json",
+        ],
+        "task_test",
+        "run_test",
+    );
     assert_eq!(output.status.code(), Some(4));
     let value = json_stdout(&output);
     assert_eq!(value["ok"], false);
