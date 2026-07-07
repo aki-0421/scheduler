@@ -586,6 +586,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // TODO: Poll daemon run status and emit run.failed notifications when notifications.enabled is true.
         .plugin(tauri_plugin_notification::init())
         .manage(state)
         .setup(|app| {
