@@ -15,6 +15,8 @@ pub struct ExecutionRequest {
     pub stdout_log_path: PathBuf,
     pub stderr_log_path: PathBuf,
     pub events_jsonl_path: PathBuf,
+    pub schedule_token: Option<String>,
+    pub schedule_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,9 +27,16 @@ pub enum ExecutionStatus {
     Canceled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureKind {
+    Transient,
+    Permanent,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionResult {
     pub status: ExecutionStatus,
+    pub failure_kind: Option<FailureKind>,
     pub exit_code: Option<i64>,
     pub signal: Option<String>,
     pub stdout_tail: Option<String>,
@@ -39,6 +48,7 @@ impl ExecutionResult {
     pub fn succeeded() -> Self {
         Self {
             status: ExecutionStatus::Succeeded,
+            failure_kind: None,
             exit_code: Some(0),
             signal: None,
             stdout_tail: Some("mock stdout\n".to_owned()),
@@ -50,6 +60,7 @@ impl ExecutionResult {
     pub fn failed() -> Self {
         Self {
             status: ExecutionStatus::Failed,
+            failure_kind: Some(FailureKind::Transient),
             exit_code: Some(1),
             signal: None,
             stdout_tail: None,
@@ -58,9 +69,22 @@ impl ExecutionResult {
         }
     }
 
+    pub fn permanent_failed() -> Self {
+        Self {
+            status: ExecutionStatus::Failed,
+            failure_kind: Some(FailureKind::Permanent),
+            exit_code: Some(2),
+            signal: None,
+            stdout_tail: None,
+            stderr_tail: Some("mock permanent failure\n".to_owned()),
+            result_summary: Some("mock permanent failure".to_owned()),
+        }
+    }
+
     pub fn timed_out() -> Self {
         Self {
             status: ExecutionStatus::TimedOut,
+            failure_kind: Some(FailureKind::Transient),
             exit_code: None,
             signal: Some("SIGTERM".to_owned()),
             stdout_tail: None,
@@ -72,6 +96,7 @@ impl ExecutionResult {
     pub fn canceled() -> Self {
         Self {
             status: ExecutionStatus::Canceled,
+            failure_kind: Some(FailureKind::Permanent),
             exit_code: None,
             signal: Some("SIGTERM".to_owned()),
             stdout_tail: None,
@@ -132,6 +157,7 @@ impl Default for MockBehavior {
 #[derive(Debug, Default)]
 struct MockState {
     calls: Vec<ExecutionRequest>,
+    completions: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -177,6 +203,26 @@ impl MockExecutor {
             }
         }
     }
+
+    pub async fn wait_for_completions(&self, count: usize, timeout: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if self.state.lock().await.completions >= count {
+                return true;
+            }
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            let remaining = deadline - now;
+            if tokio::time::timeout(remaining, self.notify.notified())
+                .await
+                .is_err()
+            {
+                return false;
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -196,13 +242,26 @@ impl RunExecutor for MockExecutor {
 
         if self.behavior.hold_until_cancel {
             cancel.cancelled().await;
-            return ExecutionResult::canceled();
+            let result = ExecutionResult::canceled();
+            self.record_completion().await;
+            return result;
         }
 
-        tokio::select! {
+        let result = tokio::select! {
             () = cancel.cancelled() => ExecutionResult::canceled(),
             () = tokio::time::sleep(self.behavior.delay) => self.behavior.result.clone(),
-        }
+        };
+        self.record_completion().await;
+        result
+    }
+}
+
+impl MockExecutor {
+    async fn record_completion(&self) {
+        let mut state = self.state.lock().await;
+        state.completions += 1;
+        drop(state);
+        self.notify.notify_waiters();
     }
 }
 

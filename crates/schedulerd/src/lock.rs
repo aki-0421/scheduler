@@ -1,8 +1,11 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
+use scheduler_core::time::now_rfc3339;
+use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::config::AppPaths;
 use crate::rpc;
@@ -16,37 +19,49 @@ pub enum LockAcquire {
 #[derive(Debug)]
 pub struct SingleInstanceLock {
     file: File,
-    path: std::path::PathBuf,
+    path: PathBuf,
 }
 
 impl SingleInstanceLock {
     pub async fn acquire(paths: &AppPaths) -> anyhow::Result<LockAcquire> {
         paths.ensure_dirs()?;
-        match Self::try_lock_file(&paths.lock_path) {
+        match Self::try_lock_file(paths) {
             Ok(lock) => Ok(LockAcquire::Acquired(lock)),
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                 if rpc::health_check(&paths.socket_path).await.is_ok() {
                     return Ok(LockAcquire::AlreadyRunning);
                 }
 
-                let pid = read_pid(&paths.lock_path).ok().flatten();
+                let metadata = read_lock_metadata(&paths.lock_path).ok().flatten();
+                let pid = metadata.as_ref().map(|metadata| metadata.pid);
                 if pid.map(pid_exists).unwrap_or(false) {
+                    warn!(
+                        pid = pid,
+                        socket = metadata
+                            .as_ref()
+                            .map(|metadata| metadata.socket_path.as_str())
+                            .unwrap_or("<unknown>"),
+                        started_at = metadata
+                            .as_ref()
+                            .map(|metadata| metadata.started_at.as_str())
+                            .unwrap_or("<unknown>"),
+                        "lock holder did not answer health check; refusing to steal live lock"
+                    );
                     anyhow::bail!(
-                        "another codex-schedulerd process holds lock at {}",
+                        "another codex-schedulerd process holds lock at {} but health check failed",
                         paths.lock_path.display()
                     );
                 }
 
                 let _ = std::fs::remove_file(&paths.lock_path);
-                Ok(LockAcquire::Acquired(Self::try_lock_file(
-                    &paths.lock_path,
-                )?))
+                Ok(LockAcquire::Acquired(Self::try_lock_file(paths)?))
             }
             Err(err) => Err(err.into()),
         }
     }
 
-    fn try_lock_file(path: &Path) -> std::io::Result<Self> {
+    fn try_lock_file(paths: &AppPaths) -> std::io::Result<Self> {
+        let path = &paths.lock_path;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -57,10 +72,17 @@ impl SingleInstanceLock {
             .write(true)
             .truncate(false)
             .open(path)?;
+        set_private_file_permissions(path)?;
         file.try_lock_exclusive()?;
         file.set_len(0)?;
         file.seek(SeekFrom::Start(0))?;
-        writeln!(file, "{}", std::process::id())?;
+        let metadata = LockMetadata {
+            pid: std::process::id() as i32,
+            started_at: now_rfc3339(),
+            socket_path: paths.socket_path.to_string_lossy().into_owned(),
+        };
+        let metadata_json = serde_json::to_string(&metadata).map_err(std::io::Error::other)?;
+        writeln!(file, "{metadata_json}")?;
         file.sync_all()?;
 
         Ok(Self {
@@ -81,11 +103,30 @@ impl SingleInstanceLock {
     }
 }
 
-fn read_pid(path: &Path) -> std::io::Result<Option<i32>> {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LockMetadata {
+    pid: i32,
+    started_at: String,
+    socket_path: String,
+}
+
+fn read_lock_metadata(path: &Path) -> std::io::Result<Option<LockMetadata>> {
     let mut file = File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    Ok(contents.trim().parse::<i32>().ok())
+    let trimmed = contents.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if let Ok(metadata) = serde_json::from_str::<LockMetadata>(trimmed) {
+        return Ok(Some(metadata));
+    }
+    Ok(trimmed.parse::<i32>().ok().map(|pid| LockMetadata {
+        pid,
+        started_at: "<legacy>".to_owned(),
+        socket_path: "<legacy>".to_owned(),
+    }))
 }
 
 fn pid_exists(pid: i32) -> bool {
@@ -96,4 +137,16 @@ fn pid_exists(pid: i32) -> bool {
         libc::kill(pid, 0) == 0
             || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
     }
+}
+
+#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }

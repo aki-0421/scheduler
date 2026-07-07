@@ -93,6 +93,7 @@ impl AppPaths {
 
     pub fn ensure_dirs(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.data_dir)?;
+        set_private_dir_permissions(&self.data_dir)?;
         std::fs::create_dir_all(&self.logs_dir)?;
         if let Some(parent) = self.db_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -189,4 +190,16 @@ fn log_parent(path: &Path) -> PathBuf {
     path.parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(unix)]
+fn set_private_dir_permissions(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn set_private_dir_permissions(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }

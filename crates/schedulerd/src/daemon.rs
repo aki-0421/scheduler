@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::ipc::*;
 use scheduler_core::model::*;
@@ -13,6 +13,7 @@ use scheduler_core::schedule::{
     MissedRunOptions, OverlapDecision,
 };
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
+use scheduler_core::util::sha256_hex;
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -23,7 +24,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
 use crate::config::DaemonConfig;
-use crate::executor::{ExecutionRequest, ExecutionResult, ExecutionStatus, RunExecutor};
+use crate::executor::{
+    ExecutionRequest, ExecutionResult, ExecutionStatus, FailureKind, RunExecutor,
+};
 use crate::rpc::parse_params;
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +42,28 @@ pub struct DaemonEvent {
 struct ActiveRun {
     task_id: String,
     cancel: CancellationToken,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RpcMetadata {
+    token: Option<String>,
+    current_task_id: Option<String>,
+    current_run_id: Option<String>,
+    reason: Option<String>,
+}
+
+impl RpcMetadata {
+    fn from_value(value: Option<&Value>) -> Self {
+        let Some(Value::Object(object)) = value else {
+            return Self::default();
+        };
+        Self {
+            token: string_field(object, "token"),
+            current_task_id: string_field(object, "currentTaskId"),
+            current_run_id: string_field(object, "currentRunId"),
+            reason: string_field(object, "reason"),
+        }
+    }
 }
 
 pub(crate) struct DaemonState {
@@ -95,6 +120,7 @@ pub async fn start_daemon(
         let _ = std::fs::remove_file(&config.paths.socket_path);
     }
     let listener = UnixListener::bind(&config.paths.socket_path)?;
+    set_private_file_permissions(&config.paths.socket_path)?;
 
     let (events_tx, _) = broadcast::channel(256);
     let state = Arc::new(DaemonState {
@@ -157,9 +183,10 @@ fn next_tick_delay(interval: Duration) -> Duration {
 }
 
 async fn perform_tick(state: &Arc<DaemonState>) -> anyhow::Result<()> {
-    if scheduler_enabled(&state.db).await? {
-        enqueue_due_tasks(state).await?;
+    if !scheduler_enabled(&state.db).await? {
+        return Ok(());
     }
+    enqueue_due_tasks(state).await?;
     start_available_runs(state).await?;
     Ok(())
 }
@@ -399,12 +426,22 @@ async fn start_available_runs(state: &Arc<DaemonState>) -> anyhow::Result<()> {
         }
 
         let Some(task) = state.db.get_task(&run.task_id).await? else {
+            let run_id = run.id.clone();
             mark_run_terminal(
                 &state.db,
                 run,
                 RunStatus::Failed,
                 Some("task_not_found"),
                 None,
+                None,
+            )
+            .await?;
+            create_run_event(
+                &state.db,
+                &run_id,
+                "error",
+                "run.setup_failed",
+                Some("task_not_found".to_owned()),
                 None,
             )
             .await?;
@@ -447,15 +484,70 @@ async fn start_available_runs(state: &Arc<DaemonState>) -> anyhow::Result<()> {
         if count_running_for_task(&state.db, &task.id, Some(&run.id)).await? >= limits.per_task {
             continue;
         }
-        if let Some(project_id) = task.project_id.as_deref() {
-            if count_running_for_project(&state.db, project_id).await? >= limits.per_project {
-                continue;
-            }
+        if count_running_for_project_key(&state.db, &task).await? >= limits.per_project {
+            continue;
         }
 
         start_one_run(state, run, task).await?;
     }
 
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct IssuedRunToken {
+    plaintext: String,
+    capabilities: Vec<String>,
+}
+
+async fn issue_run_token(
+    db: &SchedulerDb,
+    run: &Run,
+    task: &Task,
+) -> scheduler_core::Result<Option<IssuedRunToken>> {
+    if !task.allow_schedule_cli {
+        return Ok(None);
+    }
+
+    let capabilities =
+        serde_json::from_str::<Vec<String>>(&task.schedule_cli_capabilities).unwrap_or_default();
+    if capabilities.is_empty() {
+        return Ok(None);
+    }
+
+    let plaintext = new_schedule_capability_token_id();
+    let now = Utc::now();
+    let expires_at = now + ChronoDuration::seconds(task.max_runtime_sec.max(0) + 3600);
+    let token = ScheduleCapabilityToken {
+        id: new_schedule_capability_token_id(),
+        run_id: run.id.clone(),
+        task_id: task.id.clone(),
+        token_hash: sha256_hex(plaintext.as_bytes()),
+        capabilities_json: serde_json::to_string(&capabilities)?,
+        expires_at: format_utc_rfc3339(expires_at),
+        max_creates: 5,
+        create_count: 0,
+        revoked_at: None,
+        created_at: format_utc_rfc3339(now),
+    };
+    db.create_schedule_capability_token(&token).await?;
+
+    Ok(Some(IssuedRunToken {
+        plaintext,
+        capabilities,
+    }))
+}
+
+async fn expire_run_tokens(
+    db: &SchedulerDb,
+    run_id: &str,
+    expires_at: DateTime<Utc>,
+) -> scheduler_core::Result<()> {
+    sqlx::query("UPDATE schedule_capability_tokens SET expires_at = ? WHERE run_id = ?")
+        .bind(format_utc_rfc3339(expires_at))
+        .bind(run_id)
+        .execute(db.pool())
+        .await?;
     Ok(())
 }
 
@@ -506,12 +598,18 @@ async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> an
         },
     );
 
+    let token = issue_run_token(&state.db, &run, &task).await?;
     let request = ExecutionRequest {
         run: run.clone(),
         task: task.clone(),
         stdout_log_path,
         stderr_log_path,
         events_jsonl_path,
+        schedule_token: token.as_ref().map(|token| token.plaintext.clone()),
+        schedule_capabilities: token
+            .as_ref()
+            .map(|token| token.capabilities.clone())
+            .unwrap_or_default(),
     };
 
     let state_for_task = state.clone();
@@ -565,6 +663,7 @@ async fn finish_run(
     run.result_summary = result.result_summary;
     run.updated_at = now_rfc3339();
     state.db.update_run(&run).await?;
+    expire_run_tokens(&state.db, &run.id, ended_at + ChronoDuration::hours(1)).await?;
 
     let event_type = match run.status {
         RunStatus::Succeeded => "run.succeeded",
@@ -594,7 +693,9 @@ async fn finish_run(
         json!({ "status": run.status.as_str() }),
     );
 
-    if matches!(run.status, RunStatus::Failed | RunStatus::TimedOut) {
+    if matches!(run.status, RunStatus::Failed | RunStatus::TimedOut)
+        && result.failure_kind != Some(FailureKind::Permanent)
+    {
         schedule_retry_if_needed(state, &task, &run, ended_at).await?;
     }
 
@@ -688,16 +789,28 @@ async fn interrupt_statuses(
 ) -> scheduler_core::Result<()> {
     let now = now_rfc3339();
     let placeholders = statuses.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-    let sql = format!(
-        "UPDATE runs
-         SET status = 'interrupted', status_reason = ?, ended_at = COALESCE(ended_at, ?), updated_at = ?
-         WHERE status IN ({placeholders})"
-    );
-    let mut query = sqlx::query(&sql).bind(reason).bind(&now).bind(&now);
+    let select_sql = format!("{RUN_SELECT} WHERE status IN ({placeholders})");
+    let mut query = sqlx::query_as::<_, Run>(&select_sql);
     for status in statuses {
         query = query.bind(*status);
     }
-    query.execute(db.pool()).await?;
+    let mut runs = query.fetch_all(db.pool()).await?;
+    for run in &mut runs {
+        run.status = RunStatus::Interrupted;
+        run.status_reason = Some(reason.to_owned());
+        run.ended_at = run.ended_at.clone().or_else(|| Some(now.clone()));
+        run.updated_at = now.clone();
+        db.update_run(run).await?;
+        create_run_event(
+            db,
+            &run.id,
+            "warn",
+            "run.interrupted",
+            Some(reason.to_owned()),
+            None,
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -783,28 +896,38 @@ async fn route_rpc(
             to_value(rpc_task_get(state, params).await?)
         }
         METHOD_TASK_CREATE => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: TaskCreateParams = parse_params(request.params)?;
-            to_value(rpc_task_create(state, params).await?)
+            to_value(rpc_task_create(state, params, metadata).await?)
         }
         METHOD_TASK_UPDATE => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: TaskUpdateParams = parse_params(request.params)?;
-            to_value(rpc_task_update(state, params).await?)
+            to_value(rpc_task_update(state, params, metadata).await?)
         }
         METHOD_TASK_DELETE => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: TaskIdParams = parse_params(request.params)?;
-            to_value(rpc_task_delete(state, params).await?)
+            to_value(rpc_task_delete(state, params, metadata).await?)
         }
         METHOD_TASK_PAUSE => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: TaskIdParams = parse_params(request.params)?;
-            to_value(rpc_task_status(state, params, TaskStatus::Paused, "task.pause").await?)
+            to_value(
+                rpc_task_status(state, params, metadata, TaskStatus::Paused, "task.pause").await?,
+            )
         }
         METHOD_TASK_RESUME => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: TaskIdParams = parse_params(request.params)?;
-            to_value(rpc_task_status(state, params, TaskStatus::Active, "task.resume").await?)
+            to_value(
+                rpc_task_status(state, params, metadata, TaskStatus::Active, "task.resume").await?,
+            )
         }
         METHOD_TASK_RUN_NOW => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: TaskIdParams = parse_params(request.params)?;
-            to_value(rpc_task_run_now(state, params).await?)
+            to_value(rpc_task_run_now(state, params, metadata).await?)
         }
         METHOD_RUN_LIST => {
             let params: RunListParams = parse_params(request.params)?;
@@ -815,8 +938,9 @@ async fn route_rpc(
             to_value(rpc_run_get(state, params).await?)
         }
         METHOD_RUN_CANCEL => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: RunCancelParams = parse_params(request.params)?;
-            to_value(rpc_run_cancel(state, params).await?)
+            to_value(rpc_run_cancel(state, params, metadata).await?)
         }
         METHOD_RUN_TAIL_LOG => {
             let params: RunTailLogParams = parse_params(request.params)?;
@@ -826,16 +950,18 @@ async fn route_rpc(
             projects: state.db.list_projects().await.map_err(map_core_error)?,
         }),
         METHOD_PROJECT_TRUST => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: ProjectTrustParams = parse_params(request.params)?;
-            to_value(rpc_project_trust(state, params).await?)
+            to_value(rpc_project_trust(state, params, metadata).await?)
         }
         METHOD_SETTINGS_GET => {
             let params: SettingsGetParams = parse_params(request.params)?;
             to_value(rpc_settings_get(state, params).await?)
         }
         METHOD_SETTINGS_SET => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: SettingsSetParams = parse_params(request.params)?;
-            to_value(rpc_settings_set(state, params).await?)
+            to_value(rpc_settings_set(state, params, metadata).await?)
         }
         _ => Err(JsonRpcError::new(
             JsonRpcErrorCode::MethodNotFound,
@@ -890,16 +1016,298 @@ async fn rpc_task_get(
     })
 }
 
+#[derive(Debug, Clone)]
+struct AuthorizedTaskWrite {
+    actor: RpcActor,
+    token: Option<ScheduleCapabilityToken>,
+}
+
+async fn authorize_task_create(
+    state: &Arc<DaemonState>,
+    actor: Option<RpcActor>,
+    metadata: &RpcMetadata,
+) -> Result<AuthorizedTaskWrite, JsonRpcError> {
+    if let Some(token_value) = metadata.token.as_deref() {
+        let token = validate_run_token(state, token_value, metadata).await?;
+        ensure_capability(&token, "schedule:create")?;
+        if token.create_count >= token.max_creates {
+            return Err(JsonRpcError::new(
+                JsonRpcErrorCode::PermissionDenied,
+                "schedule:create limit exceeded",
+            ));
+        }
+        return Ok(AuthorizedTaskWrite {
+            actor: scheduled_run_actor(&token),
+            token: Some(token),
+        });
+    }
+
+    let actor = actor.unwrap_or_default();
+    if actor.actor_type == AuditActorType::ScheduledRun {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            "scheduled-run writes require a capability token",
+        ));
+    }
+    Ok(AuthorizedTaskWrite { actor, token: None })
+}
+
+async fn authorize_task_update(
+    state: &Arc<DaemonState>,
+    actor: Option<RpcActor>,
+    metadata: &RpcMetadata,
+    target_task_id: &str,
+) -> Result<AuthorizedTaskWrite, JsonRpcError> {
+    if let Some(token_value) = metadata.token.as_deref() {
+        let token = validate_run_token(state, token_value, metadata).await?;
+        if target_task_id == token.task_id {
+            if !token_has_capability(&token, "schedule:update-current")
+                && !token_has_capability(&token, "schedule:update-any")
+            {
+                return Err(JsonRpcError::new(
+                    JsonRpcErrorCode::PermissionDenied,
+                    "missing capability: schedule:update-current",
+                ));
+            }
+        } else {
+            ensure_capability(&token, "schedule:update-any")?;
+        }
+        return Ok(AuthorizedTaskWrite {
+            actor: scheduled_run_actor(&token),
+            token: Some(token),
+        });
+    }
+
+    let actor = actor.unwrap_or_default();
+    if actor.actor_type == AuditActorType::ScheduledRun {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            "scheduled-run writes require a capability token",
+        ));
+    }
+    Ok(AuthorizedTaskWrite { actor, token: None })
+}
+
+async fn validate_run_token(
+    state: &Arc<DaemonState>,
+    token_value: &str,
+    metadata: &RpcMetadata,
+) -> Result<ScheduleCapabilityToken, JsonRpcError> {
+    let token_hash = sha256_hex(token_value.as_bytes());
+    let token = state
+        .db
+        .get_schedule_capability_token_by_hash(&token_hash)
+        .await
+        .map_err(map_core_error)?
+        .ok_or_else(|| {
+            JsonRpcError::new(JsonRpcErrorCode::PermissionDenied, "invalid run token")
+        })?;
+
+    if token.revoked_at.is_some() {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            "run token has been revoked",
+        ));
+    }
+    let expires_at = parse_utc_rfc3339(&token.expires_at).map_err(|err| {
+        JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            format!("invalid token expiry: {err}"),
+        )
+    })?;
+    if expires_at <= Utc::now() {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            "run token has expired",
+        ));
+    }
+    if metadata
+        .current_run_id
+        .as_deref()
+        .map(|run_id| run_id != token.run_id)
+        .unwrap_or(false)
+    {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            "currentRunId does not match token run",
+        ));
+    }
+    if metadata
+        .current_task_id
+        .as_deref()
+        .map(|task_id| task_id != token.task_id)
+        .unwrap_or(false)
+    {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            "currentTaskId does not match token task",
+        ));
+    }
+
+    Ok(token)
+}
+
+fn scheduled_run_actor(token: &ScheduleCapabilityToken) -> RpcActor {
+    RpcActor {
+        actor_type: AuditActorType::ScheduledRun,
+        actor_id: Some(token.run_id.clone()),
+    }
+}
+
+fn token_capabilities(token: &ScheduleCapabilityToken) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(&token.capabilities_json).unwrap_or_default()
+}
+
+fn token_has_capability(token: &ScheduleCapabilityToken, capability: &str) -> bool {
+    token_capabilities(token)
+        .iter()
+        .any(|candidate| candidate == capability)
+}
+
+fn ensure_capability(
+    token: &ScheduleCapabilityToken,
+    capability: &str,
+) -> Result<(), JsonRpcError> {
+    if token_has_capability(token, capability) {
+        Ok(())
+    } else {
+        Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            format!("missing capability: {capability}"),
+        ))
+    }
+}
+
+async fn increment_token_create_count(
+    db: &SchedulerDb,
+    token: &mut ScheduleCapabilityToken,
+) -> scheduler_core::Result<()> {
+    token.create_count += 1;
+    db.update_schedule_capability_token(token).await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TrustOutcome {
+    NoRepoPath,
+    Trusted,
+    HumanUntrusted { path: String },
+    ScheduledReviewRequired { path: String },
+}
+
+async fn apply_repo_path_trust_policy(
+    db: &SchedulerDb,
+    task: &mut Task,
+    actor_type: AuditActorType,
+) -> Result<TrustOutcome, JsonRpcError> {
+    let Some(repo_path) = task.repo_path.clone() else {
+        return Ok(TrustOutcome::NoRepoPath);
+    };
+    let canonical = std::fs::canonicalize(&repo_path).map_err(|err| {
+        JsonRpcError::new(
+            JsonRpcErrorCode::ValidationFailed,
+            format!("unable to canonicalize repo_path `{repo_path}`: {err}"),
+        )
+    })?;
+    let canonical_str = path_to_string(&canonical);
+    task.repo_path = Some(canonical_str.clone());
+
+    if path_is_under_trusted_project(db, &canonical)
+        .await
+        .map_err(map_core_error)?
+    {
+        return Ok(TrustOutcome::Trusted);
+    }
+
+    if actor_type == AuditActorType::ScheduledRun {
+        task.status = TaskStatus::Paused;
+        task.next_run_at = None;
+        Ok(TrustOutcome::ScheduledReviewRequired {
+            path: canonical_str,
+        })
+    } else {
+        Ok(TrustOutcome::HumanUntrusted {
+            path: canonical_str,
+        })
+    }
+}
+
+async fn path_is_under_trusted_project(
+    db: &SchedulerDb,
+    path: &Path,
+) -> scheduler_core::Result<bool> {
+    let projects = db.list_projects().await?;
+    Ok(projects
+        .iter()
+        .filter(|project| project.trusted_at.is_some())
+        .any(|project| {
+            let root = project.git_root.as_deref().unwrap_or(&project.path);
+            path.starts_with(Path::new(root))
+        }))
+}
+
+async fn record_trust_audit(
+    db: &SchedulerDb,
+    task: &Task,
+    trust: TrustOutcome,
+    _metadata: &RpcMetadata,
+) -> Result<(), JsonRpcError> {
+    match trust {
+        TrustOutcome::NoRepoPath | TrustOutcome::Trusted => Ok(()),
+        TrustOutcome::HumanUntrusted { path } => create_task_audit(
+            db,
+            Some(&task.id),
+            RpcActor {
+                actor_type: AuditActorType::Daemon,
+                actor_id: None,
+            },
+            "task.trust_warning",
+            None,
+            Some(json!({ "path": path })),
+            Some("untrusted_repo_path_warning"),
+        )
+        .await
+        .map_err(map_core_error),
+        TrustOutcome::ScheduledReviewRequired { path } => create_task_audit(
+            db,
+            Some(&task.id),
+            RpcActor {
+                actor_type: AuditActorType::Daemon,
+                actor_id: None,
+            },
+            "task.review_required",
+            None,
+            Some(json!({ "path": path })),
+            Some("untrusted_repo_path"),
+        )
+        .await
+        .map_err(map_core_error),
+    }
+}
+
 async fn rpc_task_create(
     state: &Arc<DaemonState>,
     params: TaskCreateParams,
+    metadata: RpcMetadata,
 ) -> Result<TaskResult, JsonRpcError> {
-    let actor = params.actor.unwrap_or_default();
+    let mut authorization = authorize_task_create(state, params.actor, &metadata).await?;
+    let actor = authorization.actor.clone();
     let mut task = Task::try_from(params.task).map_err(map_core_error)?;
+    let trust = apply_repo_path_trust_policy(&state.db, &mut task, actor.actor_type).await?;
     prepare_task_schedule(&mut task);
-    task.created_by = actor.actor_type.as_str().to_owned();
+    if let Some(token) = &authorization.token {
+        task.created_by = "codex".to_owned();
+        task.created_by_run_id = Some(token.run_id.clone());
+    } else {
+        task.created_by = actor.actor_type.as_str().to_owned();
+    }
     task.updated_at = now_rfc3339();
     state.db.create_task(&task).await.map_err(map_core_error)?;
+    if let Some(token) = authorization.token.as_mut() {
+        increment_token_create_count(&state.db, token)
+            .await
+            .map_err(map_core_error)?;
+    }
     create_task_audit(
         &state.db,
         Some(&task.id),
@@ -907,10 +1315,11 @@ async fn rpc_task_create(
         "task.create",
         None,
         Some(serde_json::to_value(TaskDto::from(&task)).map_err(map_json_error)?),
-        None,
+        metadata.reason.as_deref(),
     )
     .await
     .map_err(map_core_error)?;
+    record_trust_audit(&state.db, &task, trust, &metadata).await?;
     state.notify_tick.notify_waiters();
     Ok(TaskResult {
         task: TaskDto::from(&task),
@@ -920,8 +1329,11 @@ async fn rpc_task_create(
 async fn rpc_task_update(
     state: &Arc<DaemonState>,
     params: TaskUpdateParams,
+    metadata: RpcMetadata,
 ) -> Result<TaskResult, JsonRpcError> {
-    let actor = params.actor.unwrap_or_default();
+    let authorization =
+        authorize_task_update(state, params.actor, &metadata, &params.task.id).await?;
+    let actor = authorization.actor;
     let before = state
         .db
         .get_task(&params.task.id)
@@ -935,6 +1347,7 @@ async fn rpc_task_update(
     task.created_by_run_id = before.created_by_run_id.clone();
     task.deleted_at = before.deleted_at.clone();
     task.updated_at = now_rfc3339();
+    let trust = apply_repo_path_trust_policy(&state.db, &mut task, actor.actor_type).await?;
     prepare_task_schedule(&mut task);
     state.db.update_task(&task).await.map_err(map_core_error)?;
     create_task_audit(
@@ -944,10 +1357,11 @@ async fn rpc_task_update(
         "task.update",
         Some(before_json),
         Some(serde_json::to_value(TaskDto::from(&task)).map_err(map_json_error)?),
-        None,
+        metadata.reason.as_deref(),
     )
     .await
     .map_err(map_core_error)?;
+    record_trust_audit(&state.db, &task, trust, &metadata).await?;
     state.notify_tick.notify_waiters();
     Ok(TaskResult {
         task: TaskDto::from(&task),
@@ -957,6 +1371,7 @@ async fn rpc_task_update(
 async fn rpc_task_delete(
     state: &Arc<DaemonState>,
     params: TaskIdParams,
+    metadata: RpcMetadata,
 ) -> Result<TaskDeleteResult, JsonRpcError> {
     let actor = params.actor.unwrap_or_default();
     let before = state
@@ -977,7 +1392,7 @@ async fn rpc_task_delete(
         "task.delete",
         Some(serde_json::to_value(TaskDto::from(&before)).map_err(map_json_error)?),
         None,
-        None,
+        metadata.reason.as_deref(),
     )
     .await
     .map_err(map_core_error)?;
@@ -987,6 +1402,7 @@ async fn rpc_task_delete(
 async fn rpc_task_status(
     state: &Arc<DaemonState>,
     params: TaskIdParams,
+    metadata: RpcMetadata,
     status: TaskStatus,
     action: &str,
 ) -> Result<TaskResult, JsonRpcError> {
@@ -1011,7 +1427,7 @@ async fn rpc_task_status(
         action,
         Some(before_json),
         Some(serde_json::to_value(TaskDto::from(&task)).map_err(map_json_error)?),
-        None,
+        metadata.reason.as_deref(),
     )
     .await
     .map_err(map_core_error)?;
@@ -1024,6 +1440,7 @@ async fn rpc_task_status(
 async fn rpc_task_run_now(
     state: &Arc<DaemonState>,
     params: TaskIdParams,
+    metadata: RpcMetadata,
 ) -> Result<RunResult, JsonRpcError> {
     let actor = params.actor.unwrap_or_default();
     let task = state
@@ -1050,7 +1467,7 @@ async fn rpc_task_run_now(
         "task.runNow",
         None,
         Some(json!({ "runId": run.id })),
-        None,
+        metadata.reason.as_deref(),
     )
     .await
     .map_err(map_core_error)?;
@@ -1088,9 +1505,10 @@ async fn rpc_run_get(
 async fn rpc_run_cancel(
     state: &Arc<DaemonState>,
     params: RunCancelParams,
+    metadata: RpcMetadata,
 ) -> Result<RunResult, JsonRpcError> {
     let actor = params.actor.unwrap_or_default();
-    cancel_run(state, &params.id, actor).await
+    cancel_run(state, &params.id, actor, metadata.reason.as_deref()).await
 }
 
 async fn rpc_run_tail_log(
@@ -1121,6 +1539,7 @@ async fn rpc_run_tail_log(
 async fn rpc_project_trust(
     state: &Arc<DaemonState>,
     params: ProjectTrustParams,
+    metadata: RpcMetadata,
 ) -> Result<ProjectTrustResult, JsonRpcError> {
     let actor = params.actor.unwrap_or_default();
     let canonical = std::fs::canonicalize(&params.path).map_err(|err| {
@@ -1191,7 +1610,7 @@ async fn rpc_project_trust(
         "project.trust",
         None,
         Some(json!({ "projectId": project.id, "path": project.path })),
-        None,
+        metadata.reason.as_deref(),
     )
     .await
     .map_err(map_core_error)?;
@@ -1219,6 +1638,7 @@ async fn rpc_settings_get(
 async fn rpc_settings_set(
     state: &Arc<DaemonState>,
     params: SettingsSetParams,
+    metadata: RpcMetadata,
 ) -> Result<SettingsSetResult, JsonRpcError> {
     let actor = params.actor.unwrap_or_default();
     state
@@ -1239,7 +1659,7 @@ async fn rpc_settings_set(
         "settings.set",
         None,
         Some(json!({ "key": params.key })),
-        None,
+        metadata.reason.as_deref(),
     )
     .await
     .map_err(map_core_error)?;
@@ -1251,6 +1671,7 @@ async fn cancel_run(
     state: &Arc<DaemonState>,
     run_id: &str,
     actor: RpcActor,
+    reason: Option<&str>,
 ) -> Result<RunResult, JsonRpcError> {
     if let Some(active) = state.active_runs.lock().await.get(run_id) {
         active.cancel.cancel();
@@ -1276,7 +1697,7 @@ async fn cancel_run(
         "run.cancel",
         None,
         Some(json!({ "runId": run.id })),
-        None,
+        reason,
     )
     .await
     .map_err(map_core_error)?;
@@ -1559,19 +1980,35 @@ async fn count_running_for_task(
     Ok(count)
 }
 
-async fn count_running_for_project(
+async fn count_running_for_project_key(
     db: &SchedulerDb,
-    project_id: &str,
+    task: &Task,
 ) -> scheduler_core::Result<i64> {
-    Ok(sqlx::query_scalar(
-        "SELECT COUNT(*)
-         FROM runs r
-         JOIN tasks t ON t.id = r.task_id
-         WHERE t.project_id = ? AND r.status IN ('starting', 'running')",
-    )
-    .bind(project_id)
-    .fetch_one(db.pool())
-    .await?)
+    if let Some(project_id) = task.project_id.as_deref() {
+        return Ok(sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM runs r
+             JOIN tasks t ON t.id = r.task_id
+             WHERE t.project_id = ? AND r.status IN ('starting', 'running')",
+        )
+        .bind(project_id)
+        .fetch_one(db.pool())
+        .await?);
+    }
+
+    if let Some(repo_path) = task.repo_path.as_deref() {
+        return Ok(sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM runs r
+             JOIN tasks t ON t.id = r.task_id
+             WHERE t.project_id IS NULL AND t.repo_path = ? AND r.status IN ('starting', 'running')",
+        )
+        .bind(repo_path)
+        .fetch_one(db.pool())
+        .await?);
+    }
+
+    Ok(0)
 }
 
 async fn tail_log_file(
@@ -1622,6 +2059,15 @@ fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+fn string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
 fn to_value<T: Serialize>(value: T) -> Result<Value, JsonRpcError> {
     serde_json::to_value(value).map_err(map_json_error)
 }
@@ -1664,3 +2110,15 @@ const RUN_SELECT: &str = "SELECT id, task_id, trigger_type, scheduled_for, attem
     last_message_path, stdout_tail, stderr_tail, result_summary, findings_count,
     created_schedule_count, created_at, updated_at
     FROM runs";
+
+#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
