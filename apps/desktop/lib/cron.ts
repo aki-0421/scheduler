@@ -13,7 +13,10 @@ export function getCronPreview(
   const fields = normalized ? normalized.split(" ") : [];
 
   if (fields.length === 6) {
-    return { ok: false, error: "seconds are not supported" };
+    return {
+      ok: false,
+      error: "Seconds field is not supported. Use 5-field cron.",
+    };
   }
 
   if (fields.length !== 5) {

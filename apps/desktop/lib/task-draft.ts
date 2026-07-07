@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { getCronPreview } from "@/lib/cron";
+import { localDateTimeToUtcIso, utcIsoToLocalDateTime } from "@/lib/timezone";
 import {
   approvalPolicySchema,
   cleanupPolicySchema,
@@ -47,7 +48,6 @@ export type TaskDraft = {
   cleanupPolicy: "keep" | "delete_on_success" | "delete_after_days";
   allowScheduleCli: boolean;
   capabilities: string[];
-  maxCreatedSchedules: number;
   forcePaused: boolean;
   dangerConfirmed: boolean;
 };
@@ -70,18 +70,16 @@ function slugify(value: string) {
     .slice(0, 64);
 }
 
-function splitTime(value?: string) {
+function splitTime(value: string | undefined, timeZone: string) {
   if (!value) {
     return { date: dateInputValue(tomorrow), time: "09:00" };
   }
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) {
+
+  try {
+    return utcIsoToLocalDateTime(value, timeZone);
+  } catch {
     return { date: dateInputValue(tomorrow), time: "09:00" };
   }
-  return {
-    date: dateInputValue(date),
-    time: date.toTimeString().slice(0, 5),
-  };
 }
 
 function presetExpression(draft: TaskDraft) {
@@ -136,7 +134,7 @@ export function defaultTaskDraft(): TaskDraft {
     cronExpr: "0 9 * * 1-5",
     model: "gpt-5-codex",
     reasoningEffort: "default",
-    sandboxMode: "workspace-write",
+    sandboxMode: "read-only",
     approvalPolicy: "never",
     maxRuntimeSec: 7200,
     maxRetries: 0,
@@ -145,14 +143,13 @@ export function defaultTaskDraft(): TaskDraft {
     cleanupPolicy: "keep",
     allowScheduleCli: true,
     capabilities: ["schedule:create", "schedule:update-current", "schedule:list"],
-    maxCreatedSchedules: 5,
     forcePaused: false,
     dangerConfirmed: false,
   };
 }
 
 export function taskToDraft(task: TaskDto): TaskDraft {
-  const once = splitTime(task.runAt);
+  const once = splitTime(task.runAt, task.timezone);
   return {
     ...defaultTaskDraft(),
     id: task.id,
@@ -181,6 +178,7 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     cleanupPolicy: task.policies.cleanupPolicy ?? "keep",
     allowScheduleCli: task.policies.allowScheduleCli,
     capabilities: task.policies.scheduleCliCapabilities ?? [],
+    forcePaused: task.status === "paused",
   };
 }
 
@@ -221,6 +219,21 @@ const scheduleSchema = z
       });
     }
 
+    if (value.scheduleMode === "once" && value.onceDate && value.onceTime) {
+      try {
+        localDateTimeToUtcIso(value.onceDate, value.onceTime, value.timezone);
+      } catch (error) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["onceDate"],
+          message:
+            error instanceof Error
+              ? error.message
+              : "Invalid date/time for timezone.",
+        });
+      }
+    }
+
     if (value.scheduleMode === "cron") {
       const preview = getCronPreview(value.cronExpr, value.timezone);
       if (!preview.ok) {
@@ -256,13 +269,7 @@ const codexSchema = z
     }
   });
 
-const permissionsSchema = z.object({
-  maxCreatedSchedules: z.coerce
-    .number()
-    .int()
-    .min(0, "Use 0 or greater.")
-    .max(50, "Use 50 or fewer."),
-});
+const permissionsSchema = z.object({});
 
 export function validateTaskDraftStep(draft: TaskDraft, step: number): StepErrors {
   const schemas = [
@@ -301,7 +308,7 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
     kind === "cron" && cronExpr ? getCronPreview(cronExpr, draft.timezone) : undefined;
   const runAt =
     kind === "once"
-      ? new Date(`${draft.onceDate}T${draft.onceTime}:00`).toISOString()
+      ? localDateTimeToUtcIso(draft.onceDate, draft.onceTime, draft.timezone)
       : undefined;
 
   return {

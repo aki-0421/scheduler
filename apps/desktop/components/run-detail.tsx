@@ -37,6 +37,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
   useEffect(() => {
     let canceled = false;
     const cursors: Record<LogStream, number> = { stdout: 0, stderr: 0 };
+    setLogs({ stdout: "", stderr: "" });
 
     async function poll(stream: LogStream) {
       try {
@@ -215,7 +216,8 @@ export function RunDetail({ run, task }: RunDetailProps) {
             </TabsContent>
             <TabsContent value="events">
               <pre className="min-h-64 overflow-auto rounded-md bg-muted p-3 text-xs text-pretty">
-                Events JSONL will appear here when the backend exposes event tailing.
+                Events JSONL tailing is pending a run_tail_log stream enum for events.
+                TODO: wire this tab when the backend accepts stream=&quot;events&quot;.
               </pre>
             </TabsContent>
           </Tabs>
