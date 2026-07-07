@@ -29,6 +29,12 @@ use crate::executor::{
 };
 use crate::rpc::parse_params;
 
+const CAP_SCHEDULE_CREATE: &str = "schedule:create";
+const CAP_SCHEDULE_UPDATE_CURRENT: &str = "schedule:update-current";
+const CAP_SCHEDULE_UPDATE_ANY: &str = "schedule:update-any";
+const CAP_SCHEDULE_PAUSE_CURRENT: &str = "schedule:pause-current";
+const CAP_SCHEDULE_RUN_NOW: &str = "schedule:run-now";
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DaemonEvent {
@@ -551,6 +557,23 @@ async fn expire_run_tokens(
     Ok(())
 }
 
+async fn revoke_run_tokens(
+    db: &SchedulerDb,
+    run_id: &str,
+    revoked_at: &str,
+) -> scheduler_core::Result<()> {
+    sqlx::query(
+        "UPDATE schedule_capability_tokens
+         SET revoked_at = COALESCE(revoked_at, ?)
+         WHERE run_id = ?",
+    )
+    .bind(revoked_at)
+    .bind(run_id)
+    .execute(db.pool())
+    .await?;
+    Ok(())
+}
+
 async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> anyhow::Result<()> {
     let run_dir = state.config.paths.logs_dir.join(&run.id);
     tokio::fs::create_dir_all(&run_dir).await?;
@@ -572,7 +595,7 @@ async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> an
     run.updated_at = now_rfc3339();
     state.db.update_run(&run).await?;
 
-    create_run_event(
+    if let Err(err) = create_run_event(
         &state.db,
         &run.id,
         "info",
@@ -580,7 +603,11 @@ async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> an
         Some("run started".to_owned()),
         None,
     )
-    .await?;
+    .await
+    {
+        mark_run_setup_failure(&state.db, &run.id, err.to_string()).await?;
+        return Err(err.into());
+    }
     publish_event(
         state,
         "run.started",
@@ -598,7 +625,14 @@ async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> an
         },
     );
 
-    let token = issue_run_token(&state.db, &run, &task).await?;
+    let token = match issue_run_token(&state.db, &run, &task).await {
+        Ok(token) => token,
+        Err(err) => {
+            state.active_runs.lock().await.remove(&run.id);
+            mark_run_setup_failure(&state.db, &run.id, err.to_string()).await?;
+            return Err(err.into());
+        }
+    };
     let request = ExecutionRequest {
         run: run.clone(),
         task: task.clone(),
@@ -663,7 +697,11 @@ async fn finish_run(
     run.result_summary = result.result_summary;
     run.updated_at = now_rfc3339();
     state.db.update_run(&run).await?;
-    expire_run_tokens(&state.db, &run.id, ended_at + ChronoDuration::hours(1)).await?;
+    if run.status == RunStatus::Canceled {
+        revoke_run_tokens(&state.db, &run.id, &format_utc_rfc3339(ended_at)).await?;
+    } else {
+        expire_run_tokens(&state.db, &run.id, ended_at + ChronoDuration::hours(1)).await?;
+    }
 
     let event_type = match run.status {
         RunStatus::Succeeded => "run.succeeded",
@@ -801,6 +839,7 @@ async fn interrupt_statuses(
         run.ended_at = run.ended_at.clone().or_else(|| Some(now.clone()));
         run.updated_at = now.clone();
         db.update_run(run).await?;
+        revoke_run_tokens(db, &run.id, &now).await?;
         create_run_event(
             db,
             &run.id,
@@ -1017,39 +1056,67 @@ async fn rpc_task_get(
 }
 
 #[derive(Debug, Clone)]
-struct AuthorizedTaskWrite {
+struct AuthorizedWrite {
     actor: RpcActor,
     token: Option<ScheduleCapabilityToken>,
 }
 
-async fn authorize_task_create(
+async fn authorize_write(
     state: &Arc<DaemonState>,
     actor: Option<RpcActor>,
     metadata: &RpcMetadata,
-) -> Result<AuthorizedTaskWrite, JsonRpcError> {
+) -> Result<AuthorizedWrite, JsonRpcError> {
     if let Some(token_value) = metadata.token.as_deref() {
         let token = validate_run_token(state, token_value, metadata).await?;
-        ensure_capability(&token, "schedule:create")?;
-        if token.create_count >= token.max_creates {
-            return Err(JsonRpcError::new(
-                JsonRpcErrorCode::PermissionDenied,
-                "schedule:create limit exceeded",
-            ));
-        }
-        return Ok(AuthorizedTaskWrite {
+        return Ok(AuthorizedWrite {
             actor: scheduled_run_actor(&token),
             token: Some(token),
         });
     }
 
     let actor = actor.unwrap_or_default();
-    if actor.actor_type == AuditActorType::ScheduledRun {
+    if actor.actor_type == AuditActorType::ScheduledRun
+        || metadata.current_task_id.is_some()
+        || metadata.current_run_id.is_some()
+    {
         return Err(JsonRpcError::new(
             JsonRpcErrorCode::PermissionDenied,
             "scheduled-run writes require a capability token",
         ));
     }
-    Ok(AuthorizedTaskWrite { actor, token: None })
+
+    Ok(AuthorizedWrite { actor, token: None })
+}
+
+fn reject_scheduled_control_write(
+    actor: Option<RpcActor>,
+    metadata: &RpcMetadata,
+    operation: &str,
+) -> Result<RpcActor, JsonRpcError> {
+    let actor = actor.unwrap_or_default();
+    if actor.actor_type == AuditActorType::ScheduledRun
+        || metadata.token.is_some()
+        || metadata.current_task_id.is_some()
+        || metadata.current_run_id.is_some()
+    {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            format!("{operation} is only allowed for user initiated requests"),
+        ));
+    }
+    Ok(actor)
+}
+
+async fn authorize_task_create(
+    state: &Arc<DaemonState>,
+    actor: Option<RpcActor>,
+    metadata: &RpcMetadata,
+) -> Result<AuthorizedWrite, JsonRpcError> {
+    let write = authorize_write(state, actor, metadata).await?;
+    if let Some(token) = &write.token {
+        ensure_capability(token, CAP_SCHEDULE_CREATE)?;
+    }
+    Ok(write)
 }
 
 async fn authorize_task_update(
@@ -1057,35 +1124,23 @@ async fn authorize_task_update(
     actor: Option<RpcActor>,
     metadata: &RpcMetadata,
     target_task_id: &str,
-) -> Result<AuthorizedTaskWrite, JsonRpcError> {
-    if let Some(token_value) = metadata.token.as_deref() {
-        let token = validate_run_token(state, token_value, metadata).await?;
+) -> Result<AuthorizedWrite, JsonRpcError> {
+    let write = authorize_write(state, actor, metadata).await?;
+    if let Some(token) = &write.token {
         if target_task_id == token.task_id {
-            if !token_has_capability(&token, "schedule:update-current")
-                && !token_has_capability(&token, "schedule:update-any")
+            if !token_has_capability(token, CAP_SCHEDULE_UPDATE_CURRENT)
+                && !token_has_capability(token, CAP_SCHEDULE_UPDATE_ANY)
             {
                 return Err(JsonRpcError::new(
                     JsonRpcErrorCode::PermissionDenied,
-                    "missing capability: schedule:update-current",
+                    format!("missing capability: {CAP_SCHEDULE_UPDATE_CURRENT}"),
                 ));
             }
         } else {
-            ensure_capability(&token, "schedule:update-any")?;
+            ensure_capability(token, CAP_SCHEDULE_UPDATE_ANY)?;
         }
-        return Ok(AuthorizedTaskWrite {
-            actor: scheduled_run_actor(&token),
-            token: Some(token),
-        });
     }
-
-    let actor = actor.unwrap_or_default();
-    if actor.actor_type == AuditActorType::ScheduledRun {
-        return Err(JsonRpcError::new(
-            JsonRpcErrorCode::PermissionDenied,
-            "scheduled-run writes require a capability token",
-        ));
-    }
-    Ok(AuthorizedTaskWrite { actor, token: None })
+    Ok(write)
 }
 
 async fn validate_run_token(
@@ -1178,12 +1233,47 @@ fn ensure_capability(
     }
 }
 
-async fn increment_token_create_count(
+async fn reserve_token_create_slot(
     db: &SchedulerDb,
-    token: &mut ScheduleCapabilityToken,
-) -> scheduler_core::Result<()> {
-    token.create_count += 1;
-    db.update_schedule_capability_token(token).await?;
+    token: &ScheduleCapabilityToken,
+) -> Result<(), JsonRpcError> {
+    let result = sqlx::query(
+        r#"
+        UPDATE schedule_capability_tokens
+        SET create_count = create_count + 1
+        WHERE id = ?
+          AND create_count < max_creates
+          AND revoked_at IS NULL
+        "#,
+    )
+    .bind(&token.id)
+    .execute(db.pool())
+    .await
+    .map_err(|err| map_core_error(scheduler_core::SchedulerError::Database(err)))?;
+
+    if result.rows_affected() == 0 {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            "schedule:create limit exceeded",
+        ));
+    }
+    Ok(())
+}
+
+async fn release_token_create_slot(db: &SchedulerDb, token_id: &str) -> scheduler_core::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE schedule_capability_tokens
+        SET create_count = CASE
+            WHEN create_count > 0 THEN create_count - 1
+            ELSE 0
+        END
+        WHERE id = ?
+        "#,
+    )
+    .bind(token_id)
+    .execute(db.pool())
+    .await?;
     Ok(())
 }
 
@@ -1191,7 +1281,6 @@ async fn increment_token_create_count(
 enum TrustOutcome {
     NoRepoPath,
     Trusted,
-    HumanUntrusted { path: String },
     ScheduledReviewRequired { path: String },
 }
 
@@ -1226,9 +1315,10 @@ async fn apply_repo_path_trust_policy(
             path: canonical_str,
         })
     } else {
-        Ok(TrustOutcome::HumanUntrusted {
-            path: canonical_str,
-        })
+        Err(JsonRpcError::new(
+            JsonRpcErrorCode::ValidationFailed,
+            format!("project.trust is required before scheduling repo_path `{canonical_str}`"),
+        ))
     }
 }
 
@@ -1254,20 +1344,6 @@ async fn record_trust_audit(
 ) -> Result<(), JsonRpcError> {
     match trust {
         TrustOutcome::NoRepoPath | TrustOutcome::Trusted => Ok(()),
-        TrustOutcome::HumanUntrusted { path } => create_task_audit(
-            db,
-            Some(&task.id),
-            RpcActor {
-                actor_type: AuditActorType::Daemon,
-                actor_id: None,
-            },
-            "task.trust_warning",
-            None,
-            Some(json!({ "path": path })),
-            Some("untrusted_repo_path_warning"),
-        )
-        .await
-        .map_err(map_core_error),
         TrustOutcome::ScheduledReviewRequired { path } => create_task_audit(
             db,
             Some(&task.id),
@@ -1290,7 +1366,7 @@ async fn rpc_task_create(
     params: TaskCreateParams,
     metadata: RpcMetadata,
 ) -> Result<TaskResult, JsonRpcError> {
-    let mut authorization = authorize_task_create(state, params.actor, &metadata).await?;
+    let authorization = authorize_task_create(state, params.actor, &metadata).await?;
     let actor = authorization.actor.clone();
     let mut task = Task::try_from(params.task).map_err(map_core_error)?;
     let trust = apply_repo_path_trust_policy(&state.db, &mut task, actor.actor_type).await?;
@@ -1302,11 +1378,17 @@ async fn rpc_task_create(
         task.created_by = actor.actor_type.as_str().to_owned();
     }
     task.updated_at = now_rfc3339();
-    state.db.create_task(&task).await.map_err(map_core_error)?;
-    if let Some(token) = authorization.token.as_mut() {
-        increment_token_create_count(&state.db, token)
-            .await
-            .map_err(map_core_error)?;
+    let reserved_token_id = if let Some(token) = authorization.token.as_ref() {
+        reserve_token_create_slot(&state.db, token).await?;
+        Some(token.id.clone())
+    } else {
+        None
+    };
+    if let Err(err) = state.db.create_task(&task).await {
+        if let Some(token_id) = reserved_token_id.as_deref() {
+            let _ = release_token_create_slot(&state.db, token_id).await;
+        }
+        return Err(map_core_error(err));
     }
     create_task_audit(
         &state.db,
@@ -1373,7 +1455,11 @@ async fn rpc_task_delete(
     params: TaskIdParams,
     metadata: RpcMetadata,
 ) -> Result<TaskDeleteResult, JsonRpcError> {
-    let actor = params.actor.unwrap_or_default();
+    let authorization = authorize_write(state, params.actor, &metadata).await?;
+    if let Some(token) = &authorization.token {
+        ensure_capability(token, CAP_SCHEDULE_UPDATE_ANY)?;
+    }
+    let actor = authorization.actor;
     let before = state
         .db
         .get_task(&params.id)
@@ -1406,7 +1492,23 @@ async fn rpc_task_status(
     status: TaskStatus,
     action: &str,
 ) -> Result<TaskResult, JsonRpcError> {
-    let actor = params.actor.unwrap_or_default();
+    let authorization = authorize_write(state, params.actor, &metadata).await?;
+    if let Some(token) = &authorization.token {
+        let is_pause_current = action == "task.pause" && params.id == token.task_id;
+        if is_pause_current {
+            if !token_has_capability(token, CAP_SCHEDULE_PAUSE_CURRENT)
+                && !token_has_capability(token, CAP_SCHEDULE_UPDATE_ANY)
+            {
+                return Err(JsonRpcError::new(
+                    JsonRpcErrorCode::PermissionDenied,
+                    format!("missing capability: {CAP_SCHEDULE_PAUSE_CURRENT}"),
+                ));
+            }
+        } else {
+            ensure_capability(token, CAP_SCHEDULE_UPDATE_ANY)?;
+        }
+    }
+    let actor = authorization.actor;
     let mut task = state
         .db
         .get_task(&params.id)
@@ -1442,7 +1544,11 @@ async fn rpc_task_run_now(
     params: TaskIdParams,
     metadata: RpcMetadata,
 ) -> Result<RunResult, JsonRpcError> {
-    let actor = params.actor.unwrap_or_default();
+    let authorization = authorize_write(state, params.actor, &metadata).await?;
+    if let Some(token) = &authorization.token {
+        ensure_capability(token, CAP_SCHEDULE_RUN_NOW)?;
+    }
+    let actor = authorization.actor;
     let task = state
         .db
         .get_task(&params.id)
@@ -1507,7 +1613,13 @@ async fn rpc_run_cancel(
     params: RunCancelParams,
     metadata: RpcMetadata,
 ) -> Result<RunResult, JsonRpcError> {
-    let actor = params.actor.unwrap_or_default();
+    let authorization = authorize_write(state, params.actor, &metadata).await?;
+    if let Some(token) = &authorization.token {
+        if params.id != token.run_id {
+            ensure_capability(token, CAP_SCHEDULE_UPDATE_ANY)?;
+        }
+    }
+    let actor = authorization.actor;
     cancel_run(state, &params.id, actor, metadata.reason.as_deref()).await
 }
 
@@ -1541,7 +1653,7 @@ async fn rpc_project_trust(
     params: ProjectTrustParams,
     metadata: RpcMetadata,
 ) -> Result<ProjectTrustResult, JsonRpcError> {
-    let actor = params.actor.unwrap_or_default();
+    let actor = reject_scheduled_control_write(params.actor, &metadata, "project.trust")?;
     let canonical = std::fs::canonicalize(&params.path).map_err(|err| {
         JsonRpcError::new(
             JsonRpcErrorCode::ValidationFailed,
@@ -1640,7 +1752,7 @@ async fn rpc_settings_set(
     params: SettingsSetParams,
     metadata: RpcMetadata,
 ) -> Result<SettingsSetResult, JsonRpcError> {
-    let actor = params.actor.unwrap_or_default();
+    let actor = reject_scheduled_control_write(params.actor, &metadata, "settings.set")?;
     state
         .db
         .set_setting(&params.key, &params.value)
@@ -1800,6 +1912,32 @@ async fn mark_run_terminal(
     run.ended_at = Some(now_rfc3339());
     run.updated_at = now_rfc3339();
     db.update_run(&run).await?;
+    Ok(())
+}
+
+async fn mark_run_setup_failure(
+    db: &SchedulerDb,
+    run_id: &str,
+    message: String,
+) -> scheduler_core::Result<()> {
+    let Some(mut run) = db.get_run(run_id).await? else {
+        return Ok(());
+    };
+    run.status = RunStatus::Failed;
+    run.status_reason = Some("setup_failure".to_owned());
+    run.ended_at = Some(now_rfc3339());
+    run.updated_at = now_rfc3339();
+    run.stderr_tail = Some(message.clone());
+    db.update_run(&run).await?;
+    create_run_event(
+        db,
+        run_id,
+        "error",
+        "run.setup_failed",
+        Some(message),
+        Some(json!({ "failureKind": "permanent" })),
+    )
+    .await?;
     Ok(())
 }
 

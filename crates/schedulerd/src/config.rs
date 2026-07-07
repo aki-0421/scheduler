@@ -95,14 +95,18 @@ impl AppPaths {
         std::fs::create_dir_all(&self.data_dir)?;
         set_private_dir_permissions(&self.data_dir)?;
         std::fs::create_dir_all(&self.logs_dir)?;
+        set_private_dir_permissions(&self.logs_dir)?;
         if let Some(parent) = self.db_path.parent() {
             std::fs::create_dir_all(parent)?;
+            set_private_dir_permissions(parent)?;
         }
         if let Some(parent) = self.socket_path.parent() {
             std::fs::create_dir_all(parent)?;
+            set_private_dir_permissions(parent)?;
         }
         if let Some(parent) = self.lock_path.parent() {
             std::fs::create_dir_all(parent)?;
+            set_private_dir_permissions(parent)?;
         }
         Ok(())
     }

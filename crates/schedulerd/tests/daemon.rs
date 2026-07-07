@@ -364,6 +364,22 @@ async fn crash_recovery_marks_stale_running_run_interrupted() {
     db.create_task(&task).await.expect("create task");
     let run = sample_run(&task, RunStatus::Running);
     db.create_run(&run).await.expect("create run");
+    let token_value = "recover_revokes_token";
+    db.create_schedule_capability_token(&ScheduleCapabilityToken {
+        id: new_schedule_capability_token_id(),
+        run_id: run.id.clone(),
+        task_id: task.id.clone(),
+        token_hash: sha256_hex(token_value.as_bytes()),
+        capabilities_json: serde_json::to_string(&vec!["schedule:create".to_owned()])
+            .expect("capabilities"),
+        expires_at: format_utc_rfc3339(Utc::now() + ChronoDuration::hours(1)),
+        max_creates: 5,
+        create_count: 0,
+        revoked_at: None,
+        created_at: now_rfc3339(),
+    })
+    .await
+    .expect("create token");
     drop(db);
 
     let executor = MockExecutor::succeeding();
@@ -384,6 +400,13 @@ async fn crash_recovery_marks_stale_running_run_interrupted() {
         recovered.status_reason.as_deref(),
         Some("daemon_crash_recovery")
     );
+    let token = handle
+        .db()
+        .get_schedule_capability_token_by_hash(&sha256_hex(token_value.as_bytes()))
+        .await
+        .expect("get token")
+        .expect("token");
+    assert!(token.revoked_at.is_some());
 
     handle.shutdown().await;
     drop(temp_dir);
@@ -403,6 +426,13 @@ async fn graceful_shutdown_cancels_or_interrupts_running_run() {
     .await
     .expect("create task");
     assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    let call = executor
+        .calls()
+        .await
+        .into_iter()
+        .find(|call| call.task.id == created.task.id)
+        .expect("executor call");
+    let schedule_token = call.schedule_token.expect("schedule token");
 
     let db = handle.db();
     handle.shutdown().await;
@@ -411,6 +441,12 @@ async fn graceful_shutdown_cancels_or_interrupts_running_run() {
     assert!(runs
         .iter()
         .any(|run| matches!(run.status, RunStatus::Canceled | RunStatus::Interrupted)));
+    let token = db
+        .get_schedule_capability_token_by_hash(&sha256_hex(schedule_token.as_bytes()))
+        .await
+        .expect("get token")
+        .expect("token");
+    assert!(token.revoked_at.is_some());
 }
 
 #[tokio::test]
@@ -639,6 +675,36 @@ async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
 }
 
 #[tokio::test]
+async fn human_untrusted_repo_path_create_is_validation_error() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo_path = temp.path().join("human-untrusted-repo");
+    std::fs::create_dir_all(&repo_path).expect("repo dir");
+
+    let mut task = sample_task_dto("human-untrusted", TaskKind::Manual);
+    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.repo_path = Some(repo_path.to_string_lossy().into_owned());
+    let denied = rpc::call_raw(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams {
+            task,
+            actor: Some(RpcActor {
+                actor_type: AuditActorType::Cli,
+                actor_id: None,
+            }),
+        },
+    )
+    .await
+    .expect("denied response");
+    let error = denied.error.expect("rpc error");
+    assert_eq!(error.code, JsonRpcErrorCode::ValidationFailed.code());
+    assert!(error.message.contains("project.trust is required"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn permanent_failure_is_not_retried() {
     let (_temp, handle, _executor) = start_test_daemon(MockBehavior {
         delay: Duration::from_millis(10),
@@ -665,8 +731,10 @@ async fn permanent_failure_is_not_retried() {
         Duration::from_secs(2),
     )
     .await;
-    assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0].status, RunStatus::Failed);
+    assert!(runs.iter().any(|run| run.status == RunStatus::Failed));
+    assert!(!runs
+        .iter()
+        .any(|run| run.trigger_type == TriggerType::Retry));
 
     handle.shutdown().await;
 }

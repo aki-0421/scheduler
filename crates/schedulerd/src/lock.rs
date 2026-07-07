@@ -71,6 +71,7 @@ impl SingleInstanceLock {
             .read(true)
             .write(true)
             .truncate(false)
+            .mode(0o600)
             .open(path)?;
         set_private_file_permissions(path)?;
         file.try_lock_exclusive()?;
@@ -136,6 +137,32 @@ fn pid_exists(pid: i32) -> bool {
     unsafe {
         libc::kill(pid, 0) == 0
             || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+}
+
+#[cfg(unix)]
+trait PrivateOpenOptionsExt {
+    fn mode(&mut self, mode: u32) -> &mut Self;
+}
+
+#[cfg(unix)]
+impl PrivateOpenOptionsExt for OpenOptions {
+    fn mode(&mut self, mode: u32) -> &mut Self {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        OpenOptionsExt::mode(self, mode)
+    }
+}
+
+#[cfg(not(unix))]
+trait PrivateOpenOptionsExt {
+    fn mode(&mut self, _mode: u32) -> &mut Self;
+}
+
+#[cfg(not(unix))]
+impl PrivateOpenOptionsExt for OpenOptions {
+    fn mode(&mut self, _mode: u32) -> &mut Self {
+        self
     }
 }
 
