@@ -2934,9 +2934,16 @@ name = "schedule-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
+ "chrono-tz",
  "clap",
+ "scheduler-core",
+ "schedulerd",
  "serde",
  "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
