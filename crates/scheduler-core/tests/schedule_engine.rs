@@ -112,6 +112,30 @@ fn validate_cron_rejects_seconds_and_invalid_expressions() {
         validate_cron("@daily"),
         Err(ScheduleError::InvalidCronFieldCount { found: 1 })
     ));
+
+    assert!(matches!(
+        validate_cron("0 0 1 * +MON"),
+        Err(ScheduleError::InvalidCron { .. })
+    ));
+}
+
+#[test]
+fn cron_dom_and_dow_use_standard_or_semantics() {
+    let utc = tz("UTC");
+    let schedule = validate_cron("0 0 1 * 1").expect("valid cron");
+
+    assert_eq!(
+        schedule
+            .next_after(utc, dt("2026-06-30T23:00:00Z"))
+            .expect("next"),
+        dt("2026-07-01T00:00:00Z")
+    );
+    assert_eq!(
+        schedule
+            .next_after(utc, dt("2026-07-01T00:00:00Z"))
+            .expect("next"),
+        dt("2026-07-06T00:00:00Z")
+    );
 }
 
 #[test]
@@ -139,6 +163,47 @@ fn cron_fall_back_ambiguous_local_time_uses_first_occurrence_only() {
     assert_eq!(
         preview,
         vec![dt("2026-11-01T05:30:00Z"), dt("2026-11-02T06:30:00Z")]
+    );
+}
+
+#[test]
+fn cron_fall_back_every_minute_skips_repeated_wall_clock_hour() {
+    let new_york = tz("America/New_York");
+    let schedule = validate_cron("* * * * *").expect("valid cron");
+
+    let preview = schedule
+        .preview(new_york, dt("2026-11-01T05:57:00Z"), 5)
+        .expect("preview");
+
+    assert_eq!(
+        preview,
+        vec![
+            dt("2026-11-01T05:58:00Z"),
+            dt("2026-11-01T05:59:00Z"),
+            dt("2026-11-01T07:00:00Z"),
+            dt("2026-11-01T07:01:00Z"),
+            dt("2026-11-01T07:02:00Z"),
+        ]
+    );
+}
+
+#[test]
+fn cron_fall_back_fifteen_minute_interval_skips_repeated_wall_clock_hour() {
+    let new_york = tz("America/New_York");
+    let schedule = validate_cron("*/15 * * * *").expect("valid cron");
+
+    let preview = schedule
+        .preview(new_york, dt("2026-11-01T05:30:00Z"), 4)
+        .expect("preview");
+
+    assert_eq!(
+        preview,
+        vec![
+            dt("2026-11-01T05:45:00Z"),
+            dt("2026-11-01T07:00:00Z"),
+            dt("2026-11-01T07:15:00Z"),
+            dt("2026-11-01T07:30:00Z"),
+        ]
     );
 }
 
@@ -245,6 +310,28 @@ fn missed_policy_latest_within_window_includes_lower_boundary() {
 }
 
 #[test]
+fn missed_policy_previous_next_run_at_includes_spring_forward_roll_forward_occurrence() {
+    let mut task = sample_task(TaskKind::Cron, Some("30 2 * * *"), None);
+    task.timezone = "America/New_York".to_owned();
+    task.missed_policy = MissedPolicy::LatestWithinWindow;
+    task.missed_window_days = 1;
+
+    let selection = select_missed_runs(
+        &task,
+        Some(MissedRunCursor::PreviousNextRunAt(dt(
+            "2026-03-08T07:00:00Z",
+        ))),
+        dt("2026-03-08T07:30:00Z"),
+        MissedRunOptions::default(),
+    )
+    .expect("missed selection");
+
+    assert_eq!(selection.enqueue, vec![dt("2026-03-08T07:00:00Z")]);
+    assert!(selection.skipped.is_empty());
+    assert_eq!(selection.next_run_at, Some(dt("2026-03-09T06:30:00Z")));
+}
+
+#[test]
 fn missed_policy_run_all_capped_enqueues_oldest_runs_up_to_cap() {
     let mut task = sample_task(TaskKind::Cron, Some("0 0 * * *"), None);
     task.missed_policy = MissedPolicy::RunAllCapped;
@@ -292,7 +379,14 @@ fn missed_policy_run_all_capped_exact_cap_has_no_skipped_runs() {
     )
     .expect("missed selection");
 
-    assert_eq!(selection.enqueue.len(), 3);
+    assert_eq!(
+        selection.enqueue,
+        vec![
+            dt("2026-07-02T00:00:00Z"),
+            dt("2026-07-03T00:00:00Z"),
+            dt("2026-07-04T00:00:00Z"),
+        ]
+    );
     assert!(selection.skipped.is_empty());
 }
 

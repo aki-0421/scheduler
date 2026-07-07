@@ -97,25 +97,14 @@ impl CronSchedule {
     }
 
     pub fn matches_utc(&self, timezone: Tz, at: DateTime<Utc>) -> Result<bool> {
-        let local = at.with_timezone(&timezone);
-        if !self
-            .cron
-            .is_time_matching(&local)
-            .map_err(|err| ScheduleError::InvalidCron {
-                expr: self.expr.clone(),
-                message: err.to_string(),
-            })?
-        {
+        if is_second_ambiguous_occurrence(timezone, at) {
             return Ok(false);
         }
 
-        let first_occurrence = match timezone.from_local_datetime(&local.naive_local()) {
-            chrono::LocalResult::Single(value) => value.with_timezone(&Utc),
-            chrono::LocalResult::Ambiguous(first, _) => first.with_timezone(&Utc),
-            chrono::LocalResult::None => return Ok(false),
+        let Some(before) = at.checked_sub_signed(Duration::seconds(1)) else {
+            return Ok(false);
         };
-
-        Ok(first_occurrence == at)
+        Ok(self.next_after(timezone, before)? == at)
     }
 }
 
@@ -194,6 +183,7 @@ pub fn validate_cron(expr: &str) -> Result<CronSchedule> {
     if field_count != 5 {
         return Err(ScheduleError::InvalidCronFieldCount { found: field_count });
     }
+    validate_standard_cron_characters(trimmed)?;
 
     let parser = CronParser::builder()
         .seconds(Seconds::Disallowed)
@@ -442,6 +432,7 @@ fn next_cron_after(
     after: DateTime<Utc>,
 ) -> Result<DateTime<Utc>> {
     let mut cursor = after;
+    let after_local_wall_clock = after.with_timezone(&timezone).naive_local();
 
     for _ in 0..MAX_CRON_SEARCH_MINUTES {
         let local_cursor = cursor.with_timezone(&timezone);
@@ -453,8 +444,13 @@ fn next_cron_after(
                 message: err.to_string(),
             })?
             .with_timezone(&Utc);
+        let candidate_local_wall_clock = candidate.with_timezone(&timezone).naive_local();
 
-        if candidate > after && candidate > cursor {
+        if candidate > after
+            && candidate > cursor
+            && candidate_local_wall_clock > after_local_wall_clock
+            && !is_second_ambiguous_occurrence(timezone, candidate)
+        {
             return Ok(candidate);
         }
 
@@ -484,22 +480,95 @@ fn missed_occurrences(
     let mut missed = Vec::new();
 
     if inclusive && schedule.matches_utc(timezone, next)? {
-        missed.push(next);
+        push_missed_occurrence(&mut missed, next)?;
     }
 
     loop {
-        if missed.len() > MAX_MISSED_OCCURRENCES {
-            return Err(ScheduleError::MissedOccurrenceLimitExceeded {
-                limit: MAX_MISSED_OCCURRENCES,
-            });
-        }
-
         next = schedule.next_after(timezone, next)?;
         if next > now {
             break;
         }
-        missed.push(next);
+        push_missed_occurrence(&mut missed, next)?;
     }
 
     Ok(missed)
+}
+
+fn push_missed_occurrence(
+    missed: &mut Vec<DateTime<Utc>>,
+    occurrence: DateTime<Utc>,
+) -> Result<()> {
+    if missed.len() >= MAX_MISSED_OCCURRENCES {
+        return Err(ScheduleError::MissedOccurrenceLimitExceeded {
+            limit: MAX_MISSED_OCCURRENCES,
+        });
+    }
+
+    missed.push(occurrence);
+    Ok(())
+}
+
+fn validate_standard_cron_characters(expr: &str) -> Result<()> {
+    let fields = expr.split_whitespace().collect::<Vec<_>>();
+    for (index, field) in fields.iter().enumerate() {
+        for ch in field.chars() {
+            let is_valid = ch.is_ascii_digit()
+                || ch.is_ascii_alphabetic()
+                || matches!(ch, '*' | ',' | '-' | '/');
+            if !is_valid {
+                return Err(ScheduleError::InvalidCron {
+                    expr: expr.to_owned(),
+                    message: format!("unsupported character `{ch}`"),
+                });
+            }
+        }
+
+        validate_alpha_tokens(expr, index, field)?;
+    }
+
+    Ok(())
+}
+
+fn validate_alpha_tokens(expr: &str, field_index: usize, field: &str) -> Result<()> {
+    const MONTH_NAMES: &[&str] = &[
+        "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+    ];
+    const WEEKDAY_NAMES: &[&str] = &["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+    let valid_names = match field_index {
+        3 => Some(MONTH_NAMES),
+        4 => Some(WEEKDAY_NAMES),
+        _ => None,
+    };
+
+    for token in field.split([',', '-', '/']) {
+        if !token.chars().any(|ch| ch.is_ascii_alphabetic()) {
+            continue;
+        }
+
+        let Some(valid_names) = valid_names else {
+            return Err(ScheduleError::InvalidCron {
+                expr: expr.to_owned(),
+                message: format!("unsupported name `{token}`"),
+            });
+        };
+
+        let token = token.to_ascii_uppercase();
+        if !valid_names.contains(&token.as_str()) {
+            return Err(ScheduleError::InvalidCron {
+                expr: expr.to_owned(),
+                message: format!("unsupported name `{token}`"),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn is_second_ambiguous_occurrence(timezone: Tz, at: DateTime<Utc>) -> bool {
+    let local = at.with_timezone(&timezone);
+    match timezone.from_local_datetime(&local.naive_local()) {
+        chrono::LocalResult::Ambiguous(_, second) => second.with_timezone(&Utc) == at,
+        chrono::LocalResult::Single(_) | chrono::LocalResult::None => false,
+    }
 }
