@@ -6,14 +6,14 @@ import type {
   TargetMode,
 } from "@/lib/types";
 
-const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+const dateTimeFormatter = new Intl.DateTimeFormat("ja-JP", {
   dateStyle: "medium",
   timeStyle: "short",
 });
 
 export function formatDateTime(value?: string) {
   if (!value) {
-    return "Not scheduled";
+    return "未設定";
   }
 
   const date = new Date(value);
@@ -36,21 +36,21 @@ export function formatDuration(run: RunDto) {
   }
 
   if (durationMs < 60_000) {
-    return `${Math.round(durationMs / 1000)}s`;
+    return `${Math.round(durationMs / 1000)}秒`;
   }
 
   const minutes = Math.floor(durationMs / 60_000);
   const seconds = Math.round((durationMs % 60_000) / 1000);
-  return `${minutes}m ${seconds}s`;
+  return `${minutes}分 ${seconds}秒`;
 }
 
 export function formatTaskSchedule(task: TaskDto) {
   if (task.kind === "manual") {
-    return "Manual";
+    return "手動";
   }
 
   if (task.kind === "once") {
-    return `Once at ${formatDateTime(task.runAt)}`;
+    return `一回: ${formatDateTime(task.runAt)}`;
   }
 
   return task.cronExpr ? `Cron ${task.cronExpr}` : "Cron";
@@ -58,17 +58,17 @@ export function formatTaskSchedule(task: TaskDto) {
 
 export function formatTaskKind(kind: TaskKind) {
   return {
-    manual: "Manual",
-    once: "Once",
+    manual: "手動",
+    once: "一回",
     cron: "Cron",
   }[kind];
 }
 
 export function formatTargetMode(mode: TargetMode) {
   return {
-    chat: "Chat",
-    "repo-local": "Repository",
-    "repo-worktree": "Worktree",
+    chat: "チャット",
+    "repo-local": "リポジトリ",
+    "repo-worktree": "worktree",
   }[mode];
 }
 

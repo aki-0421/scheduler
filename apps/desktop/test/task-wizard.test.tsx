@@ -19,12 +19,12 @@ describe("TaskWizard cron validation", () => {
 
     renderWithClient(<TaskWizard initialDraft={draft} initialStep={2} />);
 
-    const cronInput = screen.getByLabelText("Cron expression");
+    const cronInput = screen.getByLabelText("Cron 式");
     await user.clear(cronInput);
     await user.type(cronInput, "0 0 1 1 * *");
 
     expect(
-      await screen.findByText("Seconds field is not supported. Use 5-field cron."),
+      await screen.findByText("秒 field はサポートしていません。5-field cron を使ってください。"),
     ).toBeInTheDocument();
   });
 
@@ -40,7 +40,7 @@ describe("TaskWizard cron validation", () => {
     renderWithClient(<TaskWizard initialDraft={draft} initialStep={2} />);
 
     const preview = screen.getByTestId("cron-preview");
-    expect(preview).toHaveTextContent("Next 5 runs");
+    expect(preview).toHaveTextContent("次の 5 回");
     expect(preview.querySelectorAll("span")).toHaveLength(5);
   });
 
@@ -59,9 +59,9 @@ describe("TaskWizard cron validation", () => {
     renderWithClient(<TaskWizard initialDraft={draft} initialStep={5} />);
 
     expect(
-      screen.getByLabelText("I understand the danger-full-access risk"),
+      screen.getByLabelText("danger-full-access のリスクを理解しました"),
     ).toBeInTheDocument();
     expect(screen.getByText("schedule:update-any")).toBeInTheDocument();
-    expect(screen.getByText("Untrusted repository")).toBeInTheDocument();
+    expect(screen.getByText("未信頼のリポジトリ")).toBeInTheDocument();
   });
 });

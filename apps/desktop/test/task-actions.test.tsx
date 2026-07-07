@@ -43,7 +43,7 @@ describe("TaskRowActions", () => {
 
     renderWithClient(<TaskRowActions task={activeTask} />);
 
-    await user.click(screen.getByLabelText("Pause Task Test"));
+    await user.click(screen.getByLabelText("Task Test を一時停止"));
 
     await waitFor(() => expect(pauseSpy).toHaveBeenCalledWith("task_test"));
     pauseSpy.mockRestore();

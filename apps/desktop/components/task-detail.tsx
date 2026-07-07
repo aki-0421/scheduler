@@ -91,8 +91,8 @@ function AuditEventRow({ event }: { event: TaskAuditEvent }) {
         </span>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
-        <AuditPayloadDetails label="Before" value={event.beforeJson} />
-        <AuditPayloadDetails label="After" value={event.afterJson} />
+        <AuditPayloadDetails label="変更前" value={event.beforeJson} />
+        <AuditPayloadDetails label="変更後" value={event.afterJson} />
       </div>
     </div>
   );
@@ -132,7 +132,7 @@ export function TaskDetail({
               ) : null}
             </div>
             <CardDescription className="mt-2">
-              {task.description || "No description"}
+              {task.description || "説明はありません"}
             </CardDescription>
           </div>
           <TaskRowActions
@@ -147,26 +147,26 @@ export function TaskDetail({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="size-4" aria-hidden="true" />
-              Schedule
+              スケジュール
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Expression</span>
+              <span className="text-muted-foreground">式</span>
               <span className="text-right font-medium">{formatTaskSchedule(task)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Timezone</span>
+              <span className="text-muted-foreground">timezone</span>
               <span className="font-medium">{task.timezone}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Next run</span>
+              <span className="text-muted-foreground">次回実行</span>
               <span className="font-medium tabular-nums">
                 {formatDateTime(task.nextRunAt)}
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Missed policy</span>
+              <span className="text-muted-foreground">missed policy</span>
               <Badge variant="outline">{task.policies.missedPolicy}</Badge>
             </div>
           </CardContent>
@@ -176,22 +176,22 @@ export function TaskDetail({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Target className="size-4" aria-hidden="true" />
-              Target
+              実行先
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Mode</span>
+              <span className="text-muted-foreground">mode</span>
               <span className="font-medium">{formatTargetMode(task.target.mode)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Repository</span>
+              <span className="text-muted-foreground">リポジトリ</span>
               <span className="max-w-96 truncate text-right font-mono text-xs">
-                {task.target.repoPath ?? "App-managed workspace"}
+                {task.target.repoPath ?? "アプリ管理のワークスペース"}
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Base ref</span>
+              <span className="text-muted-foreground">base ref</span>
               <span className="font-medium">{task.target.baseRef ?? "default"}</span>
             </div>
           </CardContent>
@@ -201,12 +201,12 @@ export function TaskDetail({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <KeyRound className="size-4" aria-hidden="true" />
-              Permissions
+              権限
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Sandbox</span>
+              <span className="text-muted-foreground">sandbox</span>
               <Badge variant={isDangerFullAccess ? "warning" : "outline"}>
                 {task.codex.sandboxMode}
               </Badge>
@@ -214,7 +214,7 @@ export function TaskDetail({
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Schedule CLI</span>
               <Badge variant={task.policies.allowScheduleCli ? "success" : "muted"}>
-                {task.policies.allowScheduleCli ? "allowed" : "blocked"}
+                {task.policies.allowScheduleCli ? "許可" : "ブロック"}
               </Badge>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -231,7 +231,7 @@ export function TaskDetail({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="size-4" aria-hidden="true" />
-              Prompt
+              prompt
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -244,17 +244,17 @@ export function TaskDetail({
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent runs</CardTitle>
-          <CardDescription>Last scheduler executions for this task.</CardDescription>
+          <CardTitle>最近の run</CardTitle>
+          <CardDescription>このタスクの直近のスケジューラー実行です。</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Status</TableHead>
-                <TableHead>Scheduled for</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Exit</TableHead>
+                <TableHead>status</TableHead>
+                <TableHead>予定時刻</TableHead>
+                <TableHead>所要時間</TableHead>
+                <TableHead>終了コード</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -274,7 +274,7 @@ export function TaskDetail({
               ) : (
                 <TableRow>
                   <TableCell colSpan={4} className="text-muted-foreground">
-                    No runs yet.
+                    run はまだありません。
                   </TableCell>
                 </TableRow>
               )}
@@ -287,7 +287,7 @@ export function TaskDetail({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <History className="size-4" aria-hidden="true" />
-            Audit trail
+            監査ログ
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm">
@@ -297,7 +297,7 @@ export function TaskDetail({
             ))
           ) : (
             <p className="text-muted-foreground">
-              No audit events were returned by the current daemon task API.
+              現在のデーモン task API から監査イベントは返されませんでした。
             </p>
           )}
         </CardContent>

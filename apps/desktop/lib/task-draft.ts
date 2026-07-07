@@ -186,8 +186,8 @@ export function taskToDraft(task: TaskDto): TaskDraft {
 }
 
 const basicsSchema = z.object({
-  name: z.string().trim().min(1, "Name is required."),
-  prompt: z.string().trim().min(1, "Prompt is required."),
+  name: z.string().trim().min(1, "名前は必須です。"),
+  prompt: z.string().trim().min(1, "prompt は必須です。"),
 });
 
 const targetSchema = z
@@ -200,7 +200,7 @@ const targetSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["repoPath"],
-        message: "Repository path is required.",
+        message: "リポジトリパスは必須です。",
       });
     }
   });
@@ -208,7 +208,7 @@ const targetSchema = z
 const scheduleSchema = z
   .object({
     scheduleMode: z.enum(scheduleModes),
-    timezone: z.string().trim().min(1, "Timezone is required."),
+    timezone: z.string().trim().min(1, "timezone は必須です。"),
     onceDate: z.string(),
     onceTime: z.string(),
     cronExpr: z.string(),
@@ -218,7 +218,7 @@ const scheduleSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["onceDate"],
-        message: "Date and time are required.",
+        message: "日付と時刻は必須です。",
       });
     }
 
@@ -232,7 +232,7 @@ const scheduleSchema = z
           message:
             error instanceof Error
               ? error.message
-              : "Invalid date/time for timezone.",
+              : "timezone に対して日時が不正です。",
         });
       }
     }
@@ -251,12 +251,12 @@ const scheduleSchema = z
 
 const codexSchema = z
   .object({
-    model: z.string().trim().min(1, "Model is required."),
-    reasoningEffort: z.string().trim().min(1, "Reasoning effort is required."),
+    model: z.string().trim().min(1, "model は必須です。"),
+    reasoningEffort: z.string().trim().min(1, "reasoning effort は必須です。"),
     sandboxMode: sandboxModeSchema,
     approvalPolicy: approvalPolicySchema,
-    maxRuntimeSec: z.coerce.number().int().min(60, "Use at least 60 seconds."),
-    maxRetries: z.coerce.number().int().min(0, "Retry count cannot be negative."),
+    maxRuntimeSec: z.coerce.number().int().min(60, "60 秒以上を指定してください。"),
+    maxRetries: z.coerce.number().int().min(0, "retry 回数に負の値は指定できません。"),
     missedPolicy: missedPolicySchema,
     overlapPolicy: overlapPolicySchema,
     cleanupPolicy: cleanupPolicySchema,
@@ -267,7 +267,7 @@ const codexSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["dangerConfirmed"],
-        message: "Confirm danger-full-access before continuing.",
+        message: "続行する前に danger-full-access を確認してください。",
       });
     }
   });
@@ -276,8 +276,8 @@ const permissionsSchema = z.object({
   maxCreatedSchedulesPerRun: z.coerce
     .number()
     .int()
-    .min(1, "Use at least 1 schedule.")
-    .max(100, "Use 100 or fewer schedules."),
+    .min(1, "1 件以上のスケジュールを指定してください。")
+    .max(100, "スケジュールは 100 件以下にしてください。"),
 });
 
 export function validateTaskDraftStep(draft: TaskDraft, step: number): StepErrors {

@@ -57,11 +57,11 @@ export default function SettingsPage() {
           setSetting.mutateAsync({ key, value: form[key] }),
         ),
       );
-      toast.success("Settings saved");
+      toast.success("設定を保存しました");
     } catch (error) {
-      toast.error("Could not save settings", {
+      toast.error("設定を保存できませんでした", {
         description:
-          error instanceof Error ? error.message : "Settings command failed.",
+          error instanceof Error ? error.message : "設定コマンドに失敗しました。",
       });
     }
   }
@@ -71,14 +71,14 @@ export default function SettingsPage() {
     try {
       const path = await ipcClient.diagnosticsExport();
       if (path) {
-        toast.success("Diagnostics exported", { description: path });
+        toast.success("診断情報を書き出しました", { description: path });
       } else {
-        toast.info("Diagnostics export canceled");
+        toast.info("診断情報の書き出しをキャンセルしました");
       }
     } catch (error) {
-      toast.error("Could not export diagnostics", {
+      toast.error("診断情報を書き出せませんでした", {
         description:
-          error instanceof Error ? error.message : "Diagnostics command failed.",
+          error instanceof Error ? error.message : "診断コマンドに失敗しました。",
       });
     } finally {
       setIsExportingDiagnostics(false);
@@ -89,29 +89,29 @@ export default function SettingsPage() {
     <div className="grid gap-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-balance">Settings</h1>
+          <h1 className="text-2xl font-semibold text-balance">設定</h1>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Configure scheduler, daemon concurrency, Codex defaults, notifications, and cleanup.
+            スケジューラー、デーモン並列数、Codex 既定値、通知、クリーンアップを設定します。
           </p>
         </div>
         <Button disabled={setSetting.isPending} onClick={() => void save()}>
           <Save className="size-4" aria-hidden="true" />
-          Save
+          保存
         </Button>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Scheduler</CardTitle>
-            <CardDescription>Global scheduling and daemon capacity.</CardDescription>
+            <CardTitle>スケジューラー</CardTitle>
+            <CardDescription>全体のスケジュール動作とデーモン容量です。</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="flex items-center justify-between rounded-md border p-3">
               <div>
-                <Label htmlFor="settings-scheduler-enabled">Scheduler enabled</Label>
+                <Label htmlFor="settings-scheduler-enabled">スケジューラーを有効化</Label>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Global switch for queued schedules.
+                  キュー投入されるスケジュール全体のスイッチです。
                 </p>
               </div>
               <Switch
@@ -120,7 +120,7 @@ export default function SettingsPage() {
                 onCheckedChange={(checked) => update("scheduler.enabled", checked)}
               />
             </div>
-            <Field label="Global concurrency" htmlFor="global-concurrency">
+            <Field label="全体の並列数" htmlFor="global-concurrency">
               <Input
                 id="global-concurrency"
                 type="number"
@@ -139,8 +139,8 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Runner defaults</CardTitle>
-            <CardDescription>Defaults copied into newly created tasks.</CardDescription>
+            <CardTitle>runner 既定値</CardTitle>
+            <CardDescription>新規タスクへコピーされる既定値です。</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <Field label="Codex path" htmlFor="codex-path">
@@ -152,7 +152,7 @@ export default function SettingsPage() {
                 }
               />
             </Field>
-            <Field label="Default model" htmlFor="default-model">
+            <Field label="既定 model" htmlFor="default-model">
               <Input
                 id="default-model"
                 value={form["runner.default_model"]}
@@ -162,7 +162,7 @@ export default function SettingsPage() {
               />
             </Field>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Default sandbox mode">
+              <Field label="既定 sandbox mode">
                 <Select
                   value={form["runner.default_sandbox_mode"]}
                   onValueChange={(value) =>
@@ -184,7 +184,7 @@ export default function SettingsPage() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Default approval policy">
+              <Field label="既定 approval policy">
                 <Select
                   value={form["runner.default_approval_policy"]}
                   onValueChange={(value) =>
@@ -212,15 +212,15 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Notifications</CardTitle>
-            <CardDescription>Desktop notifications for scheduler events.</CardDescription>
+            <CardTitle>通知</CardTitle>
+            <CardDescription>スケジューラーイベントのデスクトップ通知です。</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between rounded-md border p-3">
               <div>
-                <Label htmlFor="notifications-enabled">Notifications enabled</Label>
+                <Label htmlFor="notifications-enabled">通知を有効化</Label>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Notify when a run newly fails or times out.
+                  run が新たに失敗またはタイムアウトしたときに通知します。
                 </p>
               </div>
               <Switch
@@ -234,11 +234,11 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Worktrees</CardTitle>
-            <CardDescription>Default cleanup policy for isolated worktree runs.</CardDescription>
+            <CardTitle>worktree</CardTitle>
+            <CardDescription>隔離 worktree run の既定クリーンアップポリシーです。</CardDescription>
           </CardHeader>
           <CardContent>
-            <Field label="Default cleanup policy">
+            <Field label="既定 cleanup policy">
               <Select
                 value={form["worktree.default_cleanup_policy"]}
                 onValueChange={(value) =>
@@ -265,33 +265,33 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Runtime paths</CardTitle>
-            <CardDescription>Read-only daemon paths used by the local scheduler.</CardDescription>
+            <CardTitle>実行時パス</CardTitle>
+            <CardDescription>ローカルスケジューラーが使う読み取り専用のデーモンパスです。</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 text-sm">
             <div className="grid gap-1">
-              <span className="text-muted-foreground">Socket path</span>
+              <span className="text-muted-foreground">socket path</span>
               <code className="rounded-md bg-muted px-2 py-1 text-xs">
                 ~/Library/Application Support/Codex Scheduler/scheduler.sock
               </code>
             </div>
             <div className="grid gap-1">
-              <span className="text-muted-foreground">Database path</span>
+              <span className="text-muted-foreground">database path</span>
               <code className="rounded-md bg-muted px-2 py-1 text-xs">
                 ~/Library/Application Support/Codex Scheduler/scheduler.sqlite3
               </code>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Schema version</span>
+              <span className="text-muted-foreground">schema version</span>
               <span className="tabular-nums">
                 {health.data?.dbSchemaVersion ?? "unknown"}
               </span>
             </div>
             <div className="flex items-center justify-between gap-4 rounded-md border p-3">
               <div>
-                <p className="font-medium">Diagnostics</p>
+                <p className="font-medium">診断情報</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Export daemon health, diagnostics, and a redacted daemon log tail.
+                  デーモン状態、診断情報、伏せ字化したデーモンログ末尾を書き出します。
                 </p>
               </div>
               <Button
@@ -301,7 +301,7 @@ export default function SettingsPage() {
                 onClick={() => void exportDiagnostics()}
               >
                 <Download className="size-4" aria-hidden="true" />
-                Export diagnostics
+                診断情報を書き出す
               </Button>
             </div>
           </CardContent>

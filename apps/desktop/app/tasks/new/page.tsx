@@ -24,8 +24,8 @@ function NewTaskPageContent() {
       ...draft,
       id: undefined,
       slug: undefined,
-      name: `Follow-up: ${sourceTask.data.name}`,
-      description: sourceRun ? `Follow-up for run ${sourceRun}` : draft.description,
+      name: `フォローアップ: ${sourceTask.data.name}`,
+      description: sourceRun ? `run ${sourceRun} のフォローアップ` : draft.description,
       scheduleMode: "manual" as const,
       forcePaused: false,
     };
@@ -36,7 +36,7 @@ function NewTaskPageContent() {
   }
 
   if (prefillFromTask && sourceTask.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading task...</div>;
+    return <div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>;
   }
 
   return (
@@ -51,7 +51,7 @@ function NewTaskPageContent() {
 
 export default function NewTaskPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">Loading task...</div>}>
+    <Suspense fallback={<div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>}>
       <NewTaskPageContent />
     </Suspense>
   );

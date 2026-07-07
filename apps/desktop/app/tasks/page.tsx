@@ -65,9 +65,9 @@ function TasksPageContent() {
     <div className="grid gap-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-balance">Tasks</h1>
+          <h1 className="text-2xl font-semibold text-balance">タスク</h1>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Manage Codex schedules, targets, and safety policies.
+            Codex のスケジュール、実行先、安全ポリシーを管理します。
           </p>
         </div>
         <div className="flex gap-2">
@@ -79,7 +79,7 @@ function TasksPageContent() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All status</SelectItem>
+              <SelectItem value="all">すべての status</SelectItem>
               {taskStatuses.map((status) => (
                 <SelectItem key={status} value={status}>
                   {status}
@@ -90,7 +90,7 @@ function TasksPageContent() {
           <Button asChild>
             <Link href="/tasks/new">
               <Plus className="size-4" aria-hidden="true" />
-              New Task
+              新規タスク
             </Link>
           </Button>
         </div>
@@ -99,9 +99,9 @@ function TasksPageContent() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>Task list</CardTitle>
+            <CardTitle>タスク一覧</CardTitle>
             <CardDescription>
-              {taskList.length.toLocaleString()} task{taskList.length === 1 ? "" : "s"}
+              {taskList.length.toLocaleString("ja-JP")} 件のタスク
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -109,13 +109,13 @@ function TasksPageContent() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Kind</TableHead>
-                    <TableHead>Schedule</TableHead>
-                    <TableHead>Next run</TableHead>
-                    <TableHead>Last result</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>名前</TableHead>
+                    <TableHead>kind</TableHead>
+                    <TableHead>スケジュール</TableHead>
+                    <TableHead>次回実行</TableHead>
+                    <TableHead>直近結果</TableHead>
+                    <TableHead>status</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -170,9 +170,9 @@ function TasksPageContent() {
             ) : (
               <EmptyState
                 icon={ListTodo}
-                title="No tasks"
-                description="Create a manual, one-time, or cron schedule to start queuing Codex runs."
-                action={{ label: "New Task", href: "/tasks/new" }}
+                title="まだタスクがありません"
+                description="Codex に定期的に任せたい作業を作成しましょう。"
+                action={{ label: "新規タスク", href: "/tasks/new" }}
               />
             )}
           </CardContent>
@@ -189,17 +189,17 @@ function TasksPageContent() {
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>Task detail</CardTitle>
-                <CardDescription>Loading selected task.</CardDescription>
+                <CardTitle>タスク詳細</CardTitle>
+                <CardDescription>選択したタスクを読み込んでいます。</CardDescription>
               </CardHeader>
             </Card>
           )
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Task detail</CardTitle>
+              <CardTitle>タスク詳細</CardTitle>
               <CardDescription>
-                Select a task from the table to inspect prompt, policies, runs, and audit events.
+                テーブルからタスクを選択すると、prompt、ポリシー、run、監査イベントを確認できます。
               </CardDescription>
             </CardHeader>
           </Card>
@@ -209,7 +209,7 @@ function TasksPageContent() {
       <Dialog open={Boolean(editingTask)} onOpenChange={(open) => !open && setEditingTask(undefined)}>
         <DialogContent className="max-h-[90dvh] overflow-auto">
           <DialogHeader>
-            <DialogTitle>Edit task</DialogTitle>
+            <DialogTitle>タスクを編集</DialogTitle>
           </DialogHeader>
           {editingTask ? (
             <TaskWizard
@@ -226,7 +226,7 @@ function TasksPageContent() {
 
 export default function TasksPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">Loading tasks...</div>}>
+    <Suspense fallback={<div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>}>
       <TasksPageContent />
     </Suspense>
   );

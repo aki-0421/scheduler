@@ -589,7 +589,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const run = runById(input.id as string);
       run.status = "canceled";
       run.endedAt = new Date().toISOString();
-      run.resultSummary = "Run canceled from UI.";
+      run.resultSummary = "UI から run をキャンセルしました。";
       return { run: clone(run) };
     }
     case "run_tail_log": {

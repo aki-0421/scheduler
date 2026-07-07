@@ -48,19 +48,19 @@ export default function ProjectsPage() {
   function trust() {
     const trimmed = path.trim();
     if (!trimmed) {
-      toast.error("Enter a project path.");
+      toast.error("プロジェクトパスを入力してください。");
       return;
     }
 
     trustProject.mutate(trimmed, {
       onSuccess: () => {
         setPath("");
-        toast.success("Project trusted");
+        toast.success("プロジェクトを信頼しました");
       },
       onError: (error) =>
-        toast.error("Could not trust project", {
+        toast.error("プロジェクトを信頼できませんでした", {
           description:
-            error instanceof Error ? error.message : "Project command failed.",
+            error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
         }),
     });
   }
@@ -68,17 +68,17 @@ export default function ProjectsPage() {
   return (
     <div className="grid gap-5">
       <div>
-        <h1 className="text-2xl font-semibold text-balance">Projects</h1>
+        <h1 className="text-2xl font-semibold text-balance">プロジェクト</h1>
         <p className="mt-1 text-sm text-muted-foreground text-pretty">
-          Manage trusted local folders and repositories for scheduled runs.
+          スケジュール実行で使うローカルフォルダーとリポジトリの信頼状態を管理します。
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Trust project path</CardTitle>
+          <CardTitle>プロジェクトパスを信頼</CardTitle>
           <CardDescription>
-            Add an absolute path that Codex Scheduler may use for repo-backed tasks.
+            リポジトリ付きタスクで Codex Scheduler が使用できる絶対パスを追加します。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -90,7 +90,7 @@ export default function ProjectsPage() {
             />
             <Button disabled={trustProject.isPending} onClick={trust}>
               <Plus className="size-4" aria-hidden="true" />
-              Trust
+              信頼
             </Button>
           </div>
         </CardContent>
@@ -98,10 +98,9 @@ export default function ProjectsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Trusted projects</CardTitle>
+          <CardTitle>プロジェクト一覧</CardTitle>
           <CardDescription>
-            {projectList.length.toLocaleString()} trusted path
-            {projectList.length === 1 ? "" : "s"}
+            {projectList.length.toLocaleString("ja-JP")} 件のプロジェクト
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -109,13 +108,13 @@ export default function ProjectsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Path</TableHead>
-                  <TableHead>Active tasks</TableHead>
-                  <TableHead>Default branch</TableHead>
-                  <TableHead>Trusted at</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>名前</TableHead>
+                  <TableHead>kind</TableHead>
+                  <TableHead>パス</TableHead>
+                  <TableHead>active タスク</TableHead>
+                  <TableHead>default branch</TableHead>
+                  <TableHead>信頼日時</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -138,7 +137,7 @@ export default function ProjectsPage() {
                     <TableCell className="text-right">
                       {/* TODO: Enable untrust when a project_untrust IPC command exists. */}
                       <Button variant="outline" size="sm" disabled>
-                        Untrust
+                        信頼解除
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -148,8 +147,8 @@ export default function ProjectsPage() {
           ) : (
             <EmptyState
               icon={FolderGit2}
-              title="No trusted projects"
-              description="Trust a local path before creating repository-backed tasks."
+              title="プロジェクトはまだありません"
+              description="リポジトリ付きタスクを作成する前に、ローカルパスを信頼してください。"
             />
           )}
         </CardContent>

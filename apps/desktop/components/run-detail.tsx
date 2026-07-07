@@ -120,7 +120,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
             ...current,
             [stream]:
               current[stream] ||
-              "Log tail is not available yet. The backend may not have created log files.",
+              "ログ末尾はまだ取得できません。バックエンドがログファイルを作成していない可能性があります。",
           }));
         }
       }
@@ -148,11 +148,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
   function cancel() {
     cancelRun
       .mutateAsync(run.id)
-      .then(() => toast.success("Run canceled"))
+      .then(() => toast.success("run をキャンセルしました"))
       .catch((error) =>
-        toast.error("Could not cancel run", {
+        toast.error("run をキャンセルできませんでした", {
           description:
-            error instanceof Error ? error.message : "Scheduler command failed.",
+            error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
         }),
       );
   }
@@ -160,11 +160,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
   function rerun() {
     runTaskNow
       .mutateAsync(run.taskId)
-      .then(() => toast.success("Re-run queued"))
+      .then(() => toast.success("再実行をキューに入れました"))
       .catch((error) =>
-        toast.error("Could not queue re-run", {
+        toast.error("再実行をキューに入れられませんでした", {
           description:
-            error instanceof Error ? error.message : "Scheduler command failed.",
+            error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
         }),
       );
   }
@@ -172,11 +172,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
   function openPath(path: string, label: string) {
     ipcClient
       .openPath(path)
-      .then(() => toast.success(`${label} opened in Finder`))
+      .then(() => toast.success(`${label}を Finder で開きました`))
       .catch((error) =>
-        toast.error(`Could not open ${label.toLowerCase()}`, {
+        toast.error(`${label}を開けませんでした`, {
           description:
-            error instanceof Error ? error.message : "Open path command failed.",
+            error instanceof Error ? error.message : "パスを開くコマンドに失敗しました。",
         }),
       );
   }
@@ -186,12 +186,12 @@ export function RunDetail({ run, task }: RunDetailProps) {
     try {
       const path = await ipcClient.exportRunLogs(run.id);
       if (path) {
-        toast.success("Logs exported", { description: path });
+        toast.success("ログを書き出しました", { description: path });
       }
     } catch (error) {
-      toast.error("Could not export logs", {
+      toast.error("ログを書き出せませんでした", {
         description:
-          error instanceof Error ? error.message : "Export command failed.",
+          error instanceof Error ? error.message : "書き出しコマンドに失敗しました。",
       });
     } finally {
       setIsExportingLogs(false);
@@ -216,10 +216,10 @@ export function RunDetail({ run, task }: RunDetailProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => openPath(workspaceToOpen, "Workspace")}
+                onClick={() => openPath(workspaceToOpen, "ワークスペース")}
               >
                 <FolderOpen className="size-4" aria-hidden="true" />
-                Open workspace
+                ワークスペースを開く
               </Button>
             ) : null}
             <Button variant="outline" asChild>
@@ -227,18 +227,18 @@ export function RunDetail({ run, task }: RunDetailProps) {
                 href={`/tasks/new?prefillFromTask=${encodeURIComponent(run.taskId)}&sourceRun=${encodeURIComponent(run.id)}`}
               >
                 <PlusCircle className="size-4" aria-hidden="true" />
-                Create follow-up task
+                フォローアップタスクを作成
               </Link>
             </Button>
             {active ? (
               <Button variant="outline" disabled={cancelRun.isPending} onClick={cancel}>
                 <Square className="size-4" aria-hidden="true" />
-                Cancel
+                キャンセル
               </Button>
             ) : null}
             <Button variant="outline" disabled={runTaskNow.isPending} onClick={rerun}>
               <RotateCcw className="size-4" aria-hidden="true" />
-              Re-run
+              再実行
             </Button>
           </div>
         </CardHeader>
@@ -247,53 +247,53 @@ export function RunDetail({ run, task }: RunDetailProps) {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Metadata</CardTitle>
+            <CardTitle>メタデータ</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Scheduled for</span>
+              <span className="text-muted-foreground">予定時刻</span>
               <span className="tabular-nums">{formatDateTime(run.scheduledFor)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Started</span>
+              <span className="text-muted-foreground">開始</span>
               <span className="tabular-nums">{formatDateTime(run.startedAt)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Duration</span>
+              <span className="text-muted-foreground">所要時間</span>
               <span>{formatDuration(run)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Exit code</span>
+              <span className="text-muted-foreground">終了コード</span>
               <span>{run.exitCode ?? "—"}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Workspace</span>
+              <span className="text-muted-foreground">ワークスペース</span>
               <span className="max-w-96 truncate font-mono text-xs">
                 {run.workspacePath ?? "—"}
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Worktree</span>
+              <span className="text-muted-foreground">worktree</span>
               <span className="max-w-96 truncate font-mono text-xs">
                 {run.worktreePath ?? "—"}
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Branch</span>
+              <span className="text-muted-foreground">ブランチ</span>
               <span className="max-w-96 truncate font-mono text-xs">
                 {run.branchName ?? "—"}
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Base ref</span>
+              <span className="text-muted-foreground">base ref</span>
               <span className="font-mono text-xs">{run.baseRef ?? "—"}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Commit before</span>
+              <span className="text-muted-foreground">変更前 commit</span>
               <span className="font-mono text-xs">{shortValue(run.commitBefore)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Commit after</span>
+              <span className="text-muted-foreground">変更後 commit</span>
               <span className="font-mono text-xs">{shortValue(run.commitAfter)}</span>
             </div>
             {/* TODO: Show codexCommandJson here when RunDto exposes it. */}
@@ -302,16 +302,16 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Final message</CardTitle>
+            <CardTitle>最終メッセージ</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 text-sm">
             <p className="text-pretty">
-              {run.resultSummary || "No final message has been recorded yet."}
+              {run.resultSummary || "最終メッセージはまだ記録されていません。"}
             </p>
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">findings {run.findingsCount ?? 0}</Badge>
               <Badge variant="outline">
-                created schedules {run.createdScheduleCount ?? 0}
+                作成 schedule {run.createdScheduleCount ?? 0}
               </Badge>
             </div>
             {run.statusReason ? (
@@ -326,9 +326,9 @@ export function RunDetail({ run, task }: RunDetailProps) {
       <Card>
         <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
           <div>
-            <CardTitle>Logs</CardTitle>
+            <CardTitle>ログ</CardTitle>
             <CardDescription>
-              stdout/stderr/events tail is cursor-polled while a run is active.
+              run が active の間、stdout/stderr/events の末尾を cursor でポーリングします。
             </CardDescription>
           </div>
           <Button
@@ -338,7 +338,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
             onClick={() => void exportLogs()}
           >
             <Download className="size-4" aria-hidden="true" />
-            Export logs
+            ログを書き出す
           </Button>
         </CardHeader>
         <CardContent>
@@ -350,12 +350,12 @@ export function RunDetail({ run, task }: RunDetailProps) {
             </TabsList>
             <TabsContent value="stdout">
               <pre className="min-h-64 overflow-auto rounded-md bg-muted p-3 text-xs text-pretty">
-                {logs.stdout || run.stdoutTail || "No stdout yet."}
+                {logs.stdout || run.stdoutTail || "stdout はまだありません。"}
               </pre>
             </TabsContent>
             <TabsContent value="stderr">
               <pre className="min-h-64 overflow-auto rounded-md bg-muted p-3 text-xs text-pretty">
-                {logs.stderr || run.stderrTail || "No stderr yet."}
+                {logs.stderr || run.stderrTail || "stderr はまだありません。"}
               </pre>
             </TabsContent>
             <TabsContent value="events">
@@ -370,7 +370,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
                         </div>
                         <details className="mt-2 text-xs">
                           <summary className="cursor-pointer text-muted-foreground">
-                            Raw JSON
+                            未加工 JSON
                           </summary>
                           <pre className="mt-2 overflow-auto rounded bg-muted p-2">
                             {event.raw}
@@ -380,7 +380,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">No events yet.</p>
+                  <p className="text-xs text-muted-foreground">events はまだありません。</p>
                 )}
               </div>
             </TabsContent>
@@ -390,8 +390,8 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Artifacts</CardTitle>
-          <CardDescription>Files recorded by the completed run.</CardDescription>
+          <CardTitle>成果物</CardTitle>
+          <CardDescription>完了した run が記録したファイルです。</CardDescription>
         </CardHeader>
         <CardContent>
           {artifacts.length ? (
@@ -419,17 +419,17 @@ export function RunDetail({ run, task }: RunDetailProps) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => openPath(artifact.path, "Artifact")}
+                    onClick={() => openPath(artifact.path, "成果物")}
                   >
                     <FolderOpen className="size-4" aria-hidden="true" />
-                    Show in Finder
+                    Finder で表示
                   </Button>
                 </div>
               ))}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No artifacts have been recorded for this run.
+              この run に記録された成果物はありません。
             </p>
           )}
         </CardContent>

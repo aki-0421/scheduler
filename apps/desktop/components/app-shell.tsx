@@ -22,11 +22,11 @@ import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Tasks", href: "/tasks", icon: ListTodo },
-  { label: "Runs", href: "/runs", icon: Activity },
-  { label: "Projects", href: "/projects", icon: FolderGit2 },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "ダッシュボード", href: "/", icon: LayoutDashboard },
+  { label: "タスク", href: "/tasks", icon: ListTodo },
+  { label: "実行履歴", href: "/runs", icon: Activity },
+  { label: "プロジェクト", href: "/projects", icon: FolderGit2 },
+  { label: "設定", href: "/settings", icon: Settings },
 ];
 
 function isActivePath(pathname: string, href: string) {
@@ -46,8 +46,8 @@ function HealthIndicator() {
       <Badge variant={variant}>{status}</Badge>
       <span className="hidden text-xs text-muted-foreground tabular-nums md:inline">
         {health.data
-          ? `${health.data.runningCount} running · ${health.data.queuedCount} queued`
-          : "daemon health"}
+          ? `${health.data.runningCount.toLocaleString("ja-JP")} 件実行中 · ${health.data.queuedCount.toLocaleString("ja-JP")} 件待機中`
+          : "デーモン状態"}
       </span>
     </div>
   );
@@ -61,7 +61,7 @@ function SchedulerEnabledToggle() {
   return (
     <div className="flex items-center gap-2">
       <Label htmlFor="global-scheduler-enabled" className="hidden text-xs md:block">
-        Scheduler
+        スケジューラー
       </Label>
       <Switch
         id="global-scheduler-enabled"
@@ -72,15 +72,15 @@ function SchedulerEnabledToggle() {
             { key: "scheduler.enabled", value: checked },
             {
               onError: (error) => {
-                toast.error("Could not update scheduler setting", {
+                toast.error("スケジューラー設定を更新できませんでした", {
                   description:
-                    error instanceof Error ? error.message : "Settings command failed.",
+                    error instanceof Error ? error.message : "設定コマンドに失敗しました。",
                 });
               },
             },
           )
         }
-        aria-label="Toggle global scheduler enabled"
+        aria-label="スケジューラーの有効状態を切り替える"
       />
     </div>
   );
@@ -107,10 +107,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">Codex Scheduler</p>
-              <p className="truncate text-xs text-muted-foreground">Local automation</p>
+              <p className="truncate text-xs text-muted-foreground">ローカル自動化</p>
             </div>
           </div>
-          <nav className="grid gap-1 p-3" aria-label="Primary">
+          <nav className="grid gap-1 p-3" aria-label="主要ナビゲーション">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = isActivePath(pathname, item.href);
@@ -148,7 +148,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Button asChild size="sm">
                 <Link href="/tasks/new">
                   <Plus className="size-4" aria-hidden="true" />
-                  New Task
+                  新規タスク
                 </Link>
               </Button>
             </div>

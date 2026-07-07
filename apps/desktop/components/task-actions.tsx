@@ -42,7 +42,7 @@ export function TaskRowActions({ task, onEdit }: TaskRowActionsProps) {
       .catch((error) =>
         toast.error(failure, {
           description:
-            error instanceof Error ? error.message : "Scheduler command failed.",
+            error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
         }),
       );
   }
@@ -52,10 +52,14 @@ export function TaskRowActions({ task, onEdit }: TaskRowActionsProps) {
       <Button
         variant="ghost"
         size="icon"
-        aria-label={`Run ${task.name} now`}
+        aria-label={`${task.name} を今すぐ実行`}
         disabled={runNow.isPending || task.status === "deleted"}
         onClick={() =>
-          withToast(runNow.mutateAsync(task.id), "Run queued", "Could not queue run")
+          withToast(
+            runNow.mutateAsync(task.id),
+            "run をキューに入れました",
+            "run をキューに入れられませんでした",
+          )
         }
       >
         <Play className="size-4" aria-hidden="true" />
@@ -64,10 +68,14 @@ export function TaskRowActions({ task, onEdit }: TaskRowActionsProps) {
         <Button
           variant="ghost"
           size="icon"
-          aria-label={`Pause ${task.name}`}
+          aria-label={`${task.name} を一時停止`}
           disabled={pause.isPending}
           onClick={() =>
-            withToast(pause.mutateAsync(task.id), "Task paused", "Could not pause task")
+            withToast(
+              pause.mutateAsync(task.id),
+              "タスクを一時停止しました",
+              "タスクを一時停止できませんでした",
+            )
           }
         >
           <Pause className="size-4" aria-hidden="true" />
@@ -76,13 +84,13 @@ export function TaskRowActions({ task, onEdit }: TaskRowActionsProps) {
         <Button
           variant="ghost"
           size="icon"
-          aria-label={`Resume ${task.name}`}
+          aria-label={`${task.name} を再開`}
           disabled={!canResume || resume.isPending}
           onClick={() =>
             withToast(
               resume.mutateAsync(task.id),
-              "Task resumed",
-              "Could not resume task",
+              "タスクを再開しました",
+              "タスクを再開できませんでした",
             )
           }
         >
@@ -92,37 +100,37 @@ export function TaskRowActions({ task, onEdit }: TaskRowActionsProps) {
       <Button
         variant="ghost"
         size="icon"
-        aria-label={`Edit ${task.name}`}
+        aria-label={`${task.name} を編集`}
         onClick={() => onEdit?.(task)}
       >
         <Pencil className="size-4" aria-hidden="true" />
       </Button>
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label={`Delete ${task.name}`}>
+          <Button variant="ghost" size="icon" aria-label={`${task.name} を削除`}>
             <Trash2 className="size-4" aria-hidden="true" />
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete task</AlertDialogTitle>
+            <AlertDialogTitle>タスクを削除しますか？</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes {task.name} from active schedules. Existing runs remain in history.
+              {task.name} を有効なスケジュールから削除します。既存の run 履歴は残ります。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() =>
                 withToast(
                   deleteTask.mutateAsync(task.id),
-                  "Task deleted",
-                  "Could not delete task",
+                  "タスクを削除しました",
+                  "タスクを削除できませんでした",
                 )
               }
             >
-              Delete
+              削除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

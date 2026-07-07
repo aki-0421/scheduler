@@ -85,9 +85,9 @@ export default function DashboardPage() {
     <div className="grid gap-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-balance">Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-balance">ダッシュボード</h1>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Scheduler status, upcoming work, and recent Codex runs.
+            スケジューラーの状態、今後の実行予定、最近の Codex 実行を確認します。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -99,21 +99,21 @@ export default function DashboardPage() {
                 onSuccess: (result) =>
                   toast.success(
                     result.triggered
-                      ? "Due check triggered"
-                      : "Daemon accepted tick request",
+                      ? "期限チェックを開始しました"
+                      : "デーモンが tick 要求を受け付けました",
                   ),
                 onError: (error) =>
-                  toast.error("Could not trigger due check", {
+                  toast.error("期限チェックを開始できませんでした", {
                     description:
                       error instanceof Error
                         ? error.message
-                        : "Daemon command failed.",
+                        : "デーモンコマンドに失敗しました。",
                   }),
               })
             }
           >
             <Clock className="size-4" aria-hidden="true" />
-            Run due check now
+            期限チェックを実行
           </Button>
           <Button
             variant="outline"
@@ -122,29 +122,29 @@ export default function DashboardPage() {
               setSetting.mutate(
                 { key: "scheduler.enabled", value: false },
                 {
-                  onSuccess: () => toast.success("Schedules paused"),
+                  onSuccess: () => toast.success("スケジュールを一時停止しました"),
                   onError: (error) =>
-                    toast.error("Could not pause schedules", {
+                    toast.error("スケジュールを一時停止できませんでした", {
                       description:
                         error instanceof Error
                           ? error.message
-                          : "Settings command failed.",
+                          : "設定コマンドに失敗しました。",
                     }),
                 },
               )
             }
           >
             <PauseCircle className="size-4" aria-hidden="true" />
-            Pause all schedules
+            全スケジュールを一時停止
           </Button>
           <Button asChild>
             <Link href="/tasks/new">
               <Plus className="size-4" aria-hidden="true" />
-              New Task
+              新規タスク
             </Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link href="/runs">Open diagnostics</Link>
+            <Link href="/runs">診断を開く</Link>
           </Button>
         </div>
       </div>
@@ -153,7 +153,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-sm">
-              Scheduler status
+              スケジューラー状態
               <Activity className="size-4 text-muted-foreground" aria-hidden="true" />
             </CardTitle>
           </CardHeader>
@@ -162,50 +162,50 @@ export default function DashboardPage() {
               {health.data?.schedulerEnabled ? "Running" : "Paused"}
             </Badge>
             <p className="mt-2 text-xs text-muted-foreground">
-              daemon {health.data?.version ?? "checking"}
+              デーモン {health.data?.version ?? "確認中"}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-sm">
-              Running now
+              実行中
               <Play className="size-4 text-muted-foreground" aria-hidden="true" />
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold tabular-nums">{runningCount}</p>
-            <p className="mt-1 text-xs text-muted-foreground">queued or active runs</p>
+            <p className="mt-1 text-xs text-muted-foreground">待機中または実行中の run</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-sm">
-              Failed last 24h
+              直近 24 時間の失敗
               <AlertCircle className="size-4 text-muted-foreground" aria-hidden="true" />
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold tabular-nums">{failedLastDay}</p>
-            <p className="mt-1 text-xs text-muted-foreground">failed or timed out</p>
+            <p className="mt-1 text-xs text-muted-foreground">failed または timed_out</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-sm">
-              Requiring review
+              要確認
               <ListTodo className="size-4 text-muted-foreground" aria-hidden="true" />
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold tabular-nums">{requiringReview}</p>
-            <p className="mt-1 text-xs text-muted-foreground">triage conditions matched</p>
+            <p className="mt-1 text-xs text-muted-foreground">triage 条件に一致</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-sm">
-              Codex CLI health
+              Codex CLI 状態
               <Stethoscope className="size-4 text-muted-foreground" aria-hidden="true" />
             </CardTitle>
           </CardHeader>
@@ -226,11 +226,11 @@ export default function DashboardPage() {
             <p className="mt-2 text-xs text-muted-foreground">
               {diagnostics.data
                 ? diagnostics.data.codexPath.exists
-                  ? "codex path exists"
-                  : "codex path was not found"
+                  ? "codex path は存在します"
+                  : "codex path が見つかりません"
                 : health.data?.ok
-                  ? "daemon healthy; diagnostics unavailable"
-                  : "daemon health unavailable"}
+                  ? "デーモンは正常です。診断情報は未取得です"
+                  : "デーモン状態を取得できません"}
             </p>
           </CardContent>
         </Card>
@@ -241,19 +241,19 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="size-4" aria-hidden="true" />
-              Next 10 runs
+              次の 10 件
             </CardTitle>
-            <CardDescription>Active tasks sorted by next_run_at.</CardDescription>
+            <CardDescription>active なタスクを next_run_at 順に表示します。</CardDescription>
           </CardHeader>
           <CardContent>
             {nextRuns.length ? (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Task</TableHead>
-                    <TableHead>Schedule</TableHead>
-                    <TableHead>Next run</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>タスク</TableHead>
+                    <TableHead>スケジュール</TableHead>
+                    <TableHead>次回実行</TableHead>
+                    <TableHead>status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -278,9 +278,9 @@ export default function DashboardPage() {
             ) : (
               <EmptyState
                 icon={Clock}
-                title="No upcoming runs"
-                description="Create or resume an active scheduled task to populate this queue."
-                action={{ label: "New Task", href: "/tasks/new" }}
+                title="実行予定はありません"
+                description="スケジュール済みタスクを作成または再開すると、このキューに表示されます。"
+                action={{ label: "新規タスク", href: "/tasks/new" }}
               />
             )}
           </CardContent>
@@ -288,18 +288,18 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Recent runs</CardTitle>
-            <CardDescription>Latest execution outcomes across all tasks.</CardDescription>
+            <CardTitle>最近の run</CardTitle>
+            <CardDescription>全タスクの最新実行結果です。</CardDescription>
           </CardHeader>
           <CardContent>
             {recentRuns.length ? (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Run</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Duration</TableHead>
+                    <TableHead>status</TableHead>
+                    <TableHead>run</TableHead>
+                    <TableHead>開始</TableHead>
+                    <TableHead>所要時間</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -324,9 +324,9 @@ export default function DashboardPage() {
             ) : (
               <EmptyState
                 icon={Activity}
-                title="No runs yet"
-                description="Runs appear here after a task is queued or triggered manually."
-                action={{ label: "Open Tasks", href: "/tasks" }}
+                title="run はまだありません"
+                description="タスクがキューに入るか手動実行されると、ここに表示されます。"
+                action={{ label: "タスクを開く", href: "/tasks" }}
               />
             )}
           </CardContent>
