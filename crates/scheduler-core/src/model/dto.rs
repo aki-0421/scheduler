@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::enums::{
-    ApprovalPolicy, CleanupPolicy, MissedPolicy, OverlapPolicy, RunStatus, RunTargetMode,
-    SandboxMode, TaskKind, TaskStatus, TriggerType,
+    ApprovalPolicy, CleanupPolicy, MissedPolicy, OverlapPolicy, ProjectKind, RunStatus,
+    RunTargetMode, SandboxMode, TaskKind, TaskStatus, TriggerType,
 };
 use super::ids::{new_run_id, new_task_id};
-use super::tables::{Run, Task};
+use super::tables::{Project, Run, Setting, Task};
 use crate::time::now_rfc3339;
 use crate::util::prompt_hash;
 use crate::{Result, SchedulerError};
@@ -201,15 +201,51 @@ pub struct RunDto {
     pub trigger_type: TriggerType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scheduled_for: Option<String>,
+    #[serde(default)]
+    pub attempt: i64,
     pub status: RunStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_reason: Option<String>,
+    #[serde(default)]
+    pub queued_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i64>,
+    #[serde(default)]
+    pub target_mode: RunTargetMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdout_log_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stderr_log_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events_jsonl_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_message_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdout_tail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stderr_tail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_summary: Option<String>,
     pub findings_count: i64,
@@ -223,11 +259,29 @@ impl From<&Run> for RunDto {
             task_id: run.task_id.clone(),
             trigger_type: run.trigger_type,
             scheduled_for: run.scheduled_for.clone(),
+            attempt: run.attempt,
             status: run.status,
+            status_reason: run.status_reason.clone(),
+            queued_at: run.queued_at.clone(),
             started_at: run.started_at.clone(),
             ended_at: run.ended_at.clone(),
+            duration_ms: run.duration_ms,
+            target_mode: run.target_mode,
             workspace_path: run.workspace_path.clone(),
+            worktree_path: run.worktree_path.clone(),
+            branch_name: run.branch_name.clone(),
+            base_ref: run.base_ref.clone(),
+            commit_before: run.commit_before.clone(),
+            commit_after: run.commit_after.clone(),
+            codex_session_id: run.codex_session_id.clone(),
             exit_code: run.exit_code,
+            signal: run.signal.clone(),
+            stdout_log_path: run.stdout_log_path.clone(),
+            stderr_log_path: run.stderr_log_path.clone(),
+            events_jsonl_path: run.events_jsonl_path.clone(),
+            last_message_path: run.last_message_path.clone(),
+            stdout_tail: run.stdout_tail.clone(),
+            stderr_tail: run.stderr_tail.clone(),
             result_summary: run.result_summary.clone(),
             findings_count: run.findings_count.unwrap_or_default(),
             created_schedule_count: run.created_schedule_count.unwrap_or_default(),
@@ -251,36 +305,98 @@ impl RunDto {
             task_id: self.task_id,
             trigger_type: self.trigger_type,
             scheduled_for: self.scheduled_for,
-            attempt: 1,
+            attempt: if self.attempt > 0 { self.attempt } else { 1 },
             status: self.status,
-            status_reason: None,
-            queued_at: now.clone(),
+            status_reason: self.status_reason,
+            queued_at: if self.queued_at.is_empty() {
+                now.clone()
+            } else {
+                self.queued_at
+            },
             started_at: self.started_at,
             ended_at: self.ended_at,
-            duration_ms: None,
-            target_mode,
+            duration_ms: self.duration_ms,
+            target_mode: if self.target_mode == RunTargetMode::Chat {
+                target_mode
+            } else {
+                self.target_mode
+            },
             workspace_path: self.workspace_path,
-            worktree_path: None,
-            branch_name: None,
-            base_ref: None,
-            commit_before: None,
-            commit_after: None,
+            worktree_path: self.worktree_path,
+            branch_name: self.branch_name,
+            base_ref: self.base_ref,
+            commit_before: self.commit_before,
+            commit_after: self.commit_after,
             codex_command_json,
-            codex_session_id: None,
+            codex_session_id: self.codex_session_id,
             pid: None,
             exit_code: self.exit_code,
-            signal: None,
-            stdout_log_path: None,
-            stderr_log_path: None,
-            events_jsonl_path: None,
-            last_message_path: None,
-            stdout_tail: None,
-            stderr_tail: None,
+            signal: self.signal,
+            stdout_log_path: self.stdout_log_path,
+            stderr_log_path: self.stderr_log_path,
+            events_jsonl_path: self.events_jsonl_path,
+            last_message_path: self.last_message_path,
+            stdout_tail: self.stdout_tail,
+            stderr_tail: self.stderr_tail,
             result_summary: self.result_summary,
             findings_count: Some(self.findings_count),
             created_schedule_count: Some(self.created_schedule_count),
             created_at: now.clone(),
             updated_at: now,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDto {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub kind: ProjectKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_remote_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trusted_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<&Project> for ProjectDto {
+    fn from(project: &Project) -> Self {
+        Self {
+            id: project.id.clone(),
+            name: project.name.clone(),
+            path: project.path.clone(),
+            kind: project.kind,
+            git_root: project.git_root.clone(),
+            git_remote_url: project.git_remote_url.clone(),
+            default_branch: project.default_branch.clone(),
+            trusted_at: project.trusted_at.clone(),
+            created_at: project.created_at.clone(),
+            updated_at: project.updated_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingDto {
+    pub key: String,
+    pub value_json: String,
+    pub updated_at: String,
+}
+
+impl From<&Setting> for SettingDto {
+    fn from(setting: &Setting) -> Self {
+        Self {
+            key: setting.key.clone(),
+            value_json: setting.value_json.clone(),
+            updated_at: setting.updated_at.clone(),
         }
     }
 }

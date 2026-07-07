@@ -439,11 +439,80 @@ fn task_and_run_dto_serialize_to_spec_camel_case_shape() {
     assert!(task_value.get("cron_expr").is_none());
     assert!(task_value["target"].get("project_id").is_none());
 
-    let run = sample_run(&task.id, "2026-07-08T00:00:00Z");
+    let mut run = sample_run(&task.id, "2026-07-08T00:00:00Z");
+    run.status_reason = Some("setup_failure".to_owned());
+    run.queued_at = "2026-07-08T00:00:01Z".to_owned();
+    run.duration_ms = Some(1234);
+    run.target_mode = RunTargetMode::RepoWorktree;
+    run.worktree_path = Some("/tmp/worktree".to_owned());
+    run.branch_name = Some("codex/scheduler".to_owned());
+    run.base_ref = Some("main".to_owned());
+    run.commit_before = Some("abc123".to_owned());
+    run.commit_after = Some("def456".to_owned());
+    run.codex_session_id = Some("session_123".to_owned());
+    run.exit_code = Some(1);
+    run.signal = Some("SIGTERM".to_owned());
+    run.stdout_log_path = Some("/tmp/stdout.log".to_owned());
+    run.stderr_log_path = Some("/tmp/stderr.log".to_owned());
+    run.events_jsonl_path = Some("/tmp/events.jsonl".to_owned());
+    run.last_message_path = Some("/tmp/last-message.md".to_owned());
+    run.stdout_tail = Some("out".to_owned());
+    run.stderr_tail = Some("err".to_owned());
     let run_value = serde_json::to_value(RunDto::from(&run)).expect("run dto json");
     assert_eq!(run_value["taskId"], json!(task.id));
     assert_eq!(run_value["triggerType"], json!("schedule"));
     assert_eq!(run_value["scheduledFor"], json!("2026-07-08T00:00:00Z"));
+    assert_eq!(run_value["statusReason"], json!("setup_failure"));
+    assert_eq!(run_value["queuedAt"], json!("2026-07-08T00:00:01Z"));
+    assert_eq!(run_value["durationMs"], json!(1234));
+    assert_eq!(run_value["targetMode"], json!("repo-worktree"));
+    assert_eq!(run_value["worktreePath"], json!("/tmp/worktree"));
+    assert_eq!(run_value["branchName"], json!("codex/scheduler"));
+    assert_eq!(run_value["baseRef"], json!("main"));
+    assert_eq!(run_value["commitBefore"], json!("abc123"));
+    assert_eq!(run_value["commitAfter"], json!("def456"));
+    assert_eq!(run_value["exitCode"], json!(1));
+    assert_eq!(run_value["signal"], json!("SIGTERM"));
+    assert_eq!(run_value["stdoutTail"], json!("out"));
+    assert_eq!(run_value["stderrTail"], json!("err"));
+    assert_eq!(run_value["codexSessionId"], json!("session_123"));
+    assert_eq!(run_value["stdoutLogPath"], json!("/tmp/stdout.log"));
+    assert_eq!(run_value["stderrLogPath"], json!("/tmp/stderr.log"));
+    assert_eq!(run_value["eventsJsonlPath"], json!("/tmp/events.jsonl"));
+    assert_eq!(run_value["lastMessagePath"], json!("/tmp/last-message.md"));
     assert_eq!(run_value["findingsCount"], json!(0));
     assert!(run_value.get("task_id").is_none());
+
+    let now = now_rfc3339();
+    let project = Project {
+        id: new_project_id(),
+        name: "my-app".to_owned(),
+        path: "/Users/alice/src/my-app".to_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some("/Users/alice/src/my-app".to_owned()),
+        git_remote_url: Some("git@example.com:my-app.git".to_owned()),
+        default_branch: Some("main".to_owned()),
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    };
+    let project_value = serde_json::to_value(ProjectDto::from(&project)).expect("project dto json");
+    assert_eq!(project_value["gitRoot"], json!("/Users/alice/src/my-app"));
+    assert_eq!(
+        project_value["gitRemoteUrl"],
+        json!("git@example.com:my-app.git")
+    );
+    assert_eq!(project_value["defaultBranch"], json!("main"));
+    assert_eq!(project_value["trustedAt"], json!(now));
+    assert!(project_value.get("git_root").is_none());
+
+    let setting = Setting {
+        key: "scheduler.enabled".to_owned(),
+        value_json: "true".to_owned(),
+        updated_at: now.clone(),
+    };
+    let setting_value = serde_json::to_value(SettingDto::from(&setting)).expect("setting dto json");
+    assert_eq!(setting_value["valueJson"], json!("true"));
+    assert_eq!(setting_value["updatedAt"], json!(now));
+    assert!(setting_value.get("value_json").is_none());
 }

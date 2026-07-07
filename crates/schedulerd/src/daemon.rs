@@ -986,7 +986,14 @@ async fn route_rpc(
             to_value(rpc_run_tail_log(state, params).await?)
         }
         METHOD_PROJECT_LIST => to_value(ProjectListResult {
-            projects: state.db.list_projects().await.map_err(map_core_error)?,
+            projects: state
+                .db
+                .list_projects()
+                .await
+                .map_err(map_core_error)?
+                .iter()
+                .map(ProjectDto::from)
+                .collect(),
         }),
         METHOD_PROJECT_TRUST => {
             let metadata = RpcMetadata::from_value(request.params.as_ref());
@@ -1726,7 +1733,9 @@ async fn rpc_project_trust(
     )
     .await
     .map_err(map_core_error)?;
-    Ok(ProjectTrustResult { project })
+    Ok(ProjectTrustResult {
+        project: ProjectDto::from(&project),
+    })
 }
 
 async fn rpc_settings_get(
@@ -1744,7 +1753,9 @@ async fn rpc_settings_get(
     } else {
         state.db.list_settings().await.map_err(map_core_error)?
     };
-    Ok(SettingsGetResult { settings })
+    Ok(SettingsGetResult {
+        settings: settings.iter().map(SettingDto::from).collect(),
+    })
 }
 
 async fn rpc_settings_set(
@@ -1776,7 +1787,9 @@ async fn rpc_settings_set(
     .await
     .map_err(map_core_error)?;
     state.notify_tick.notify_waiters();
-    Ok(SettingsSetResult { setting })
+    Ok(SettingsSetResult {
+        setting: SettingDto::from(&setting),
+    })
 }
 
 async fn cancel_run(

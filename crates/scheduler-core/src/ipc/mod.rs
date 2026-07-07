@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::model::{AuditActorType, Project, RunDto, RunStatus, Setting, TaskDto, TaskStatus};
+use crate::model::{
+    AuditActorType, ProjectDto, RunDto, RunStatus, SettingDto, TaskDto, TaskStatus,
+};
 
 pub const JSONRPC_VERSION: &str = "2.0";
 
@@ -311,7 +313,7 @@ pub struct ProjectListParams {}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectListResult {
-    pub projects: Vec<Project>,
+    pub projects: Vec<ProjectDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,7 +327,7 @@ pub struct ProjectTrustParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectTrustResult {
-    pub project: Project,
+    pub project: ProjectDto,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -338,7 +340,7 @@ pub struct SettingsGetParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsGetResult {
-    pub settings: Vec<Setting>,
+    pub settings: Vec<SettingDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -353,5 +355,5 @@ pub struct SettingsSetParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsSetResult {
-    pub setting: Setting,
+    pub setting: SettingDto,
 }
