@@ -5,7 +5,11 @@ fn main() {
 
 fn ensure_sidecar_placeholders() {
     let target = std::env::var("TARGET").unwrap_or_else(|_| "unknown-target".to_string());
-    let extension = if target.contains("windows") { ".exe" } else { "" };
+    let extension = if target.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let binaries_dir = std::path::Path::new("binaries");
 
     std::fs::create_dir_all(binaries_dir)
