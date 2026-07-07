@@ -1,0 +1,32 @@
+[workspace]
+members = [
+  "crates/scheduler-core",
+  "crates/schedulerd",
+  "crates/schedule-cli",
+  "crates/codex-runner",
+  "apps/desktop/src-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.83"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/aki-0421/scheduler.git"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
+uuid = { version = "=1.11.0", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+croner = "3.0.1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "chrono", "uuid", "macros", "migrate"] }
+clap = { version = "=4.5.23", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+sha2 = "0.10"
+tempfile = "3"

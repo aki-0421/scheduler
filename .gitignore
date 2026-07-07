@@ -1,1 +1,26 @@
 .DS_Store
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+coverage/
+
+# Rust
+target/
+
+# Local data
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Tauri generated artifacts
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/binaries/
