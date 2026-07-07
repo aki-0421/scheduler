@@ -9,7 +9,7 @@ use codex_runner::{
 };
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::model::{
-    new_run_event_id, Project, Run, RunEvent, RunEventSource, RunStatus, SandboxMode, Task,
+    new_run_event_id, Project, Run, RunEventSource, RunStatus, SandboxMode, Task,
 };
 use scheduler_core::time::now_rfc3339;
 use serde_json::Value;
@@ -206,24 +206,33 @@ impl RunExecutor for CodexExecutor {
         cancel: CancellationToken,
     ) -> ExecutionResult {
         let run_id = request.run.id.clone();
-        let (progress_tx, progress_rx) = mpsc::unbounded_channel();
-        let mut progress_tx = Some(progress_tx);
+        let (runner_progress_tx, mut runner_progress_rx) = mpsc::unbounded_channel();
+        let mut runner_progress_tx = Some(runner_progress_tx);
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let bridge_tx = event_tx.clone();
+        let bridge_handle = tokio::spawn(async move {
+            while let Some(event) = runner_progress_rx.recv().await {
+                if bridge_tx.send(RecordedRunEvent::Runner(event)).is_err() {
+                    break;
+                }
+            }
+        });
         let progress_db = self.db.clone();
         let progress_run_id = run_id.clone();
         let progress_handle = tokio::spawn(async move {
-            record_progress_events(progress_db, progress_run_id, progress_rx).await;
+            record_progress_events(progress_db, progress_run_id, event_rx).await;
         });
 
         let result = match self.build_run_request(&request).await {
             Ok(run_request) => {
                 match self
                     .runner
-                    .run(run_request, cancel, progress_tx.take())
+                    .run(run_request, cancel, runner_progress_tx.take())
                     .await
                 {
                     Ok(outcome) => {
                         let result = execution_result_from_outcome(outcome);
-                        record_executor_warnings(&self.db, &run_id, &result.warnings).await;
+                        send_executor_warnings(&event_tx, &result.warnings);
                         result
                     }
                     Err(err) => {
@@ -238,7 +247,9 @@ impl RunExecutor for CodexExecutor {
             }
         };
 
-        drop(progress_tx);
+        drop(runner_progress_tx);
+        let _ = bridge_handle.await;
+        drop(event_tx);
         let _ = progress_handle.await;
         result
     }
@@ -489,53 +500,60 @@ async fn write_error_logs(request: &ExecutionRequest, message: &str) {
 async fn record_progress_events(
     db: SchedulerDb,
     run_id: String,
-    mut progress_rx: mpsc::UnboundedReceiver<RunnerEvent>,
+    mut progress_rx: mpsc::UnboundedReceiver<RecordedRunEvent>,
 ) {
-    while let Some(event) = progress_rx.recv().await {
-        let source = if event.event_type == RunnerEventType::StdoutJsonEvent {
-            RunEventSource::CodexJsonl
-        } else {
-            RunEventSource::Daemon
+    while let Some(record) = progress_rx.recv().await {
+        let (source, level, event_type, message, payload) = match record {
+            RecordedRunEvent::Runner(event) => {
+                let source = if event.event_type == RunnerEventType::StdoutJsonEvent {
+                    RunEventSource::CodexJsonl
+                } else {
+                    RunEventSource::Daemon
+                };
+                let level = match event.event_type {
+                    RunnerEventType::TimedOut | RunnerEventType::Canceled => "warn",
+                    _ => "info",
+                };
+                let event_type = match event.event_type {
+                    RunnerEventType::PreflightStarted => "runner.preflight_started",
+                    RunnerEventType::WorkspacePrepared => "runner.workspace_prepared",
+                    RunnerEventType::ProcessStarted => "runner.process_started",
+                    RunnerEventType::StdoutJsonEvent => "codex.json_event",
+                    RunnerEventType::ProcessFinished => "runner.process_finished",
+                    RunnerEventType::TimedOut => "runner.timed_out",
+                    RunnerEventType::Canceled => "runner.canceled",
+                };
+                (
+                    source,
+                    level,
+                    event_type,
+                    Some(event.message),
+                    Some(event.payload.unwrap_or(Value::Null)),
+                )
+            }
+            RecordedRunEvent::Warning(summary) => (
+                RunEventSource::Daemon,
+                "warn",
+                "runner.warning",
+                Some(summary),
+                None,
+            ),
         };
-        let level = match event.event_type {
-            RunnerEventType::TimedOut | RunnerEventType::Canceled => "warn",
-            _ => "info",
-        };
-        let event_type = match event.event_type {
-            RunnerEventType::PreflightStarted => "runner.preflight_started",
-            RunnerEventType::WorkspacePrepared => "runner.workspace_prepared",
-            RunnerEventType::ProcessStarted => "runner.process_started",
-            RunnerEventType::StdoutJsonEvent => "codex.json_event",
-            RunnerEventType::ProcessFinished => "runner.process_finished",
-            RunnerEventType::TimedOut => "runner.timed_out",
-            RunnerEventType::Canceled => "runner.canceled",
-        };
-        let payload = event.payload.unwrap_or(Value::Null);
-        let _ = create_run_event_with_source(
-            &db,
-            &run_id,
-            source,
-            level,
-            event_type,
-            Some(event.message),
-            Some(payload),
-        )
-        .await;
+        let _ =
+            create_run_event_with_source(&db, &run_id, source, level, event_type, message, payload)
+                .await;
     }
 }
 
-async fn record_executor_warnings(db: &SchedulerDb, run_id: &str, warnings: &[String]) {
+#[derive(Debug)]
+enum RecordedRunEvent {
+    Runner(RunnerEvent),
+    Warning(String),
+}
+
+fn send_executor_warnings(event_tx: &mpsc::UnboundedSender<RecordedRunEvent>, warnings: &[String]) {
     for summary in warnings {
-        let _ = create_run_event_with_source(
-            db,
-            run_id,
-            RunEventSource::Daemon,
-            "warn",
-            "runner.warning",
-            Some(summary.clone()),
-            None,
-        )
-        .await;
+        let _ = event_tx.send(RecordedRunEvent::Warning(summary.clone()));
     }
 }
 
@@ -548,26 +566,54 @@ async fn create_run_event_with_source(
     message: Option<String>,
     payload: Option<Value>,
 ) -> scheduler_core::Result<()> {
-    let next_index: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(event_index), -1) + 1 FROM run_events WHERE run_id = ?",
-    )
-    .bind(run_id)
-    .fetch_one(db.pool())
-    .await?;
-    let event = RunEvent {
-        id: new_run_event_id(),
-        run_id: run_id.to_owned(),
-        event_index: next_index,
-        source,
-        level: level.to_owned(),
-        event_type: event_type.to_owned(),
-        message,
-        payload_json: payload
-            .map(|payload| serde_json::to_string(&payload))
-            .transpose()?,
-        created_at: now_rfc3339(),
+    let payload_json = payload
+        .map(|payload| serde_json::to_string(&payload))
+        .transpose()?;
+    let mut attempt = 0_u64;
+    loop {
+        let result = sqlx::query(
+            "INSERT INTO run_events (
+                id, run_id, event_index, source, level, event_type, message, payload_json,
+                created_at
+            )
+            SELECT ?, ?, COALESCE(MAX(event_index), -1) + 1, ?, ?, ?, ?, ?, ?
+            FROM run_events WHERE run_id = ?",
+        )
+        .bind(new_run_event_id())
+        .bind(run_id)
+        .bind(source)
+        .bind(level)
+        .bind(event_type)
+        .bind(&message)
+        .bind(&payload_json)
+        .bind(now_rfc3339())
+        .bind(run_id)
+        .execute(db.pool())
+        .await;
+
+        match result {
+            Ok(_) => return Ok(()),
+            Err(err) if attempt < 5 && retryable_run_event_insert(&err) => {
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(5 * attempt)).await;
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+}
+
+fn retryable_run_event_insert(err: &sqlx::Error) -> bool {
+    let Some(db_err) = err.as_database_error() else {
+        return false;
     };
-    db.create_run_event(&event).await
+    if db_err.is_unique_violation() {
+        return true;
+    }
+    let code = db_err.code();
+    let code = code.as_deref();
+    matches!(code, Some("5" | "6" | "SQLITE_BUSY" | "SQLITE_LOCKED"))
+        || db_err.message().contains("database is locked")
+        || db_err.message().contains("database table is locked")
 }
 
 #[async_trait]

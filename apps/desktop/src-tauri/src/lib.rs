@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use scheduler_core::ipc::{
-    JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, JSONRPC_VERSION,
+    JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ProjectListResult, JSONRPC_VERSION,
     METHOD_DAEMON_HEALTH, METHOD_PROJECT_LIST, METHOD_PROJECT_TRUST, METHOD_RUN_CANCEL,
     METHOD_RUN_GET, METHOD_RUN_LIST, METHOD_RUN_TAIL_LOG, METHOD_SETTINGS_GET, METHOD_SETTINGS_SET,
     METHOD_TASK_CREATE, METHOD_TASK_DELETE, METHOD_TASK_GET, METHOD_TASK_LIST, METHOD_TASK_PAUSE,
@@ -20,6 +20,7 @@ use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 
 type CommandResult<T> = Result<T, String>;
+const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(35);
 
 #[derive(Debug)]
 struct AppState {
@@ -33,6 +34,7 @@ struct DaemonManager {
     child: Mutex<Option<Child>>,
     lifecycle_lock: Mutex<()>,
     request_id: AtomicU64,
+    shutdown_started: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -64,6 +66,7 @@ impl DaemonManager {
             child: Mutex::new(None),
             lifecycle_lock: Mutex::new(()),
             request_id: AtomicU64::new(1),
+            shutdown_started: AtomicBool::new(false),
         }
     }
 
@@ -121,22 +124,23 @@ impl DaemonManager {
     }
 
     async fn spawn_or_restart(&self, app: &AppHandle) -> Result<(), String> {
-        {
+        let stale_child = {
             let mut child = self.child.lock().await;
             if let Some(existing) = child.as_mut() {
                 match existing.try_wait() {
                     Ok(Some(_status)) => {
                         *child = None;
+                        None
                     }
-                    Ok(None) => {
-                        terminate_process(existing);
-                        *child = None;
-                    }
-                    Err(_err) => {
-                        *child = None;
-                    }
+                    Ok(None) => child.take(),
+                    Err(_err) => child.take(),
                 }
+            } else {
+                None
             }
+        };
+        if let Some(mut existing) = stale_child {
+            let _ = tokio::task::spawn_blocking(move || terminate_process(&mut existing)).await;
         }
         self.spawn_child(app).await
     }
@@ -144,7 +148,8 @@ impl DaemonManager {
     async fn spawn_child(&self, app: &AppHandle) -> Result<(), String> {
         std::fs::create_dir_all(&self.data_dir).map_err(|err| err.to_string())?;
         let binary = locate_schedulerd(app)?;
-        let child = Command::new(&binary)
+        let mut command = Command::new(&binary);
+        command
             .arg("--data-dir")
             .arg(&self.data_dir)
             .arg("--socket-path")
@@ -153,7 +158,9 @@ impl DaemonManager {
             .env("CODEX_SCHEDULER_SOCKET", &self.socket_path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+        make_daemon_session_leader(&mut command);
+        let child = command
             .spawn()
             .map_err(|err| format!("failed to spawn {}: {err}", binary.display()))?;
 
@@ -162,14 +169,19 @@ impl DaemonManager {
     }
 
     async fn shutdown(&self) {
+        self.shutdown_started.store(true, Ordering::SeqCst);
         self.terminate_child().await;
     }
 
     async fn terminate_child(&self) {
         let mut child = self.child.lock().await;
         if let Some(mut existing) = child.take() {
-            terminate_process(&mut existing);
+            let _ = tokio::task::spawn_blocking(move || terminate_process(&mut existing)).await;
         }
+    }
+
+    fn begin_shutdown(&self) -> bool {
+        !self.shutdown_started.swap(true, Ordering::SeqCst)
     }
 
     async fn health(&self) -> Result<Value, BackendError> {
@@ -180,14 +192,65 @@ impl DaemonManager {
         let id = self.request_id.fetch_add(1, Ordering::Relaxed).to_string();
         rpc_call(&self.socket_path, id, method, params).await
     }
+
+    async fn is_open_path_allowed(&self, app: &AppHandle, path: &Path) -> Result<bool, String> {
+        for root in [
+            self.data_dir.join("logs"),
+            self.data_dir.join("worktrees"),
+            self.data_dir.join("chat-workspaces"),
+        ] {
+            if canonicalize_existing(&root).is_some_and(|root| path.starts_with(root)) {
+                return Ok(true);
+            }
+        }
+
+        let result = self.proxy(app, METHOD_PROJECT_LIST, json!({})).await?;
+        let projects = serde_json::from_value::<ProjectListResult>(result)
+            .map_err(|err| format!("failed to decode trusted projects: {err}"))?;
+        for project in projects
+            .projects
+            .into_iter()
+            .filter(|project| project.trusted_at.is_some())
+        {
+            let root = project.git_root.unwrap_or(project.path);
+            if canonicalize_existing(root).is_some_and(|root| path.starts_with(root)) {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
 }
+
+#[cfg(unix)]
+fn make_daemon_session_leader(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    // Isolate the daemon from the GUI process group. The runner separately starts
+    // each Codex child in its own process group and terminates that group on
+    // cancellation or timeout.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn make_daemon_session_leader(_command: &mut Command) {}
 
 #[cfg(unix)]
 fn terminate_process(child: &mut Child) {
     let pid = child.id() as libc::pid_t;
-    // The daemon handles SIGTERM by shutting down its listener and active runs.
-    let _ = unsafe { libc::kill(pid, libc::SIGTERM) };
-    wait_for_process_exit(child, Duration::from_secs(3));
+    // The daemon handles SIGTERM by shutting down its listener and canceling
+    // active runs. It was started as a process-group leader, so signal the group
+    // to include any helper processes that stayed in the daemon group.
+    let _ = unsafe { libc::killpg(pid, libc::SIGTERM) };
+    wait_for_process_exit(child, DAEMON_SHUTDOWN_TIMEOUT);
 }
 
 #[cfg(not(unix))]
@@ -207,6 +270,12 @@ fn wait_for_process_exit(child: &mut Child, timeout: Duration) {
         }
     }
 
+    #[cfg(unix)]
+    {
+        let pid = child.id() as libc::pid_t;
+        let _ = unsafe { libc::killpg(pid, libc::SIGKILL) };
+    }
+    #[cfg(not(unix))]
     let _ = child.kill();
     let _ = child.wait();
 }
@@ -280,14 +349,16 @@ fn locate_schedulerd(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = manifest_dir.join("../../..");
-    let dev_binary = repo_root
-        .join("target")
-        .join("debug")
-        .join(executable_name("codex-schedulerd"));
-    if is_file(&dev_binary) {
-        return Ok(dev_binary);
+    if allow_development_daemon_lookup() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.join("../../..");
+        let dev_binary = repo_root
+            .join("target")
+            .join("debug")
+            .join(executable_name("codex-schedulerd"));
+        if is_file(&dev_binary) {
+            return Ok(dev_binary);
+        }
     }
 
     let mut search_dirs = Vec::new();
@@ -306,8 +377,18 @@ fn locate_schedulerd(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    find_in_path("codex-schedulerd")
-        .ok_or_else(|| "could not locate codex-schedulerd sidecar or development binary".to_owned())
+    if allow_development_daemon_lookup() {
+        return find_in_path("codex-schedulerd").ok_or_else(|| {
+            "could not locate codex-schedulerd sidecar or development binary".to_owned()
+        });
+    }
+
+    Err("could not locate codex-schedulerd sidecar".to_owned())
+}
+
+fn allow_development_daemon_lookup() -> bool {
+    cfg!(debug_assertions)
+        || std::env::var_os("CODEX_SCHEDULER_ALLOW_PATH_DAEMON").is_some_and(|value| value == "1")
 }
 
 fn executable_name(name: &str) -> String {
@@ -327,10 +408,10 @@ fn find_prefixed_binary(dir: &Path, prefix: &str) -> Option<PathBuf> {
     for entry in entries.flatten() {
         let path = entry.path();
         let file_name = path.file_name()?.to_string_lossy();
-        if file_name == executable_name(prefix) || file_name.starts_with(&format!("{prefix}-")) {
-            if is_file(&path) {
-                return Some(path);
-            }
+        if (file_name == executable_name(prefix) || file_name.starts_with(&format!("{prefix}-")))
+            && is_file(&path)
+        {
+            return Some(path);
         }
     }
     None
@@ -345,6 +426,10 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn canonicalize_existing(path: impl AsRef<Path>) -> Option<PathBuf> {
+    std::fs::canonicalize(path).ok()
 }
 
 #[tauri::command]
@@ -570,9 +655,16 @@ async fn project_pick_folder(app: AppHandle) -> CommandResult<Option<String>> {
 }
 
 #[tauri::command]
-async fn open_path(app: AppHandle, path: String) -> CommandResult<()> {
+async fn open_path(app: AppHandle, state: State<'_, AppState>, path: String) -> CommandResult<()> {
+    let path = std::fs::canonicalize(&path)
+        .map_err(|err| format!("path does not exist or cannot be opened: {err}"))?;
+    if !state.daemon.is_open_path_allowed(&app, &path).await? {
+        return Err(
+            "path is outside Codex Scheduler data directories and trusted project roots".to_owned(),
+        );
+    }
     app.opener()
-        .open_path(path, None::<String>)
+        .open_path(path.to_string_lossy().into_owned(), None::<String>)
         .map_err(|err| err.to_string())
 }
 
@@ -619,10 +711,29 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Codex Scheduler");
 
-    app.run(|app_handle, event| {
-        if let RunEvent::Exit = event {
+    app.run(|app_handle, event| match event {
+        RunEvent::ExitRequested { api, code, .. } => {
             let state = app_handle.state::<AppState>();
-            tauri::async_runtime::block_on(state.daemon.shutdown());
+            if state.daemon.begin_shutdown() {
+                api.prevent_exit();
+                for window in app_handle.webview_windows().values() {
+                    let _ = window.hide();
+                }
+
+                let app_handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app_handle.state::<AppState>();
+                    state.daemon.shutdown().await;
+                    app_handle.exit(code.unwrap_or(0));
+                });
+            }
         }
+        RunEvent::Exit => {
+            let state = app_handle.state::<AppState>();
+            if state.daemon.begin_shutdown() {
+                tauri::async_runtime::block_on(state.daemon.shutdown());
+            }
+        }
+        _ => {}
     });
 }
