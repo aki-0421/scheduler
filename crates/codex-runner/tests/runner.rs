@@ -5,9 +5,10 @@ use std::process::Command;
 
 use codex_runner::{
     compose_prompt, redact_environment, CodexConfig, CodexRunner, RunRequest, RunTarget,
-    RunnerPaths, SchedulerContext,
+    RunnerError, RunnerPaths, SchedulerContext,
 };
 use scheduler_core::model::{ApprovalPolicy, CleanupPolicy, RunStatus, RunTargetMode, SandboxMode};
+use serde_json::Value;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
@@ -105,6 +106,108 @@ async fn success_run_captures_logs_last_message_and_exit_code() {
     let env_json = fs::read_to_string(outcome.log_paths.environment_redacted_json).unwrap();
     assert!(env_json.contains("CODEX_SCHEDULER_RUN_TOKEN"));
     assert!(env_json.contains("***REDACTED***"));
+}
+
+#[tokio::test]
+async fn unsafe_run_id_is_rejected_before_path_creation() {
+    let temp = TempDir::new().unwrap();
+    let runner = CodexRunner::new();
+
+    for run_id in ["../evil", "/absolute"] {
+        let mut request = base_request(fixture("dummy-codex-success.sh"), &temp);
+        request.run_id = run_id.to_owned();
+
+        let err = runner
+            .run(request, CancellationToken::new(), None)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            RunnerError::UnsafePathSegment {
+                field: "run_id",
+                ..
+            }
+        ));
+    }
+}
+
+#[tokio::test]
+async fn repo_mode_requires_trusted_roots() {
+    let temp = TempDir::new().unwrap();
+    let repo = temp.path().join("repo");
+    init_git_repo(&repo);
+
+    let mut request = base_request(fixture("dummy-codex-success.sh"), &temp);
+    request.target = RunTarget {
+        mode: RunTargetMode::RepoLocal,
+        repo_path: Some(repo),
+        trusted_roots: Vec::new(),
+        base_ref: None,
+        default_branch: None,
+        fetch_before_worktree: false,
+        worktree_parent: None,
+        cleanup_policy: CleanupPolicy::Keep,
+        cleanup_after_days: None,
+    };
+
+    let err = CodexRunner::new()
+        .run(request, CancellationToken::new(), None)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, RunnerError::UntrustedPath { .. }));
+}
+
+#[tokio::test]
+async fn injected_event_is_persisted_to_events_jsonl_with_spec_shape() {
+    let temp = TempDir::new().unwrap();
+    let request = base_request(fixture("dummy-codex-success.sh"), &temp);
+
+    let outcome = CodexRunner::new()
+        .run(request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    let injected_event = outcome.injected_event.unwrap();
+    assert_eq!(injected_event.event_type, "scheduler_instructions_injected");
+    assert_eq!(injected_event.payload.version, "2026-07-07");
+    assert_eq!(injected_event.payload.language, "ja");
+    assert!(injected_event
+        .payload
+        .capabilities
+        .contains(&"schedule:create".to_owned()));
+
+    let events = fs::read_to_string(outcome.log_paths.events_jsonl).unwrap();
+    let first_line = events.lines().next().unwrap();
+    let event: Value = serde_json::from_str(first_line).unwrap();
+    assert_eq!(
+        event,
+        serde_json::json!({
+            "eventType": "scheduler_instructions_injected",
+            "payload": {
+                "version": "2026-07-07",
+                "language": "ja",
+                "capabilities": ["schedule:create", "schedule:update-current", "repo"]
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn summary_candidate_truncates_by_chars_for_multibyte_text() {
+    let temp = TempDir::new().unwrap();
+    let mut request = base_request(fixture("dummy-codex-long-summary.sh"), &temp);
+    request.codex.reasoning_effort = None;
+
+    let outcome = CodexRunner::new()
+        .run(request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    let summary = outcome.summary.unwrap();
+    assert_eq!(summary.chars().count(), 2_000);
+    assert!(summary.chars().all(|ch| ch == 'あ'));
 }
 
 #[tokio::test]

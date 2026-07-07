@@ -23,7 +23,7 @@ const INSTRUCTIONS_VERSION: &str = "2026-07-07";
 const INSTRUCTIONS_LANGUAGE: &str = "ja";
 const MIN_FREE_SPACE_BYTES: u64 = 1024 * 1024 * 1024;
 const TAIL_BYTES: usize = 8 * 1024;
-const SUMMARY_BYTES: usize = 2_000;
+const SUMMARY_CHARS: usize = 2_000;
 
 #[derive(Debug, Error)]
 pub enum RunnerError {
@@ -39,11 +39,13 @@ pub enum RunnerError {
     UnsupportedCriticalFlags(Vec<String>),
     #[error("target path does not exist: {0}")]
     TargetPathMissing(PathBuf),
-    #[error("path is outside trusted roots: {path} not under {trusted_roots:?}")]
+    #[error("untrusted path: {path} is not under trusted_roots {trusted_roots:?}")]
     UntrustedPath {
         path: PathBuf,
         trusted_roots: Vec<PathBuf>,
     },
+    #[error("unsafe path segment for {field}: {value}")]
+    UnsafePathSegment { field: &'static str, value: String },
     #[error("git command failed: git {args:?}: {stderr}")]
     GitFailed { args: Vec<String>, stderr: String },
     #[error("base ref could not be resolved: {0}")]
@@ -164,7 +166,14 @@ impl CodexCapabilities {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SchedulerInstructionsInjectedEvent {
+    #[serde(rename = "eventType")]
     pub event_type: String,
+    pub payload: SchedulerInstructionsInjectedPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulerInstructionsInjectedPayload {
     pub version: String,
     pub language: String,
     pub capabilities: Vec<String>,
@@ -364,6 +373,7 @@ impl CodexRunner {
             None,
         );
 
+        validate_safe_request_ids(&request)?;
         validate_runtime(&request.codex)?;
         let codex_path = find_codex_binary(request.codex.codex_path.as_deref())?;
         let capabilities = self.detect_capabilities(Some(&codex_path)).await?;
@@ -377,6 +387,9 @@ impl CodexRunner {
 
         let (prompt, injected_event) =
             compose_prompt_with_workspace(&request, Some(&workspace.workspace_path));
+        if let Some(event) = &injected_event {
+            write_injected_event_jsonl(&log_paths.events_jsonl, event).await?;
+        }
         let resolved_sandbox = resolve_sandbox(&request);
         let (command, envs) = build_command_record(
             &request,
@@ -410,6 +423,15 @@ impl CodexRunner {
             progress_tx.clone(),
         )
         .await?;
+        if execution.invalid_jsonl_line_count > 0 {
+            warnings.push(RunnerWarning::new(
+                "invalid_stdout_jsonl",
+                format!(
+                    "{} stdout line(s) were not valid JSON and were omitted from events.jsonl",
+                    execution.invalid_jsonl_line_count
+                ),
+            ));
+        }
 
         if matches!(
             workspace.mode,
@@ -471,6 +493,7 @@ struct ExecutionOutcome {
     stdout_tail: String,
     stderr_tail: String,
     codex_session_id: Option<String>,
+    invalid_jsonl_line_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -509,6 +532,27 @@ fn canonicalize_existing_file(path: &Path) -> Result<PathBuf> {
         return Err(RunnerError::CodexBinaryDoesNotExist(path.to_path_buf()));
     }
     Ok(path.canonicalize()?)
+}
+
+fn validate_safe_request_ids(request: &RunRequest) -> Result<()> {
+    validate_safe_path_segment("run_id", &request.run_id)?;
+    validate_safe_path_segment("task_slug", &request.task_slug)?;
+    Ok(())
+}
+
+fn validate_safe_path_segment(field: &'static str, value: &str) -> Result<()> {
+    let is_safe = !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    if is_safe {
+        Ok(())
+    } else {
+        Err(RunnerError::UnsafePathSegment {
+            field,
+            value: value.to_owned(),
+        })
+    }
 }
 
 fn parse_help_flags(help: &str) -> HashSet<String> {
@@ -583,8 +627,7 @@ async fn prepare_log_paths(request: &RunRequest) -> Result<RunLogPaths> {
         .logs_dir
         .clone()
         .unwrap_or_else(|| request.paths.app_data_dir.join("logs"));
-    let log_dir = logs_root.join(&request.run_id);
-    fs::create_dir_all(&log_dir).await?;
+    let log_dir = create_child_dir_under(&logs_root, [&request.run_id]).await?;
 
     let log_paths = RunLogPaths {
         stdout_log: log_dir.join("stdout.log"),
@@ -612,15 +655,11 @@ async fn prepare_workspace(
 }
 
 async fn prepare_chat_workspace(request: &RunRequest) -> Result<WorkspacePrepared> {
-    let path = request
-        .paths
-        .app_data_dir
-        .join("chat-workspaces")
-        .join(&request.run_id);
-    fs::create_dir_all(&path).await?;
+    let chat_root = request.paths.app_data_dir.join("chat-workspaces");
+    let path = create_child_dir_under(&chat_root, [&request.run_id]).await?;
     Ok(WorkspacePrepared {
         mode: RunTargetMode::Chat,
-        workspace_path: path.canonicalize()?,
+        workspace_path: path,
         repo_path: None,
         worktree_path: None,
         branch_name: None,
@@ -675,16 +714,20 @@ async fn prepare_repo_worktree_workspace(
         .worktree_parent
         .clone()
         .unwrap_or_else(|| request.paths.app_data_dir.join("worktrees"));
-    fs::create_dir_all(&worktree_root).await?;
+    let canonical_worktree_root = ensure_canonical_dir(&worktree_root).await?;
 
     let branch_base = format!(
         "codex-scheduler/{}/{}",
         sanitize_branch_part(&request.task_slug),
         sanitize_branch_part(&request.run_id)
     );
-    let path_base = worktree_root
-        .join(sanitize_path_part(&request.task_slug))
-        .join(sanitize_path_part(&request.run_id));
+    let path_base = checked_child_path(
+        &canonical_worktree_root,
+        [
+            sanitize_path_part(&request.task_slug),
+            sanitize_path_part(&request.run_id),
+        ],
+    )?;
 
     let mut last_error = None;
     for attempt in 0..10 {
@@ -696,7 +739,13 @@ async fn prepare_repo_worktree_workspace(
         let worktree_path = if attempt == 0 {
             path_base.clone()
         } else {
-            PathBuf::from(format!("{}-{attempt}", path_base.display()))
+            checked_child_path(
+                &canonical_worktree_root,
+                [
+                    sanitize_path_part(&request.task_slug),
+                    format!("{}-{attempt}", sanitize_path_part(&request.run_id)),
+                ],
+            )?
         };
         if worktree_path.exists() {
             continue;
@@ -760,16 +809,10 @@ fn validate_repo_path(request: &RunRequest) -> Result<PathBuf> {
         return Err(RunnerError::TargetPathMissing(repo_path.clone()));
     }
     let canonical_repo = repo_path.canonicalize()?;
-    let trusted_roots = request
-        .target
-        .trusted_roots
+    let trusted_roots = canonical_trusted_roots(request, &canonical_repo)?;
+    if !trusted_roots
         .iter()
-        .map(|path| path.canonicalize())
-        .collect::<io::Result<Vec<_>>>()?;
-    if !trusted_roots.is_empty()
-        && !trusted_roots
-            .iter()
-            .any(|root| canonical_repo.starts_with(root))
+        .any(|root| canonical_repo.starts_with(root))
     {
         return Err(RunnerError::UntrustedPath {
             path: canonical_repo,
@@ -785,19 +828,73 @@ async fn git_toplevel(path: &Path) -> Result<PathBuf> {
 }
 
 fn ensure_trusted_git_root(request: &RunRequest, git_root: &Path) -> Result<()> {
-    let trusted_roots = request
-        .target
-        .trusted_roots
-        .iter()
-        .map(|path| path.canonicalize())
-        .collect::<io::Result<Vec<_>>>()?;
-    if !trusted_roots.is_empty() && !trusted_roots.iter().any(|root| git_root.starts_with(root)) {
+    let trusted_roots = canonical_trusted_roots(request, git_root)?;
+    if !trusted_roots.iter().any(|root| git_root.starts_with(root)) {
         return Err(RunnerError::UntrustedPath {
             path: git_root.to_path_buf(),
             trusted_roots,
         });
     }
     Ok(())
+}
+
+fn canonical_trusted_roots(request: &RunRequest, path: &Path) -> Result<Vec<PathBuf>> {
+    if request.target.trusted_roots.is_empty() {
+        return Err(RunnerError::UntrustedPath {
+            path: path.to_path_buf(),
+            trusted_roots: Vec::new(),
+        });
+    }
+    request
+        .target
+        .trusted_roots
+        .iter()
+        .map(|path| path.canonicalize().map_err(RunnerError::Io))
+        .collect()
+}
+
+async fn create_child_dir_under<I, S>(parent: &Path, segments: I) -> Result<PathBuf>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let canonical_parent = ensure_canonical_dir(parent).await?;
+    let child_path = checked_child_path(&canonical_parent, segments)?;
+    fs::create_dir_all(&child_path).await?;
+    let canonical_child = child_path.canonicalize()?;
+    ensure_child_under(&canonical_parent, &canonical_child)?;
+    Ok(canonical_child)
+}
+
+async fn ensure_canonical_dir(path: &Path) -> Result<PathBuf> {
+    fs::create_dir_all(path).await?;
+    Ok(path.canonicalize()?)
+}
+
+fn checked_child_path<I, S>(canonical_parent: &Path, segments: I) -> Result<PathBuf>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut child_path = canonical_parent.to_path_buf();
+    for segment in segments {
+        let segment = segment.as_ref();
+        validate_safe_path_segment("path_segment", segment)?;
+        child_path.push(segment);
+    }
+    ensure_child_under(canonical_parent, &child_path)?;
+    Ok(child_path)
+}
+
+fn ensure_child_under(canonical_parent: &Path, child: &Path) -> Result<()> {
+    if child.starts_with(canonical_parent) {
+        Ok(())
+    } else {
+        Err(RunnerError::UntrustedPath {
+            path: child.to_path_buf(),
+            trusted_roots: vec![canonical_parent.to_path_buf()],
+        })
+    }
 }
 
 async fn resolve_base_ref(repo_path: &Path, base_ref: &str) -> Result<()> {
@@ -1176,6 +1273,7 @@ async fn execute_codex(
         stdout_tail: stdout_capture.tail,
         stderr_tail: stderr_capture.tail,
         codex_session_id: stdout_capture.codex_session_id,
+        invalid_jsonl_line_count: stdout_capture.invalid_jsonl_line_count,
     })
 }
 
@@ -1215,6 +1313,7 @@ fn exit_signal(status: ExitStatus) -> Option<String> {
 struct StreamCapture {
     tail: String,
     codex_session_id: Option<String>,
+    invalid_jsonl_line_count: usize,
 }
 
 async fn capture_stdout<R>(
@@ -1228,11 +1327,16 @@ where
 {
     let mut reader = tokio::io::BufReader::new(reader);
     let mut log_file = File::create(log_path).await?;
-    let mut events_file = File::create(events_path).await?;
+    let mut events_file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(events_path)
+        .await?;
     let mut buffer = [0_u8; 4096];
     let mut tail = TailBuffer::new(TAIL_BYTES);
     let mut line_buffer = Vec::new();
     let mut session_id = None;
+    let mut invalid_jsonl_line_count = 0;
 
     loop {
         let read = reader.read(&mut buffer).await?;
@@ -1246,26 +1350,31 @@ where
         for byte in chunk {
             line_buffer.push(*byte);
             if *byte == b'\n' {
-                process_jsonl_line(
+                if process_jsonl_line(
                     &line_buffer,
                     &mut events_file,
                     &mut session_id,
                     &progress_tx,
                 )
-                .await?;
+                .await?
+                {
+                    invalid_jsonl_line_count += 1;
+                }
                 line_buffer.clear();
             }
         }
     }
 
-    if !line_buffer.is_empty() {
-        process_jsonl_line(
+    if !line_buffer.is_empty()
+        && process_jsonl_line(
             &line_buffer,
             &mut events_file,
             &mut session_id,
             &progress_tx,
         )
-        .await?;
+        .await?
+    {
+        invalid_jsonl_line_count += 1;
     }
     log_file.flush().await?;
     events_file.flush().await?;
@@ -1273,6 +1382,7 @@ where
     Ok(StreamCapture {
         tail: tail.to_string_lossy(),
         codex_session_id: session_id,
+        invalid_jsonl_line_count,
     })
 }
 
@@ -1281,24 +1391,32 @@ async fn process_jsonl_line(
     events_file: &mut File,
     session_id: &mut Option<String>,
     progress_tx: &Option<mpsc::UnboundedSender<RunnerEvent>>,
-) -> io::Result<()> {
-    events_file.write_all(line).await?;
-    if !line.ends_with(b"\n") {
-        events_file.write_all(b"\n").await?;
+) -> io::Result<bool> {
+    let trimmed = trim_jsonl_line(line);
+    if trimmed.is_empty() {
+        return Ok(false);
     }
 
-    if let Ok(value) = serde_json::from_slice::<Value>(line) {
-        if session_id.is_none() {
-            *session_id = extract_codex_session_id(&value);
-        }
-        send_progress(
-            progress_tx,
-            RunnerEventType::StdoutJsonEvent,
-            "codex json event",
-            Some(value),
-        );
+    let Ok(value) = serde_json::from_slice::<Value>(trimmed) else {
+        return Ok(true);
+    };
+
+    events_file.write_all(trimmed).await?;
+    events_file.write_all(b"\n").await?;
+    if session_id.is_none() {
+        *session_id = extract_codex_session_id(&value);
     }
-    Ok(())
+    send_progress(
+        progress_tx,
+        RunnerEventType::StdoutJsonEvent,
+        "codex json event",
+        Some(value),
+    );
+    Ok(false)
+}
+
+fn trim_jsonl_line(line: &[u8]) -> &[u8] {
+    line.trim_ascii_end()
 }
 
 async fn capture_plain_stream<R>(reader: R, log_path: &Path) -> io::Result<StreamCapture>
@@ -1324,6 +1442,7 @@ where
     Ok(StreamCapture {
         tail: tail.to_string_lossy(),
         codex_session_id: None,
+        invalid_jsonl_line_count: 0,
     })
 }
 
@@ -1500,9 +1619,11 @@ fn compose_prompt_with_workspace(
         sections.push(render_scheduler_instructions(request));
         injected_event = Some(SchedulerInstructionsInjectedEvent {
             event_type: "scheduler_instructions_injected".to_owned(),
-            version: INSTRUCTIONS_VERSION.to_owned(),
-            language: INSTRUCTIONS_LANGUAGE.to_owned(),
-            capabilities: request.scheduler.schedule_cli_capabilities.clone(),
+            payload: SchedulerInstructionsInjectedPayload {
+                version: INSTRUCTIONS_VERSION.to_owned(),
+                language: INSTRUCTIONS_LANGUAGE.to_owned(),
+                capabilities: request.scheduler.schedule_cli_capabilities.clone(),
+            },
         });
     }
 
@@ -1634,8 +1755,23 @@ async fn read_summary_candidate(path: &Path) -> Result<Option<String>> {
     if bytes.is_empty() {
         return Ok(None);
     }
-    let summary_bytes = bytes.into_iter().take(SUMMARY_BYTES).collect::<Vec<_>>();
-    Ok(Some(String::from_utf8_lossy(&summary_bytes).to_string()))
+    let text = String::from_utf8_lossy(&bytes);
+    Ok(Some(text.chars().take(SUMMARY_CHARS).collect()))
+}
+
+async fn write_injected_event_jsonl(
+    path: &Path,
+    event: &SchedulerInstructionsInjectedEvent,
+) -> Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await?;
+    file.write_all(&serde_json::to_vec(event)?).await?;
+    file.write_all(b"\n").await?;
+    file.flush().await?;
+    Ok(())
 }
 
 fn send_progress(
