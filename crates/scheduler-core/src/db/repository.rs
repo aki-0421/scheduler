@@ -102,6 +102,16 @@ impl SchedulerDb {
         .await?)
     }
 
+    pub async fn list_projects(&self) -> Result<Vec<Project>> {
+        Ok(sqlx::query_as::<_, Project>(
+            "SELECT id, name, path, kind, git_root, git_remote_url, default_branch, trusted_at,
+                    created_at, updated_at
+             FROM projects ORDER BY name ASC, id ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
     pub async fn update_project(&self, project: &Project) -> Result<bool> {
         let result = sqlx::query(
             "UPDATE projects
@@ -203,6 +213,12 @@ impl SchedulerDb {
         Ok(sqlx::query_as::<_, Task>(TASK_SELECT_BY_SLUG)
             .bind(slug)
             .fetch_optional(&self.pool)
+            .await?)
+    }
+
+    pub async fn list_tasks(&self) -> Result<Vec<Task>> {
+        Ok(sqlx::query_as::<_, Task>(TASK_SELECT_ALL)
+            .fetch_all(&self.pool)
             .await?)
     }
 
@@ -422,6 +438,17 @@ impl SchedulerDb {
         Ok(())
     }
 
+    pub async fn get_run_event(&self, id: &str) -> Result<Option<RunEvent>> {
+        Ok(sqlx::query_as::<_, RunEvent>(
+            "SELECT id, run_id, event_index, source, level, event_type, message, payload_json,
+                    created_at
+             FROM run_events WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
     pub async fn list_run_events(&self, run_id: &str) -> Result<Vec<RunEvent>> {
         Ok(sqlx::query_as::<_, RunEvent>(
             "SELECT id, run_id, event_index, source, level, event_type, message, payload_json,
@@ -431,6 +458,27 @@ impl SchedulerDb {
         .bind(run_id)
         .fetch_all(&self.pool)
         .await?)
+    }
+
+    pub async fn update_run_event(&self, event: &RunEvent) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE run_events
+             SET run_id = ?, event_index = ?, source = ?, level = ?, event_type = ?,
+                 message = ?, payload_json = ?, created_at = ?
+             WHERE id = ?",
+        )
+        .bind(&event.run_id)
+        .bind(event.event_index)
+        .bind(event.source)
+        .bind(&event.level)
+        .bind(&event.event_type)
+        .bind(&event.message)
+        .bind(&event.payload_json)
+        .bind(&event.created_at)
+        .bind(&event.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn delete_run_event(&self, id: &str) -> Result<bool> {
@@ -460,6 +508,16 @@ impl SchedulerDb {
         Ok(())
     }
 
+    pub async fn get_run_artifact(&self, id: &str) -> Result<Option<RunArtifact>> {
+        Ok(sqlx::query_as::<_, RunArtifact>(
+            "SELECT id, run_id, kind, path, title, mime_type, size_bytes, created_at
+             FROM run_artifacts WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
     pub async fn list_run_artifacts(&self, run_id: &str) -> Result<Vec<RunArtifact>> {
         Ok(sqlx::query_as::<_, RunArtifact>(
             "SELECT id, run_id, kind, path, title, mime_type, size_bytes, created_at
@@ -468,6 +526,34 @@ impl SchedulerDb {
         .bind(run_id)
         .fetch_all(&self.pool)
         .await?)
+    }
+
+    pub async fn update_run_artifact(&self, artifact: &RunArtifact) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE run_artifacts
+             SET run_id = ?, kind = ?, path = ?, title = ?, mime_type = ?, size_bytes = ?,
+                 created_at = ?
+             WHERE id = ?",
+        )
+        .bind(&artifact.run_id)
+        .bind(artifact.kind)
+        .bind(&artifact.path)
+        .bind(&artifact.title)
+        .bind(&artifact.mime_type)
+        .bind(artifact.size_bytes)
+        .bind(&artifact.created_at)
+        .bind(&artifact.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn delete_run_artifact(&self, id: &str) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM run_artifacts WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn create_task_audit_event(&self, event: &TaskAuditEvent) -> Result<()> {
@@ -491,6 +577,17 @@ impl SchedulerDb {
         Ok(())
     }
 
+    pub async fn get_task_audit_event(&self, id: &str) -> Result<Option<TaskAuditEvent>> {
+        Ok(sqlx::query_as::<_, TaskAuditEvent>(
+            "SELECT id, task_id, actor_type, actor_id, action, before_json, after_json, reason,
+                    created_at
+             FROM task_audit_events WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
     pub async fn list_task_audit_events(&self, task_id: &str) -> Result<Vec<TaskAuditEvent>> {
         Ok(sqlx::query_as::<_, TaskAuditEvent>(
             "SELECT id, task_id, actor_type, actor_id, action, before_json, after_json, reason,
@@ -500,6 +597,35 @@ impl SchedulerDb {
         .bind(task_id)
         .fetch_all(&self.pool)
         .await?)
+    }
+
+    pub async fn update_task_audit_event(&self, event: &TaskAuditEvent) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE task_audit_events
+             SET task_id = ?, actor_type = ?, actor_id = ?, action = ?, before_json = ?,
+                 after_json = ?, reason = ?, created_at = ?
+             WHERE id = ?",
+        )
+        .bind(&event.task_id)
+        .bind(event.actor_type)
+        .bind(&event.actor_id)
+        .bind(&event.action)
+        .bind(&event.before_json)
+        .bind(&event.after_json)
+        .bind(&event.reason)
+        .bind(&event.created_at)
+        .bind(&event.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn delete_task_audit_event(&self, id: &str) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM task_audit_events WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn create_schedule_capability_token(
@@ -527,6 +653,20 @@ impl SchedulerDb {
         Ok(())
     }
 
+    pub async fn get_schedule_capability_token(
+        &self,
+        id: &str,
+    ) -> Result<Option<ScheduleCapabilityToken>> {
+        Ok(sqlx::query_as::<_, ScheduleCapabilityToken>(
+            "SELECT id, run_id, task_id, token_hash, capabilities_json, expires_at, max_creates,
+                    create_count, revoked_at, created_at
+             FROM schedule_capability_tokens WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
     pub async fn get_schedule_capability_token_by_hash(
         &self,
         token_hash: &str,
@@ -539,6 +679,31 @@ impl SchedulerDb {
         .bind(token_hash)
         .fetch_optional(&self.pool)
         .await?)
+    }
+
+    pub async fn update_schedule_capability_token(
+        &self,
+        token: &ScheduleCapabilityToken,
+    ) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE schedule_capability_tokens
+             SET run_id = ?, task_id = ?, token_hash = ?, capabilities_json = ?, expires_at = ?,
+                 max_creates = ?, create_count = ?, revoked_at = ?, created_at = ?
+             WHERE id = ?",
+        )
+        .bind(&token.run_id)
+        .bind(&token.task_id)
+        .bind(&token.token_hash)
+        .bind(&token.capabilities_json)
+        .bind(&token.expires_at)
+        .bind(token.max_creates)
+        .bind(token.create_count)
+        .bind(&token.revoked_at)
+        .bind(&token.created_at)
+        .bind(&token.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn revoke_schedule_capability_token(
@@ -556,6 +721,14 @@ impl SchedulerDb {
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn delete_schedule_capability_token(&self, id: &str) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM schedule_capability_tokens WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn delete_expired_schedule_capability_tokens(&self, older_than: &str) -> Result<u64> {
         let result = sqlx::query("DELETE FROM schedule_capability_tokens WHERE expires_at <= ?")
             .bind(older_than)
@@ -570,6 +743,14 @@ impl SchedulerDb {
         )
         .bind(key)
         .fetch_optional(&self.pool)
+        .await?)
+    }
+
+    pub async fn list_settings(&self) -> Result<Vec<Setting>> {
+        Ok(sqlx::query_as::<_, Setting>(
+            "SELECT key, value_json, updated_at FROM settings ORDER BY key ASC",
+        )
+        .fetch_all(&self.pool)
         .await?)
     }
 
@@ -711,6 +892,15 @@ const TASK_SELECT_BY_SLUG: &str = "SELECT id, slug, name, description, status, k
     max_retries, retry_backoff_sec, cleanup_policy, cleanup_after_days, created_by,
     created_by_run_id, created_at, updated_at, deleted_at
     FROM tasks WHERE slug = ?";
+
+const TASK_SELECT_ALL: &str = "SELECT id, slug, name, description, status, kind, cron_expr,
+    run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
+    prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
+    base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
+    schedule_cli_capabilities, missed_policy, missed_window_days, overlap_policy, max_runtime_sec,
+    max_retries, retry_backoff_sec, cleanup_policy, cleanup_after_days, created_by,
+    created_by_run_id, created_at, updated_at, deleted_at
+    FROM tasks ORDER BY updated_at DESC, id DESC";
 
 const TASK_SELECT_ACTIVE_DUE: &str = "SELECT id, slug, name, description, status, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
