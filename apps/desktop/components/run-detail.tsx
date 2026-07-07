@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { RotateCcw, Square } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { Download, FolderOpen, PlusCircle, RotateCcw, Square } from "lucide-react";
 import { toast } from "sonner";
 
 import { RunStatusBadge } from "@/components/status-badge";
@@ -25,19 +26,75 @@ type RunDetailProps = {
   task?: TaskDto;
 };
 
+type EventLine = {
+  id: string;
+  eventType: string;
+  message: string;
+  raw: string;
+};
+
+function parseEventLines(input: string): EventLine[] {
+  return input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        const eventType =
+          typeof parsed.event_type === "string"
+            ? parsed.event_type
+            : typeof parsed.eventType === "string"
+              ? parsed.eventType
+              : "event";
+        const message =
+          typeof parsed.message === "string"
+            ? parsed.message
+            : typeof parsed.msg === "string"
+              ? parsed.msg
+              : line;
+        return { id: `${index}-${eventType}`, eventType, message, raw: line };
+      } catch {
+        return { id: `${index}-raw`, eventType: "raw", message: line, raw: line };
+      }
+    });
+}
+
+function formatBytes(value: number | undefined) {
+  if (!value) {
+    return "—";
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function shortValue(value: string | undefined) {
+  return value ? value.slice(0, 12) : "—";
+}
+
 export function RunDetail({ run, task }: RunDetailProps) {
   const [logs, setLogs] = useState<Record<LogStream, string>>({
     stdout: "",
     stderr: "",
+    events: "",
   });
+  const [isExportingLogs, setIsExportingLogs] = useState(false);
   const cancelRun = useCancelRun();
   const runTaskNow = useRunTaskNow();
   const active = isRunActive(run.status);
+  const eventLines = useMemo(() => parseEventLines(logs.events), [logs.events]);
+  const workspaceToOpen = run.worktreePath ?? run.workspacePath;
+  const artifacts = run.artifacts ?? [];
 
   useEffect(() => {
     let canceled = false;
-    const cursors: Record<LogStream, number> = { stdout: 0, stderr: 0 };
-    setLogs({ stdout: "", stderr: "" });
+    const cursors: Record<LogStream, number> = { stdout: 0, stderr: 0, events: 0 };
+    setLogs({ stdout: "", stderr: "", events: "" });
 
     async function poll(stream: LogStream) {
       try {
@@ -71,10 +128,12 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
     void poll("stdout");
     void poll("stderr");
+    void poll("events");
     const interval = active
       ? window.setInterval(() => {
           void poll("stdout");
           void poll("stderr");
+          void poll("events");
         }, 3_000)
       : undefined;
 
@@ -110,6 +169,35 @@ export function RunDetail({ run, task }: RunDetailProps) {
       );
   }
 
+  function openPath(path: string, label: string) {
+    ipcClient
+      .openPath(path)
+      .then(() => toast.success(`${label} opened in Finder`))
+      .catch((error) =>
+        toast.error(`Could not open ${label.toLowerCase()}`, {
+          description:
+            error instanceof Error ? error.message : "Open path command failed.",
+        }),
+      );
+  }
+
+  async function exportLogs() {
+    setIsExportingLogs(true);
+    try {
+      const path = await ipcClient.exportRunLogs(run.id);
+      if (path) {
+        toast.success("Logs exported", { description: path });
+      }
+    } catch (error) {
+      toast.error("Could not export logs", {
+        description:
+          error instanceof Error ? error.message : "Export command failed.",
+      });
+    } finally {
+      setIsExportingLogs(false);
+    }
+  }
+
   return (
     <div className="grid gap-4">
       <Card>
@@ -123,7 +211,25 @@ export function RunDetail({ run, task }: RunDetailProps) {
               {task?.name ?? run.taskId} · {run.triggerType}
             </CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {workspaceToOpen ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => openPath(workspaceToOpen, "Workspace")}
+              >
+                <FolderOpen className="size-4" aria-hidden="true" />
+                Open workspace
+              </Button>
+            ) : null}
+            <Button variant="outline" asChild>
+              <Link
+                href={`/tasks/new?prefillFromTask=${encodeURIComponent(run.taskId)}&sourceRun=${encodeURIComponent(run.id)}`}
+              >
+                <PlusCircle className="size-4" aria-hidden="true" />
+                Create follow-up task
+              </Link>
+            </Button>
             {active ? (
               <Button variant="outline" disabled={cancelRun.isPending} onClick={cancel}>
                 <Square className="size-4" aria-hidden="true" />
@@ -166,6 +272,31 @@ export function RunDetail({ run, task }: RunDetailProps) {
                 {run.workspacePath ?? "—"}
               </span>
             </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Worktree</span>
+              <span className="max-w-96 truncate font-mono text-xs">
+                {run.worktreePath ?? "—"}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Branch</span>
+              <span className="max-w-96 truncate font-mono text-xs">
+                {run.branchName ?? "—"}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Base ref</span>
+              <span className="font-mono text-xs">{run.baseRef ?? "—"}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Commit before</span>
+              <span className="font-mono text-xs">{shortValue(run.commitBefore)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Commit after</span>
+              <span className="font-mono text-xs">{shortValue(run.commitAfter)}</span>
+            </div>
+            {/* TODO: Show codexCommandJson here when RunDto exposes it. */}
           </CardContent>
         </Card>
 
@@ -193,9 +324,22 @@ export function RunDetail({ run, task }: RunDetailProps) {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Logs</CardTitle>
-          <CardDescription>stdout/stderr tail is cursor-polled while a run is active.</CardDescription>
+        <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle>Logs</CardTitle>
+            <CardDescription>
+              stdout/stderr/events tail is cursor-polled while a run is active.
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isExportingLogs}
+            onClick={() => void exportLogs()}
+          >
+            <Download className="size-4" aria-hidden="true" />
+            Export logs
+          </Button>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="stdout">
@@ -215,12 +359,79 @@ export function RunDetail({ run, task }: RunDetailProps) {
               </pre>
             </TabsContent>
             <TabsContent value="events">
-              <pre className="min-h-64 overflow-auto rounded-md bg-muted p-3 text-xs text-pretty">
-                Events JSONL tailing is pending a run_tail_log stream enum for events.
-                TODO: wire this tab when the backend accepts stream=&quot;events&quot;.
-              </pre>
+              <div className="min-h-64 overflow-auto rounded-md bg-muted p-3">
+                {eventLines.length ? (
+                  <div className="grid gap-2">
+                    {eventLines.map((event) => (
+                      <div key={event.id} className="rounded-md border bg-background p-3">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <Badge variant="outline">{event.eventType}</Badge>
+                          <span className="text-pretty">{event.message}</span>
+                        </div>
+                        <details className="mt-2 text-xs">
+                          <summary className="cursor-pointer text-muted-foreground">
+                            Raw JSON
+                          </summary>
+                          <pre className="mt-2 overflow-auto rounded bg-muted p-2">
+                            {event.raw}
+                          </pre>
+                        </details>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No events yet.</p>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Artifacts</CardTitle>
+          <CardDescription>Files recorded by the completed run.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {artifacts.length ? (
+            <div className="grid gap-2">
+              {artifacts.map((artifact) => (
+                <div
+                  key={artifact.id}
+                  className="flex flex-col justify-between gap-3 rounded-md border p-3 md:flex-row md:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">{artifact.kind}</Badge>
+                      <span className="font-medium">
+                        {artifact.title ?? artifact.path}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                      {artifact.path}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {formatBytes(artifact.sizeBytes)} · {formatDateTime(artifact.createdAt)}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openPath(artifact.path, "Artifact")}
+                  >
+                    <FolderOpen className="size-4" aria-hidden="true" />
+                    Show in Finder
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No artifacts have been recorded for this run.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

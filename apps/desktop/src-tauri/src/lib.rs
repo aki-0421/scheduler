@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -6,16 +7,17 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use scheduler_core::ipc::{
     JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ProjectListResult, JSONRPC_VERSION,
-    METHOD_DAEMON_DIAGNOSTICS, METHOD_DAEMON_HEALTH, METHOD_PROJECT_LIST, METHOD_PROJECT_TRUST,
-    METHOD_RUN_CANCEL, METHOD_RUN_GET, METHOD_RUN_LIST, METHOD_RUN_TAIL_LOG, METHOD_SETTINGS_GET,
-    METHOD_SETTINGS_SET, METHOD_TASK_AUDIT_LIST, METHOD_TASK_CREATE, METHOD_TASK_DELETE,
-    METHOD_TASK_GET, METHOD_TASK_LIST, METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW,
-    METHOD_TASK_UPDATE,
+    METHOD_DAEMON_DIAGNOSTICS, METHOD_DAEMON_HEALTH, METHOD_DAEMON_TICK_NOW, METHOD_PROJECT_LIST,
+    METHOD_PROJECT_TRUST, METHOD_RUN_CANCEL, METHOD_RUN_GET, METHOD_RUN_LIST, METHOD_RUN_TAIL_LOG,
+    METHOD_SETTINGS_GET, METHOD_SETTINGS_SET, METHOD_TASK_AUDIT_LIST, METHOD_TASK_CREATE,
+    METHOD_TASK_DELETE, METHOD_TASK_GET, METHOD_TASK_LIST, METHOD_TASK_PAUSE, METHOD_TASK_RESUME,
+    METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, RunEvent, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -24,6 +26,9 @@ use tokio::sync::Mutex;
 type CommandResult<T> = Result<T, String>;
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(35);
 const DAEMON_LOG_TAIL_BYTES: u64 = 64 * 1024;
+const LOG_EXPORT_TAIL_BYTES: usize = 256 * 1024;
+const PROMPT_FILE_MAX_BYTES: u64 = 200 * 1024;
+const RUN_STATUS_NOTIFICATION_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Debug)]
 struct AppState {
@@ -524,11 +529,201 @@ fn redact_sensitive_log_lines(input: &str) -> String {
         .join("\n")
 }
 
+async fn read_run_log_tail(
+    app: &AppHandle,
+    state: &AppState,
+    run_id: &str,
+    stream: &str,
+) -> CommandResult<String> {
+    let result = state
+        .daemon
+        .proxy(
+            app,
+            METHOD_RUN_TAIL_LOG,
+            json!({
+                "runId": run_id,
+                "stream": stream,
+                "cursor": 0_u64,
+                "limit": LOG_EXPORT_TAIL_BYTES
+            }),
+        )
+        .await?;
+    Ok(result
+        .get("data")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned())
+}
+
+#[derive(Debug, Clone)]
+struct RunStatusSnapshot {
+    task_id: String,
+    status: String,
+}
+
+fn run_status_snapshot(value: &Value) -> BTreeMap<String, RunStatusSnapshot> {
+    value
+        .get("runs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|run| {
+            let id = run.get("id")?.as_str()?.to_owned();
+            let task_id = run.get("taskId")?.as_str()?.to_owned();
+            let status = run.get("status")?.as_str()?.to_owned();
+            Some((id, RunStatusSnapshot { task_id, status }))
+        })
+        .collect()
+}
+
+fn task_name_map(value: &Value) -> BTreeMap<String, String> {
+    value
+        .get("tasks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|task| {
+            let id = task.get("id")?.as_str()?.to_owned();
+            let name = task.get("name")?.as_str()?.to_owned();
+            Some((id, name))
+        })
+        .collect()
+}
+
+fn notification_failure_status(status: &str) -> bool {
+    matches!(status, "failed" | "timed_out")
+}
+
+fn status_label(status: &str) -> &'static str {
+    match status {
+        "timed_out" => "timed out",
+        "failed" => "failed",
+        _ => "needs attention",
+    }
+}
+
+async fn notifications_enabled(app: &AppHandle, state: &AppState) -> bool {
+    let Ok(result) = state
+        .daemon
+        .proxy(
+            app,
+            METHOD_SETTINGS_GET,
+            json!({ "key": "notifications.enabled" }),
+        )
+        .await
+    else {
+        return true;
+    };
+
+    let Some(setting) = result
+        .get("settings")
+        .and_then(Value::as_array)
+        .and_then(|settings| settings.first())
+    else {
+        return true;
+    };
+
+    let value_json = setting
+        .get("valueJson")
+        .or_else(|| setting.get("value_json"))
+        .and_then(Value::as_str)
+        .unwrap_or("true");
+    serde_json::from_str::<bool>(value_json).unwrap_or(true)
+}
+
+async fn notify_run_status_changes(
+    app: &AppHandle,
+    state: &AppState,
+    failures: Vec<RunStatusSnapshot>,
+) {
+    if failures.is_empty() || !notifications_enabled(app, state).await {
+        return;
+    }
+
+    let task_names = state
+        .daemon
+        .proxy(app, METHOD_TASK_LIST, json!({}))
+        .await
+        .map(|value| task_name_map(&value))
+        .unwrap_or_default();
+
+    for failure in failures {
+        let task_name = task_names
+            .get(&failure.task_id)
+            .map(String::as_str)
+            .unwrap_or("Scheduled task");
+        let body = format!("{task_name}: {}", status_label(&failure.status));
+        let _ = app
+            .notification()
+            .builder()
+            .title("Codex Scheduler run failed")
+            .body(body)
+            .show();
+    }
+}
+
+fn start_run_status_notification_poll(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut previous: BTreeMap<String, RunStatusSnapshot> = BTreeMap::new();
+        let mut initialized = false;
+
+        loop {
+            let state = app.state::<AppState>();
+            if state.daemon.shutdown_started.load(Ordering::SeqCst) {
+                break;
+            }
+
+            if let Ok(result) = state.daemon.proxy(&app, METHOD_RUN_LIST, json!({})).await {
+                let current = run_status_snapshot(&result);
+                if initialized {
+                    let failures = current
+                        .iter()
+                        .filter_map(|(id, snapshot)| {
+                            if !notification_failure_status(&snapshot.status) {
+                                return None;
+                            }
+                            if previous
+                                .get(id)
+                                .is_some_and(|prior| notification_failure_status(&prior.status))
+                            {
+                                return None;
+                            }
+                            Some(snapshot.clone())
+                        })
+                        .collect::<Vec<_>>();
+                    notify_run_status_changes(&app, &state, failures).await;
+                }
+
+                previous = current;
+                initialized = true;
+            }
+
+            tokio::time::sleep(RUN_STATUS_NOTIFICATION_INTERVAL).await;
+        }
+    });
+}
+
 #[tauri::command]
 async fn daemon_health(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Value> {
     state
         .daemon
         .proxy(&app, METHOD_DAEMON_HEALTH, json!({}))
+        .await
+}
+
+#[tauri::command]
+async fn daemon_diagnostics(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Value> {
+    state
+        .daemon
+        .proxy(&app, METHOD_DAEMON_DIAGNOSTICS, json!({}))
+        .await
+}
+
+#[tauri::command]
+async fn daemon_tick_now(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Value> {
+    state
+        .daemon
+        .proxy(&app, METHOD_DAEMON_TICK_NOW, json!({}))
         .await
 }
 
@@ -602,6 +797,72 @@ async fn diagnostics_export(
     std::fs::write(&path, contents)
         .map_err(|err| format!("failed to write diagnostics export: {err}"))?;
     Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+async fn export_run_logs(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    run_id: String,
+) -> CommandResult<Option<String>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Export run logs")
+        .set_file_name(format!("codex-scheduler-{run_id}-logs.txt"))
+        .add_filter("Text", &["txt", "log"])
+        .blocking_save_file();
+    let Some(path) = picked
+        .map(|path| {
+            path.into_path()
+                .map_err(|err| format!("invalid run log export path: {err}"))
+        })
+        .transpose()?
+    else {
+        return Ok(None);
+    };
+
+    let stdout = read_run_log_tail(&app, &state, &run_id, "stdout").await?;
+    let stderr = read_run_log_tail(&app, &state, &run_id, "stderr").await?;
+    let contents = format!(
+        "Codex Scheduler run log export\nrunId: {run_id}\n\n== stdout tail ==\n{stdout}\n\n== stderr tail ==\n{stderr}\n"
+    );
+    std::fs::write(&path, contents)
+        .map_err(|err| format!("failed to write run log export: {err}"))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+async fn prompt_pick_file(app: AppHandle) -> CommandResult<Option<String>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Import prompt file")
+        .add_filter("Text", &["txt", "md", "markdown"])
+        .blocking_pick_file();
+    picked
+        .map(|path| {
+            path.into_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .map_err(|err| err.to_string())
+        })
+        .transpose()
+}
+
+#[tauri::command]
+async fn read_prompt_file(path: String) -> CommandResult<String> {
+    let path =
+        std::fs::canonicalize(&path).map_err(|err| format!("prompt file does not exist: {err}"))?;
+    let metadata = std::fs::metadata(&path)
+        .map_err(|err| format!("prompt file metadata is unavailable: {err}"))?;
+    if !metadata.is_file() {
+        return Err("prompt path is not a file".to_owned());
+    }
+    if metadata.len() > PROMPT_FILE_MAX_BYTES {
+        return Err("prompt file is larger than 200KB".to_owned());
+    }
+    std::fs::read_to_string(&path)
+        .map_err(|err| format!("failed to read prompt file as UTF-8 text: {err}"))
 }
 
 #[tauri::command]
@@ -859,18 +1120,23 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        // TODO: Poll daemon run status and emit run.failed notifications when notifications.enabled is true.
         .plugin(tauri_plugin_notification::init())
         .manage(state)
         .setup(|app| {
             let app_handle = app.handle().clone();
             let state = app.state::<AppState>();
             tauri::async_runtime::block_on(state.daemon.setup(&app_handle))?;
+            start_run_status_notification_poll(app_handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             daemon_health,
+            daemon_diagnostics,
+            daemon_tick_now,
             diagnostics_export,
+            export_run_logs,
+            prompt_pick_file,
+            read_prompt_file,
             task_list,
             task_get,
             task_create,

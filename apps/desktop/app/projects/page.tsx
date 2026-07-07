@@ -24,13 +24,26 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/format";
-import { useProjects, useTrustProject } from "@/lib/queries";
+import { useProjects, useTasks, useTrustProject } from "@/lib/queries";
+import type { ProjectDto } from "@/lib/types";
 
 export default function ProjectsPage() {
   const [path, setPath] = useState("");
   const projects = useProjects();
+  const tasks = useTasks();
   const trustProject = useTrustProject();
   const projectList = projects.data ?? [];
+  const taskList = tasks.data ?? [];
+
+  function activeTaskCount(project: ProjectDto) {
+    return taskList.filter(
+      (task) =>
+        task.status === "active" &&
+        (task.target.projectId === project.id ||
+          task.target.repoPath === project.path ||
+          task.target.repoPath === project.gitRoot),
+    ).length;
+  }
 
   function trust() {
     const trimmed = path.trim();
@@ -99,6 +112,7 @@ export default function ProjectsPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Kind</TableHead>
                   <TableHead>Path</TableHead>
+                  <TableHead>Active tasks</TableHead>
                   <TableHead>Default branch</TableHead>
                   <TableHead>Trusted at</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -113,6 +127,9 @@ export default function ProjectsPage() {
                     </TableCell>
                     <TableCell className="max-w-xl truncate font-mono text-xs">
                       {project.path}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {activeTaskCount(project)}
                     </TableCell>
                     <TableCell>{project.defaultBranch ?? "—"}</TableCell>
                     <TableCell className="tabular-nums">

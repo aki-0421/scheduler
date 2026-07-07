@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { z } from "zod";
 
 import {
+  daemonDiagnosticsSchema,
+  daemonTickNowResultSchema,
   healthDtoSchema,
   logStreamSchema,
   projectListResultSchema,
@@ -18,6 +20,8 @@ import {
   taskListResultSchema,
   taskResultSchema,
   taskStatusSchema,
+  type DaemonDiagnostics,
+  type DaemonTickNowResult,
   type LogStream,
   type RunDto,
   type RunStatus,
@@ -69,6 +73,8 @@ const optionalPathSchema = z
   .union([z.string(), z.null(), z.undefined()])
   .transform((value): string | undefined => value ?? undefined);
 
+const stringSchema = z.string();
+
 const unitSchema = z
   .union([z.null(), z.undefined()])
   .transform((): void => undefined);
@@ -78,8 +84,28 @@ export const ipcClient = {
     return call("daemon_health", undefined, healthDtoSchema);
   },
 
+  daemonDiagnostics(): Promise<DaemonDiagnostics> {
+    return call("daemon_diagnostics", undefined, daemonDiagnosticsSchema);
+  },
+
+  daemonTickNow(): Promise<DaemonTickNowResult> {
+    return call("daemon_tick_now", undefined, daemonTickNowResultSchema);
+  },
+
   diagnosticsExport() {
     return call("diagnostics_export", undefined, optionalPathSchema);
+  },
+
+  exportRunLogs(runId: string) {
+    return call("export_run_logs", { runId }, optionalPathSchema);
+  },
+
+  promptPickFile() {
+    return call("prompt_pick_file", undefined, optionalPathSchema);
+  },
+
+  readPromptFile(path: string) {
+    return call("read_prompt_file", { path }, stringSchema);
   },
 
   async taskList(filter?: { status?: TaskStatus }) {

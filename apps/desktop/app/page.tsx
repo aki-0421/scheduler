@@ -33,12 +33,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime, formatDuration, formatTaskSchedule, isRunActive } from "@/lib/format";
-import { useHealth, useRuns, useSetSetting, useSettings, useTasks } from "@/lib/queries";
+import {
+  useDaemonDiagnostics,
+  useDaemonTickNow,
+  useHealth,
+  useRuns,
+  useSetSetting,
+  useSettings,
+  useTasks,
+} from "@/lib/queries";
 
 export default function DashboardPage() {
   const tasks = useTasks();
   const runs = useRuns();
   const health = useHealth();
+  const diagnostics = useDaemonDiagnostics();
+  const tickNow = useDaemonTickNow();
   const settings = useSettings();
   const setSetting = useSetSetting();
   const taskList = tasks.data ?? [];
@@ -83,8 +93,23 @@ export default function DashboardPage() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
+            disabled={tickNow.isPending}
             onClick={() =>
-              toast.info("Run due check will be wired when the daemon tick IPC lands.")
+              tickNow.mutate(undefined, {
+                onSuccess: (result) =>
+                  toast.success(
+                    result.triggered
+                      ? "Due check triggered"
+                      : "Daemon accepted tick request",
+                  ),
+                onError: (error) =>
+                  toast.error("Could not trigger due check", {
+                    description:
+                      error instanceof Error
+                        ? error.message
+                        : "Daemon command failed.",
+                  }),
+              })
             }
           >
             <Clock className="size-4" aria-hidden="true" />
@@ -185,9 +210,27 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Badge variant="outline">{settings.data["runner.codex_path"]}</Badge>
+            <Badge
+              variant={
+                diagnostics.data
+                  ? diagnostics.data.codexPath.exists
+                    ? "success"
+                    : "warning"
+                  : health.data?.ok
+                    ? "outline"
+                    : "destructive"
+              }
+            >
+              {settings.data["runner.codex_path"]}
+            </Badge>
             <p className="mt-2 text-xs text-muted-foreground">
-              doctor check pending M5 backend wiring
+              {diagnostics.data
+                ? diagnostics.data.codexPath.exists
+                  ? "codex path exists"
+                  : "codex path was not found"
+                : health.data?.ok
+                  ? "daemon healthy; diagnostics unavailable"
+                  : "daemon health unavailable"}
             </p>
           </CardContent>
         </Card>

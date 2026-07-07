@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -34,9 +35,12 @@ import { formatDateTime, formatDuration } from "@/lib/format";
 import { useRun, useRuns, useTasks } from "@/lib/queries";
 import { runStatuses, type RunStatus } from "@/lib/types";
 
+type RunPreset = "recent" | "failed" | "needs_attention";
+
 function RunsPageContent() {
   const searchParams = useSearchParams();
   const selectedRunId = searchParams.get("run") ?? undefined;
+  const [preset, setPreset] = useState<RunPreset>("recent");
   const [statusFilter, setStatusFilter] = useState<RunStatus | "all">("all");
   const [taskFilter, setTaskFilter] = useState("all");
   const tasks = useTasks();
@@ -48,6 +52,29 @@ function RunsPageContent() {
   const taskList = tasks.data ?? [];
   const runList = runs.data ?? [];
   const taskById = new Map(taskList.map((task) => [task.id, task]));
+  const sortedRunList = runList
+    .slice()
+    .sort((left, right) =>
+      (right.startedAt ?? right.scheduledFor ?? right.queuedAt ?? "").localeCompare(
+        left.startedAt ?? left.scheduledFor ?? left.queuedAt ?? "",
+      ),
+    );
+  const displayedRunList = sortedRunList.filter((run) => {
+    if (preset === "failed") {
+      return run.status === "failed";
+    }
+    if (preset === "needs_attention") {
+      return ["failed", "timed_out", "interrupted"].includes(run.status);
+    }
+    return true;
+  });
+
+  function applyPreset(next: RunPreset) {
+    setPreset(next);
+    if (next !== "recent") {
+      setStatusFilter("all");
+    }
+  }
 
   return (
     <div className="grid gap-5">
@@ -59,9 +86,33 @@ function RunsPageContent() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant={preset === "failed" ? "default" : "outline"}
+            onClick={() => applyPreset("failed")}
+          >
+            Failed
+          </Button>
+          <Button
+            type="button"
+            variant={preset === "needs_attention" ? "default" : "outline"}
+            onClick={() => applyPreset("needs_attention")}
+          >
+            Needs attention
+          </Button>
+          <Button
+            type="button"
+            variant={preset === "recent" ? "default" : "outline"}
+            onClick={() => applyPreset("recent")}
+          >
+            Recent
+          </Button>
           <Select
             value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value as RunStatus | "all")}
+            onValueChange={(value) => {
+              setPreset("recent");
+              setStatusFilter(value as RunStatus | "all");
+            }}
           >
             <SelectTrigger className="w-40">
               <SelectValue />
@@ -96,11 +147,12 @@ function RunsPageContent() {
           <CardHeader>
             <CardTitle>Run history</CardTitle>
             <CardDescription>
-              {runList.length.toLocaleString()} run{runList.length === 1 ? "" : "s"}
+              {displayedRunList.length.toLocaleString()} run
+              {displayedRunList.length === 1 ? "" : "s"}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {runList.length ? (
+            {displayedRunList.length ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -113,7 +165,7 @@ function RunsPageContent() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {runList.map((run) => (
+                  {displayedRunList.map((run) => (
                     <TableRow key={run.id}>
                       <TableCell>
                         <Link
@@ -149,6 +201,7 @@ function RunsPageContent() {
                 action={{ label: "Open Tasks", href: "/tasks" }}
               />
             )}
+            {/* TODO: Add mark reviewed/archive actions when the DB schema supports triage state. */}
           </CardContent>
         </Card>
 

@@ -25,6 +25,7 @@ type SettingMutationInput = {
 
 export const queryKeys = {
   health: ["health"] as const,
+  diagnostics: ["diagnostics"] as const,
   tasks: (status?: TaskStatus) => ["tasks", status ?? "all"] as const,
   task: (id?: string) => ["task", id ?? "none"] as const,
   taskAudits: (id?: string) => ["taskAudits", id ?? "none"] as const,
@@ -49,6 +50,15 @@ export function useHealth() {
     queryKey: queryKeys.health,
     queryFn: () => ipcClient.daemonHealth(),
     refetchInterval: 5_000,
+  });
+}
+
+export function useDaemonDiagnostics() {
+  return useQuery({
+    queryKey: queryKeys.diagnostics,
+    queryFn: () => ipcClient.daemonDiagnostics(),
+    refetchInterval: 15_000,
+    retry: false,
   });
 }
 
@@ -168,6 +178,14 @@ export function useRunTaskNow() {
       invalidateSchedulerData(queryClient);
       queryClient.setQueryData(queryKeys.run(run.id), run);
     },
+  });
+}
+
+export function useDaemonTickNow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => ipcClient.daemonTickNow(),
+    onSuccess: () => invalidateSchedulerData(queryClient),
   });
 }
 

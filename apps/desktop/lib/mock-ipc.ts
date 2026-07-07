@@ -1,7 +1,9 @@
 import type {
+  DaemonDiagnostics,
   HealthDto,
   LogStream,
   ProjectDto,
+  RunArtifactDto,
   RunDto,
   RunStatus,
   SchedulerSettings,
@@ -51,6 +53,10 @@ const settings = new Map<keyof SchedulerSettings, SettingDto>(
     },
   ]),
 );
+
+const promptFileContents = new Map<string, string>([
+  ["/tmp/codex-scheduler-prompt.md", "Imported prompt from a mock file.\n"],
+]);
 
 let projects: ProjectDto[] = [
   {
@@ -109,6 +115,7 @@ let tasks: TaskDto[] = [
       maxRetries: 1,
       retryBackoffSec: 300,
       cleanupPolicy: "keep",
+      maxCreatedSchedulesPerRun: 5,
     },
     auditEvents: [
       {
@@ -178,6 +185,7 @@ let tasks: TaskDto[] = [
       maxRetries: 0,
       retryBackoffSec: 300,
       cleanupPolicy: "delete_on_success",
+      maxCreatedSchedulesPerRun: 5,
     },
   },
   {
@@ -212,6 +220,7 @@ let tasks: TaskDto[] = [
       maxRetries: 0,
       retryBackoffSec: 300,
       cleanupPolicy: "keep",
+      maxCreatedSchedulesPerRun: 5,
     },
   },
 ];
@@ -342,6 +351,8 @@ const logs = new Map<string, Record<LogStream, string>>([
       stdout:
         "Starting Codex Scheduler review\nLoaded 18 changed files\nFinal: No critical issues found\n",
       stderr: "",
+      events:
+        "{\"event_type\":\"run.started\",\"message\":\"Run started\"}\n{\"event_type\":\"run.completed\",\"message\":\"Run completed successfully\"}\n",
     },
   ],
   [
@@ -349,6 +360,8 @@ const logs = new Map<string, Record<LogStream, string>>([
     {
       stdout: "Starting dependency scan\nResolving package metadata\n",
       stderr: "registry lookup timed out\nretry budget exhausted\n",
+      events:
+        "{\"event_type\":\"run.started\",\"message\":\"Run started\"}\n{\"event_type\":\"run.failed\",\"message\":\"Codex exited with code 1\"}\n",
     },
   ],
   [
@@ -357,7 +370,38 @@ const logs = new Map<string, Record<LogStream, string>>([
       stdout:
         "Reading specs...\nChecking current workspace...\nInspecting IPC module...\n",
       stderr: "",
+      events: "{\"event_type\":\"run.started\",\"message\":\"Run started\"}\n",
     },
+  ],
+]);
+
+const artifacts = new Map<string, RunArtifactDto[]>([
+  [
+    "run_success",
+    [
+      {
+        id: "artifact_last_message",
+        runId: "run_success",
+        kind: "last-message",
+        path:
+          "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_success/last-message.md",
+        title: "Last message",
+        mimeType: "text/markdown",
+        sizeBytes: 512,
+        createdAt,
+      },
+      {
+        id: "artifact_diff",
+        runId: "run_success",
+        kind: "diff",
+        path:
+          "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_success/changes.diff",
+        title: "Git diff",
+        mimeType: "text/x-diff",
+        sizeBytes: 2048,
+        createdAt,
+      },
+    ],
   ],
 ]);
 
@@ -425,6 +469,8 @@ function createRun(taskId: string, status: RunStatus = "queued") {
   logs.set(run.id, {
     stdout: "Manual run queued by UI.\nWaiting for scheduler tick.\n",
     stderr: "",
+    events:
+      "{\"event_type\":\"run.queued\",\"message\":\"Manual run queued by UI\"}\n",
   });
   return { run: clone(run) };
 }
@@ -454,8 +500,42 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       };
       return clone(health);
     }
+    case "daemon_diagnostics": {
+      const codexPath = JSON.parse(
+        settings.get("runner.codex_path")?.valueJson ?? "\"codex\"",
+      ) as string;
+      const enabled = JSON.parse(
+        settings.get("scheduler.enabled")?.valueJson ?? "true",
+      ) as boolean;
+      const diagnostics: DaemonDiagnostics = {
+        version: "dev-mock",
+        dbSchemaVersion: 1,
+        dataDir: "/tmp/codex-scheduler",
+        socketPath: "/tmp/codex-scheduler/scheduler.sock",
+        dbSizeBytes: 4096,
+        logsSizeBytes: 8192,
+        taskCounts: { active: tasks.filter((task) => task.status === "active").length },
+        runCounts: { failed: runs.filter((run) => run.status === "failed").length },
+        schedulerEnabled: enabled,
+        codexPath: {
+          value: codexPath,
+          exists: codexPath === "codex" || codexPath.startsWith("/"),
+        },
+        tickIntervalSec: 60,
+        lastTickAt: minutesAgo(2),
+      };
+      return clone(diagnostics);
+    }
+    case "daemon_tick_now":
+      return { ok: true, triggered: true };
     case "diagnostics_export":
       return "/tmp/codex-scheduler-diagnostics.json";
+    case "export_run_logs":
+      return `/tmp/codex-scheduler-${input.runId as string}-logs.txt`;
+    case "prompt_pick_file":
+      return "/tmp/codex-scheduler-prompt.md";
+    case "read_prompt_file":
+      return promptFileContents.get(input.path as string) ?? "Imported prompt.\n";
     case "task_list": {
       const status = input.status as TaskStatus | undefined;
       const filtered = tasks.filter(
@@ -507,7 +587,10 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       };
     }
     case "run_get":
-      return { run: clone(runById(input.id as string)) };
+      return {
+        run: clone(runById(input.id as string)),
+        artifacts: clone(artifacts.get(input.id as string) ?? []),
+      };
     case "run_cancel": {
       const run = runById(input.id as string);
       run.status = "canceled";

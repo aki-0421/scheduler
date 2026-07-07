@@ -45,7 +45,15 @@ export const cleanupPolicies = [
 ] as const;
 export const triggerTypes = ["schedule", "manual", "cli", "catchup", "retry"] as const;
 export const projectKinds = ["git", "folder"] as const;
-export const logStreams = ["stdout", "stderr"] as const;
+export const logStreams = ["stdout", "stderr", "events"] as const;
+export const runArtifactKinds = [
+  "file",
+  "diff",
+  "patch",
+  "log",
+  "last-message",
+  "worktree",
+] as const;
 
 export const taskKindSchema = z.enum(taskKinds);
 export const taskStatusSchema = z.enum(taskStatuses);
@@ -64,6 +72,7 @@ export const cleanupPolicySchema = z.enum(cleanupPolicies);
 export const triggerTypeSchema = z.enum(triggerTypes);
 export const projectKindSchema = z.enum(projectKinds);
 export const logStreamSchema = z.enum(logStreams);
+export const runArtifactKindSchema = z.enum(runArtifactKinds);
 
 const auditJsonPayloadSchema = z.unknown().transform((value) => value ?? undefined);
 
@@ -122,6 +131,7 @@ export const taskPoliciesDtoSchema = z.object({
   missedPolicy: missedPolicySchema,
   overlapPolicy: overlapPolicySchema,
   maxRuntimeSec: z.number().int().positive(),
+  maxCreatedSchedulesPerRun: optionalNumber,
   scheduleCliCapabilities: z.array(z.string()).optional(),
   missedWindowDays: optionalNumber,
   maxRetries: optionalNumber,
@@ -154,6 +164,17 @@ export const taskDtoSchema = z
     return auditEvents ? { ...task, auditEvents } : task;
   });
 
+export const runArtifactDtoSchema = z.object({
+  id: z.string(),
+  runId: z.string(),
+  kind: runArtifactKindSchema,
+  path: z.string(),
+  title: optionalString,
+  mimeType: optionalString,
+  sizeBytes: optionalNumber,
+  createdAt: z.string(),
+});
+
 export const runDtoSchema = z.object({
   id: z.string(),
   taskId: z.string(),
@@ -185,6 +206,7 @@ export const runDtoSchema = z.object({
   resultSummary: optionalString,
   findingsCount: defaultNumber,
   createdScheduleCount: defaultNumber,
+  artifacts: z.array(runArtifactDtoSchema).optional(),
 });
 
 export const projectDtoSchema = z.object({
@@ -215,6 +237,29 @@ export const healthDtoSchema = z.object({
   queuedCount: z.number().int(),
 });
 
+export const daemonDiagnosticsSchema = z.object({
+  version: z.string(),
+  dbSchemaVersion: z.number().int(),
+  dataDir: z.string(),
+  socketPath: z.string(),
+  dbSizeBytes: z.number().int(),
+  logsSizeBytes: z.number().int(),
+  taskCounts: z.record(z.number().int()),
+  runCounts: z.record(z.number().int()),
+  schedulerEnabled: z.boolean(),
+  codexPath: z.object({
+    value: optionalString,
+    exists: z.boolean(),
+  }),
+  tickIntervalSec: z.number().int(),
+  lastTickAt: optionalString,
+});
+
+export const daemonTickNowResultSchema = z.object({
+  ok: z.boolean(),
+  triggered: z.boolean(),
+});
+
 export const runTailLogResultSchema = z.object({
   runId: z.string(),
   stream: logStreamSchema,
@@ -243,7 +288,12 @@ export const taskAuditListResultSchema = z.object({
   auditEvents: z.array(taskAuditEventSchema),
 });
 export const runListResultSchema = z.object({ runs: z.array(runDtoSchema) });
-export const runResultSchema = z.object({ run: runDtoSchema });
+export const runResultSchema = z
+  .object({
+    run: runDtoSchema,
+    artifacts: z.array(runArtifactDtoSchema).optional().default([]),
+  })
+  .transform(({ run, artifacts }) => ({ run: { ...run, artifacts }, artifacts }));
 export const projectListResultSchema = z.object({
   projects: z.array(projectDtoSchema),
 });
@@ -265,13 +315,19 @@ export type CleanupPolicy = z.infer<typeof cleanupPolicySchema>;
 export type TriggerType = z.infer<typeof triggerTypeSchema>;
 export type ProjectKind = z.infer<typeof projectKindSchema>;
 export type LogStream = z.infer<typeof logStreamSchema>;
+export type RunArtifactKind = z.infer<typeof runArtifactKindSchema>;
 export type TaskAuditEvent = z.infer<typeof taskAuditEventSchema>;
 export type TaskDto = z.infer<typeof taskDtoSchema>;
+export type RunArtifactDto = z.infer<typeof runArtifactDtoSchema>;
 export type RunDto = z.infer<typeof runDtoSchema>;
 export type ProjectDto = z.infer<typeof projectDtoSchema>;
 export type SettingDto = z.infer<typeof settingDtoSchema>;
 export type HealthDto = z.infer<typeof healthDtoSchema>;
+export type DaemonDiagnostics = z.infer<typeof daemonDiagnosticsSchema>;
+export type DaemonTickNowResult = z.infer<typeof daemonTickNowResultSchema>;
 export type RunTailLogResult = z.infer<typeof runTailLogResultSchema>;
+
+// TODO: Display Codex command lines here when RunDto exposes codexCommandJson.
 
 export type SchedulerSettings = {
   "scheduler.enabled": boolean;

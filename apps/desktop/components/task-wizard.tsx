@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  FolderOpen,
+  ShieldCheck,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Field } from "@/components/field";
@@ -30,6 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { getCronPreview } from "@/lib/cron";
 import { formatDateTime, formatTargetMode } from "@/lib/format";
+import { ipcClient } from "@/lib/ipc";
 import {
   buildTaskDto,
   defaultTaskDraft,
@@ -163,6 +172,8 @@ export function TaskWizard({
     () => initialDraft ?? (task ? taskToDraft(task) : defaultTaskDraft()),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isImportingPrompt, setIsImportingPrompt] = useState(false);
+  const [isPickingRepo, setIsPickingRepo] = useState(false);
   const projects = useProjects();
   const trustProject = useTrustProject();
   const createTask = useCreateTask();
@@ -251,6 +262,7 @@ export function TaskWizard({
         reasoningEffort: 3,
         maxRuntimeSec: 3,
         maxRetries: 3,
+        maxCreatedSchedulesPerRun: 4,
         dangerConfirmed: 5,
       };
       setStep(stepByKey[firstKey] ?? 0);
@@ -280,6 +292,43 @@ export function TaskWizard({
         ? Array.from(new Set([...draft.capabilities, value]))
         : draft.capabilities.filter((item) => item !== value),
     );
+  }
+
+  async function pickRepositoryFolder() {
+    setIsPickingRepo(true);
+    try {
+      const path = await ipcClient.projectPickFolder();
+      if (path) {
+        update("repoPath", path);
+      }
+    } catch (error) {
+      toast.error("Could not pick repository folder", {
+        description:
+          error instanceof Error ? error.message : "Dialog command failed.",
+      });
+    } finally {
+      setIsPickingRepo(false);
+    }
+  }
+
+  async function importPromptFile() {
+    setIsImportingPrompt(true);
+    try {
+      const path = await ipcClient.promptPickFile();
+      if (!path) {
+        return;
+      }
+      const contents = await ipcClient.readPromptFile(path);
+      update("prompt", contents);
+      toast.success("Prompt imported");
+    } catch (error) {
+      toast.error("Could not import prompt", {
+        description:
+          error instanceof Error ? error.message : "Prompt file could not be read.",
+      });
+    } finally {
+      setIsImportingPrompt(false);
+    }
   }
 
   return (
@@ -342,12 +391,26 @@ export function TaskWizard({
               error={errors.prompt}
               description={`${draft.prompt.length.toLocaleString()} characters`}
             >
-              <Textarea
-                id="task-prompt"
-                className="min-h-52 font-mono"
-                value={draft.prompt}
-                onChange={(event) => update("prompt", event.currentTarget.value)}
-              />
+              <div className="grid gap-2">
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isImportingPrompt}
+                    onClick={() => void importPromptFile()}
+                  >
+                    <FileText className="size-4" aria-hidden="true" />
+                    Import file
+                  </Button>
+                </div>
+                <Textarea
+                  id="task-prompt"
+                  className="min-h-52 font-mono"
+                  value={draft.prompt}
+                  onChange={(event) => update("prompt", event.currentTarget.value)}
+                />
+              </div>
             </Field>
             <div className="flex items-center justify-between rounded-md border p-3">
               <div>
@@ -396,14 +459,26 @@ export function TaskWizard({
                   label="Repository path"
                   htmlFor="repo-path"
                   error={errors.repoPath}
-                  description="Use an absolute local path. Folder picker will be wired by the Tauri shell."
+                  description="Use an absolute local path."
                 >
-                  <Input
-                    id="repo-path"
-                    value={draft.repoPath}
-                    onChange={(event) => update("repoPath", event.currentTarget.value)}
-                    placeholder="/Users/alice/src/my-app"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="repo-path"
+                      className="min-w-0"
+                      value={draft.repoPath}
+                      onChange={(event) => update("repoPath", event.currentTarget.value)}
+                      placeholder="/Users/alice/src/my-app"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isPickingRepo}
+                      onClick={() => void pickRepositoryFolder()}
+                    >
+                      <FolderOpen className="size-4" aria-hidden="true" />
+                      Browse
+                    </Button>
+                  </div>
                 </Field>
                 <Field label="Base ref" htmlFor="base-ref">
                   <Input
@@ -712,7 +787,26 @@ export function TaskWizard({
               ))}
             </div>
             <div className="grid gap-4">
-              {/* TODO: Restore max-created-schedules when TaskDto carries this permission field. */}
+              <Field
+                label="Max created schedules per run"
+                htmlFor="max-created-schedules"
+                error={errors.maxCreatedSchedulesPerRun}
+                description="Caps schedules created by this task through codex-schedule."
+              >
+                <Input
+                  id="max-created-schedules"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={draft.maxCreatedSchedulesPerRun}
+                  onChange={(event) =>
+                    update(
+                      "maxCreatedSchedulesPerRun",
+                      Number(event.currentTarget.value),
+                    )
+                  }
+                />
+              </Field>
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div>
                   <Label htmlFor="force-paused">Create this task as paused</Label>
@@ -777,6 +871,7 @@ export function TaskWizard({
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   approval {draft.approvalPolicy} · max {draft.maxRuntimeSec}s
+                  · creates up to {draft.maxCreatedSchedulesPerRun} schedules
                 </p>
               </div>
             </div>

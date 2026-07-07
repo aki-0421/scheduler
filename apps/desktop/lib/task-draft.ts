@@ -47,6 +47,7 @@ export type TaskDraft = {
   overlapPolicy: "skip" | "queue" | "cancel_previous";
   cleanupPolicy: "keep" | "delete_on_success" | "delete_after_days";
   allowScheduleCli: boolean;
+  maxCreatedSchedulesPerRun: number;
   capabilities: string[];
   forcePaused: boolean;
   dangerConfirmed: boolean;
@@ -142,6 +143,7 @@ export function defaultTaskDraft(): TaskDraft {
     overlapPolicy: "skip",
     cleanupPolicy: "keep",
     allowScheduleCli: true,
+    maxCreatedSchedulesPerRun: 5,
     capabilities: ["schedule:create", "schedule:update-current", "schedule:list"],
     forcePaused: false,
     dangerConfirmed: false,
@@ -177,6 +179,7 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     overlapPolicy: task.policies.overlapPolicy,
     cleanupPolicy: task.policies.cleanupPolicy ?? "keep",
     allowScheduleCli: task.policies.allowScheduleCli,
+    maxCreatedSchedulesPerRun: task.policies.maxCreatedSchedulesPerRun ?? 5,
     capabilities: task.policies.scheduleCliCapabilities ?? [],
     forcePaused: task.status === "paused",
   };
@@ -269,7 +272,13 @@ const codexSchema = z
     }
   });
 
-const permissionsSchema = z.object({});
+const permissionsSchema = z.object({
+  maxCreatedSchedulesPerRun: z.coerce
+    .number()
+    .int()
+    .min(1, "Use at least 1 schedule.")
+    .max(100, "Use 100 or fewer schedules."),
+});
 
 export function validateTaskDraftStep(draft: TaskDraft, step: number): StepErrors {
   const schemas = [
@@ -348,6 +357,7 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
       missedPolicy: draft.missedPolicy,
       overlapPolicy: draft.overlapPolicy,
       maxRuntimeSec: Number(draft.maxRuntimeSec),
+      maxCreatedSchedulesPerRun: Number(draft.maxCreatedSchedulesPerRun),
       scheduleCliCapabilities: draft.capabilities,
       missedWindowDays: 7,
       maxRetries: Number(draft.maxRetries),
