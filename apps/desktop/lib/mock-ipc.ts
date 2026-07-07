@@ -507,6 +507,10 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       projects = [project, ...projects.filter((item) => item.path !== path)];
       return { project: clone(project) };
     }
+    case "project_pick_folder":
+      return projects[0]?.path;
+    case "open_path":
+      return null;
     case "settings_get":
       return { settings: clone(settingRows(input.key as string | undefined)) };
     case "settings_set": {

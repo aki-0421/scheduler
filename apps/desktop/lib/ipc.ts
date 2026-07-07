@@ -63,6 +63,14 @@ async function call<T>(
   return schema.parse(raw);
 }
 
+const optionalPathSchema = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((value): string | undefined => value ?? undefined);
+
+const unitSchema = z
+  .union([z.null(), z.undefined()])
+  .transform((): void => undefined);
+
 export const ipcClient = {
   daemonHealth() {
     return call("daemon_health", undefined, healthDtoSchema);
@@ -170,6 +178,14 @@ export const ipcClient = {
   async projectTrust(path: string) {
     const result = await call("project_trust", { path }, projectTrustResultSchema);
     return result.project;
+  },
+
+  projectPickFolder() {
+    return call("project_pick_folder", undefined, optionalPathSchema);
+  },
+
+  openPath(path: string) {
+    return call("open_path", { path }, unitSchema);
   },
 
   async settingsGet(key?: string): Promise<SettingDto[]> {
