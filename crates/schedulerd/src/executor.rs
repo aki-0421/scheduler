@@ -9,7 +9,8 @@ use codex_runner::{
 };
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::model::{
-    new_run_event_id, Project, Run, RunEventSource, RunStatus, SandboxMode, Task,
+    new_run_artifact_id, new_run_event_id, Project, Run, RunArtifact, RunArtifactKind,
+    RunEventSource, RunStatus, SandboxMode, Task,
 };
 use scheduler_core::time::now_rfc3339;
 use serde_json::Value;
@@ -231,7 +232,14 @@ impl RunExecutor for CodexExecutor {
                     .await
                 {
                     Ok(outcome) => {
-                        let result = execution_result_from_outcome(outcome);
+                        let artifact_warning = persist_run_artifacts(&self.db, &run_id, &outcome)
+                            .await
+                            .err()
+                            .map(|err| format!("artifact persistence failed: {err}"));
+                        let mut result = execution_result_from_outcome(outcome);
+                        if let Some(warning) = artifact_warning {
+                            result.warnings.push(warning);
+                        }
                         send_executor_warnings(&event_tx, &result.warnings);
                         result
                     }
@@ -484,6 +492,80 @@ fn non_empty(value: String) -> Option<String> {
 
 fn path_to_string(path: &std::path::Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+async fn persist_run_artifacts(
+    db: &SchedulerDb,
+    run_id: &str,
+    outcome: &RunOutcome,
+) -> scheduler_core::Result<()> {
+    let log_artifacts = [
+        (
+            &outcome.log_paths.stdout_log,
+            "stdout.log",
+            Some("text/plain"),
+        ),
+        (
+            &outcome.log_paths.stderr_log,
+            "stderr.log",
+            Some("text/plain"),
+        ),
+        (
+            &outcome.log_paths.events_jsonl,
+            "events.jsonl",
+            Some("application/x-ndjson"),
+        ),
+    ];
+    for (path, title, mime_type) in log_artifacts {
+        create_run_artifact(db, run_id, RunArtifactKind::Log, path, title, mime_type).await?;
+    }
+    create_run_artifact(
+        db,
+        run_id,
+        RunArtifactKind::LastMessage,
+        &outcome.log_paths.last_message,
+        "last-message.md",
+        Some("text/markdown"),
+    )
+    .await?;
+    if let Some(worktree_path) = &outcome.workspace.worktree_path {
+        create_run_artifact(
+            db,
+            run_id,
+            RunArtifactKind::Worktree,
+            worktree_path,
+            "worktree",
+            None,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn create_run_artifact(
+    db: &SchedulerDb,
+    run_id: &str,
+    kind: RunArtifactKind,
+    path: &std::path::Path,
+    title: &str,
+    mime_type: Option<&str>,
+) -> scheduler_core::Result<()> {
+    let size_bytes = tokio::fs::metadata(path)
+        .await
+        .ok()
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len() as i64);
+    let artifact = RunArtifact {
+        id: new_run_artifact_id(),
+        run_id: run_id.to_owned(),
+        kind,
+        path: path_to_string(path),
+        title: Some(title.to_owned()),
+        mime_type: mime_type.map(str::to_owned),
+        size_bytes,
+        created_at: now_rfc3339(),
+    };
+    db.create_run_artifact(&artifact).await
 }
 
 async fn write_error_logs(request: &ExecutionRequest, message: &str) {

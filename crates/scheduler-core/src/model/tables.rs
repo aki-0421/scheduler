@@ -49,6 +49,7 @@ pub struct Task {
     pub approval_policy: ApprovalPolicy,
     pub allow_schedule_cli: bool,
     pub schedule_cli_capabilities: String,
+    pub max_created_schedules_per_run: i64,
     pub missed_policy: MissedPolicy,
     pub missed_window_days: i64,
     pub overlap_policy: OverlapPolicy,

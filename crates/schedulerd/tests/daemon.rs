@@ -63,6 +63,7 @@ fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
             missed_policy: MissedPolicy::LatestWithinWindow,
             overlap_policy: OverlapPolicy::Skip,
             max_runtime_sec: 7200,
+            max_created_schedules_per_run: Some(5),
             schedule_cli_capabilities: Some(vec![
                 "schedule:create".to_owned(),
                 "schedule:update-current".to_owned(),
@@ -290,6 +291,51 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
     assert_eq!(diagnostics.tick_interval_sec, 3600);
     assert!(diagnostics.last_tick_at.is_some());
     assert!(diagnostics.db_size_bytes > 0);
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn daemon_tick_now_triggers_scheduler_tick_over_uds() {
+    let (_temp, handle, executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+
+    let mut task = sample_task_dto("tick-now", TaskKind::Cron);
+    task.next_run_at = Some(format_utc_rfc3339(Utc::now() + ChronoDuration::hours(1)));
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams { task, actor: None },
+    )
+    .await
+    .expect("create task");
+    let mut stored = handle
+        .db()
+        .get_task(&created.task.id)
+        .await
+        .expect("get task")
+        .expect("task");
+    stored.next_run_at = Some(now_rfc3339());
+    stored.updated_at = now_rfc3339();
+    handle.db().update_task(&stored).await.expect("update task");
+
+    let mut triggered = false;
+    for _ in 0..10 {
+        let result: DaemonTickNowResult = rpc::call(
+            &handle.socket_path(),
+            METHOD_DAEMON_TICK_NOW,
+            DaemonTickNowParams {},
+        )
+        .await
+        .expect("tick now");
+        assert!(result.ok);
+        assert!(result.triggered);
+        if executor.wait_for_calls(1, Duration::from_millis(250)).await {
+            triggered = true;
+            break;
+        }
+    }
+    assert!(triggered);
 
     handle.shutdown().await;
 }
@@ -1001,6 +1047,39 @@ async fn token_create_succeeds_and_max_create_limit_is_enforced() {
 }
 
 #[tokio::test]
+async fn run_token_uses_task_max_created_schedules_per_run() {
+    let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
+
+    let mut task = sample_task_dto("token-max-creates", TaskKind::Cron);
+    task.next_run_at = Some(now_rfc3339());
+    task.policies.max_created_schedules_per_run = Some(17);
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams { task, actor: None },
+    )
+    .await
+    .expect("create task");
+    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    let call = executor
+        .calls()
+        .await
+        .into_iter()
+        .find(|call| call.task.id == created.task.id)
+        .expect("executor call");
+    let token = call.schedule_token.expect("schedule token");
+    let token_row = handle
+        .db()
+        .get_schedule_capability_token_by_hash(&sha256_hex(token.as_bytes()))
+        .await
+        .expect("get token")
+        .expect("token");
+    assert_eq!(token_row.max_creates, 17);
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn token_create_without_capability_is_denied() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
     let (source_task, token, run_id) = source_token(
@@ -1337,6 +1416,35 @@ async fn codex_executor_run_now_persists_runner_outcome_end_to_end() {
     assert!(events.iter().any(|event| {
         event.source == RunEventSource::CodexJsonl && event.event_type == "codex.json_event"
     }));
+
+    let detail: RunResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_RUN_GET,
+        RunGetParams { id: run.id.clone() },
+    )
+    .await
+    .expect("run get");
+    assert!(detail.artifacts.iter().any(|artifact| {
+        artifact.kind == RunArtifactKind::Log && artifact.path.ends_with("events.jsonl")
+    }));
+    assert!(detail
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.kind == RunArtifactKind::LastMessage));
+
+    let events_tail: RunTailLogResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_RUN_TAIL_LOG,
+        RunTailLogParams {
+            run_id: run.id.clone(),
+            stream: LogStream::Events,
+            cursor: Some(0),
+            limit: Some(4096),
+        },
+    )
+    .await
+    .expect("tail events");
+    assert!(events_tail.data.contains("sess_dummy_success"));
 
     handle.shutdown().await;
 }

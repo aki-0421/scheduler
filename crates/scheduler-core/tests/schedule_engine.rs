@@ -42,6 +42,7 @@ fn sample_task(kind: TaskKind, cron_expr: Option<&str>, run_at: Option<&str>) ->
         approval_policy: ApprovalPolicy::Never,
         allow_schedule_cli: true,
         schedule_cli_capabilities: "[]".to_owned(),
+        max_created_schedules_per_run: 5,
         missed_policy: MissedPolicy::LatestWithinWindow,
         missed_window_days: 7,
         overlap_policy: OverlapPolicy::Skip,

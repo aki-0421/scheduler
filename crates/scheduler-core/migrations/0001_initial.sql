@@ -44,6 +44,7 @@ CREATE TABLE tasks (
 
   allow_schedule_cli INTEGER NOT NULL DEFAULT 1,
   schedule_cli_capabilities TEXT NOT NULL DEFAULT '["schedule:create","schedule:update-current","schedule:list"]',
+  max_created_schedules_per_run INTEGER NOT NULL DEFAULT 5,
 
   missed_policy TEXT NOT NULL DEFAULT 'latest_within_window',
   missed_window_days INTEGER NOT NULL DEFAULT 7,

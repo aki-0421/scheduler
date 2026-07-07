@@ -71,6 +71,8 @@ pub struct TaskPoliciesDto {
     pub overlap_policy: OverlapPolicy,
     pub max_runtime_sec: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_created_schedules_per_run: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_cli_capabilities: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub missed_window_days: Option<i64>,
@@ -121,6 +123,7 @@ impl From<&Task> for TaskDto {
                 missed_policy: task.missed_policy,
                 overlap_policy: task.overlap_policy,
                 max_runtime_sec: task.max_runtime_sec,
+                max_created_schedules_per_run: Some(task.max_created_schedules_per_run),
                 schedule_cli_capabilities,
                 missed_window_days: Some(task.missed_window_days),
                 max_retries: Some(task.max_retries),
@@ -176,6 +179,11 @@ impl TryFrom<TaskDto> for Task {
             approval_policy: dto.codex.approval_policy,
             allow_schedule_cli: dto.policies.allow_schedule_cli,
             schedule_cli_capabilities: serde_json::to_string(&capabilities)?,
+            max_created_schedules_per_run: dto
+                .policies
+                .max_created_schedules_per_run
+                .unwrap_or(5)
+                .clamp(1, 100),
             missed_policy: dto.policies.missed_policy,
             missed_window_days: dto.policies.missed_window_days.unwrap_or(7),
             overlap_policy: dto.policies.overlap_policy,
@@ -190,6 +198,37 @@ impl TryFrom<TaskDto> for Task {
             updated_at: now,
             deleted_at: None,
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunArtifactDto {
+    pub id: String,
+    pub run_id: String,
+    pub kind: super::enums::RunArtifactKind,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<i64>,
+    pub created_at: String,
+}
+
+impl From<&super::tables::RunArtifact> for RunArtifactDto {
+    fn from(artifact: &super::tables::RunArtifact) -> Self {
+        Self {
+            id: artifact.id.clone(),
+            run_id: artifact.run_id.clone(),
+            kind: artifact.kind,
+            path: artifact.path.clone(),
+            title: artifact.title.clone(),
+            mime_type: artifact.mime_type.clone(),
+            size_bytes: artifact.size_bytes,
+            created_at: artifact.created_at.clone(),
+        }
     }
 }
 

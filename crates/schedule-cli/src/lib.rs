@@ -17,12 +17,15 @@ use scheduler_core::ipc::{
     METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
 };
 use scheduler_core::model::{
-    ApprovalPolicy, AuditActorType, CleanupPolicy, MissedPolicy, OverlapPolicy, ProjectKind,
-    RunDto, RunStatus, RunTargetMode, SandboxMode, TaskCodexDto, TaskDto, TaskKind,
-    TaskPoliciesDto, TaskPromptDto, TaskStatus, TaskTargetDto,
+    new_task_audit_event_id, ApprovalPolicy, AuditActorType, CleanupPolicy, MissedPolicy,
+    OverlapPolicy, Project, ProjectKind, RunDto, RunStatus, RunTargetMode, SandboxMode,
+    ScheduleStatus, Task, TaskAuditEvent, TaskCodexDto, TaskDto, TaskKind, TaskPoliciesDto,
+    TaskPromptDto, TaskStatus, TaskTargetDto,
 };
-use scheduler_core::schedule::{parse_rfc3339_utc, validate_cron, validate_iana_timezone};
-use scheduler_core::time::{format_utc_rfc3339, parse_utc_rfc3339};
+use scheduler_core::schedule::{
+    compute_next_run_at, parse_rfc3339_utc, validate_cron, validate_iana_timezone,
+};
+use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
 use scheduler_core::util::unique_slug;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -180,6 +183,9 @@ struct TaskFields {
     #[arg(long)]
     max_runtime_sec: Option<i64>,
 
+    #[arg(long = "max-created-schedules")]
+    max_created_schedules: Option<i64>,
+
     #[arg(long)]
     missed_policy: Option<String>,
 
@@ -312,6 +318,7 @@ pub struct CliError {
     code: &'static str,
     message: String,
     details: Option<Value>,
+    daemon_connection_failed: bool,
 }
 
 impl CliError {
@@ -321,6 +328,7 @@ impl CliError {
             code,
             message: message.into(),
             details: None,
+            daemon_connection_failed: false,
         }
     }
 
@@ -335,6 +343,7 @@ impl CliError {
             code,
             message: message.into(),
             details: serde_json::to_value(details).ok(),
+            daemon_connection_failed: false,
         }
     }
 
@@ -343,7 +352,9 @@ impl CliError {
     }
 
     fn daemon_unavailable(message: impl Into<String>) -> Self {
-        Self::new(3, "daemon_unavailable", message)
+        let mut err = Self::new(3, "daemon_unavailable", message);
+        err.daemon_connection_failed = true;
+        err
     }
 
     fn permission_denied(message: impl Into<String>) -> Self {
@@ -382,6 +393,10 @@ impl CliError {
             error.insert("details".to_owned(), details.clone());
         }
         json!({ "ok": false, "error": error })
+    }
+
+    fn is_daemon_connection_failure(&self) -> bool {
+        self.daemon_connection_failed
     }
 }
 
@@ -571,6 +586,7 @@ fn map_rpc_error(error: JsonRpcError) -> CliError {
         code,
         message: error.message,
         details: error.data,
+        daemon_connection_failed: false,
     }
 }
 
@@ -578,28 +594,45 @@ async fn create_task(paths: &AppPaths, cmd: &CreateCommand) -> Result<CommandOut
     ensure_write_token_if_scheduled()?;
     validate_task_fields(&cmd.fields, ValidationMode::Create)?;
     let client = RpcClient::new(paths.socket_path.clone());
-    let existing: TaskListResult = client
+    let existing: TaskListResult = match client
         .call(METHOD_TASK_LIST, TaskListParams::default())
         .await
-        .map_err(write_requires_daemon)?;
+    {
+        Ok(existing) => existing,
+        Err(err) if can_use_human_sqlite_fallback(&err) => {
+            return create_task_sqlite_fallback(paths, cmd).await;
+        }
+        Err(err) => return Err(write_requires_daemon(err)),
+    };
     let slug = unique_slug(
         cmd.fields.name.as_deref().unwrap_or_default(),
         existing.tasks.iter().map(|task| task.slug.as_str()),
     )
     .map_err(|err| CliError::validation(err.to_string()))?;
     let mut task = build_create_task(&cmd.fields, slug)?;
-    complete_project_fields(&client, &mut task, cmd.reason.as_deref()).await?;
+    if let Err(err) = complete_project_fields(&client, &mut task, cmd.reason.as_deref()).await {
+        if can_use_human_sqlite_fallback(&err) {
+            return create_task_sqlite_fallback(paths, cmd).await;
+        }
+        return Err(err);
+    }
     let params = TaskCreateParams {
         task,
         actor: Some(current_actor()),
     };
-    let created: TaskResult = client
+    let created: TaskResult = match client
         .call(
             METHOD_TASK_CREATE,
             add_invocation_metadata(params, cmd.reason.as_deref()),
         )
         .await
-        .map_err(write_requires_daemon)?;
+    {
+        Ok(created) => created,
+        Err(err) if can_use_human_sqlite_fallback(&err) => {
+            return create_task_sqlite_fallback(paths, cmd).await;
+        }
+        Err(err) => return Err(write_requires_daemon(err)),
+    };
     task_summary_output(created.task)
 }
 
@@ -608,22 +641,37 @@ async fn update_task(paths: &AppPaths, cmd: &UpdateCommand) -> Result<CommandOut
     validate_task_fields(&cmd.fields, ValidationMode::Patch)?;
     validate_clear_flags(&cmd.clear, &cmd.fields)?;
     let client = RpcClient::new(paths.socket_path.clone());
-    let mut task = get_task_via_daemon(&client, &cmd.id)
-        .await
-        .map_err(write_requires_daemon)?;
+    let mut task = match get_task_via_daemon(&client, &cmd.id).await {
+        Ok(task) => task,
+        Err(err) if can_use_human_sqlite_fallback(&err) => {
+            return update_task_sqlite_fallback(paths, cmd).await;
+        }
+        Err(err) => return Err(write_requires_daemon(err)),
+    };
     apply_task_patch(&mut task, &cmd.fields, &cmd.clear)?;
-    complete_project_fields(&client, &mut task, cmd.reason.as_deref()).await?;
+    if let Err(err) = complete_project_fields(&client, &mut task, cmd.reason.as_deref()).await {
+        if can_use_human_sqlite_fallback(&err) {
+            return update_task_sqlite_fallback(paths, cmd).await;
+        }
+        return Err(err);
+    }
     let params = TaskUpdateParams {
         task,
         actor: Some(current_actor()),
     };
-    let updated: TaskResult = client
+    let updated: TaskResult = match client
         .call(
             METHOD_TASK_UPDATE,
             add_invocation_metadata(params, cmd.reason.as_deref()),
         )
         .await
-        .map_err(write_requires_daemon)?;
+    {
+        Ok(updated) => updated,
+        Err(err) if can_use_human_sqlite_fallback(&err) => {
+            return update_task_sqlite_fallback(paths, cmd).await;
+        }
+        Err(err) => return Err(write_requires_daemon(err)),
+    };
     task_summary_output(updated.task)
 }
 
@@ -705,13 +753,26 @@ async fn task_status_action(
         id: cmd.id.clone(),
         actor: Some(current_actor()),
     };
-    let result: TaskResult = client
+    let result: TaskResult = match client
         .call(
             method,
             add_invocation_metadata(params, cmd.reason.as_deref()),
         )
         .await
-        .map_err(write_requires_daemon)?;
+    {
+        Ok(result) => result,
+        Err(err) if can_use_human_sqlite_fallback(&err) => {
+            return task_status_sqlite_fallback(
+                paths,
+                &cmd.id,
+                label,
+                method,
+                cmd.reason.as_deref(),
+            )
+            .await;
+        }
+        Err(err) => return Err(write_requires_daemon(err)),
+    };
     Ok(CommandOutput {
         json: json!({ "ok": true, "task": task_summary_json(&result.task) }),
         human: format!("{} {}", result.task.id, label),
@@ -725,13 +786,19 @@ async fn delete_task(paths: &AppPaths, cmd: &TaskActionCommand) -> Result<Comman
         id: cmd.id.clone(),
         actor: Some(current_actor()),
     };
-    let result: TaskDeleteResult = client
+    let result: TaskDeleteResult = match client
         .call(
             METHOD_TASK_DELETE,
             add_invocation_metadata(params, cmd.reason.as_deref()),
         )
         .await
-        .map_err(write_requires_daemon)?;
+    {
+        Ok(result) => result,
+        Err(err) if can_use_human_sqlite_fallback(&err) => {
+            return delete_task_sqlite_fallback(paths, cmd).await;
+        }
+        Err(err) => return Err(write_requires_daemon(err)),
+    };
     Ok(CommandOutput {
         json: json!({ "ok": true, "deleted": result.deleted }),
         human: format!("deleted {}: {}", cmd.id, result.deleted),
@@ -1008,6 +1075,238 @@ async fn db_list_runs(
         .collect())
 }
 
+async fn create_task_sqlite_fallback(
+    paths: &AppPaths,
+    cmd: &CreateCommand,
+) -> Result<CommandOutput, CliError> {
+    let db = db(paths).await?;
+    let existing = db.list_tasks().await.map_err(scheduler_error_to_cli)?;
+    let slug = unique_slug(
+        cmd.fields.name.as_deref().unwrap_or_default(),
+        existing.iter().map(|task| task.slug.as_str()),
+    )
+    .map_err(|err| CliError::validation(err.to_string()))?;
+    let dto = build_create_task(&cmd.fields, slug)?;
+    let mut task = Task::try_from(dto).map_err(scheduler_error_to_cli)?;
+    apply_repo_path_trust_policy_sqlite(&db, &mut task).await?;
+    prepare_task_schedule_sqlite(&mut task);
+    task.created_by = AuditActorType::Cli.as_str().to_owned();
+    task.created_by_run_id = None;
+    task.updated_at = now_rfc3339();
+    db.create_task(&task)
+        .await
+        .map_err(scheduler_error_to_cli)?;
+    create_task_audit_sqlite(
+        &db,
+        Some(&task.id),
+        "task.create",
+        None,
+        Some(serde_json::to_value(TaskDto::from(&task)).map_err(json_to_cli)?),
+        cmd.reason.as_deref(),
+    )
+    .await?;
+    task_summary_output(TaskDto::from(&task))
+}
+
+async fn update_task_sqlite_fallback(
+    paths: &AppPaths,
+    cmd: &UpdateCommand,
+) -> Result<CommandOutput, CliError> {
+    let db = db(paths).await?;
+    let before = db
+        .get_task(&cmd.id)
+        .await
+        .map_err(scheduler_error_to_cli)?
+        .ok_or_else(|| CliError::task_not_found("task not found"))?;
+    let before_json = serde_json::to_value(TaskDto::from(&before)).map_err(json_to_cli)?;
+    let mut dto = TaskDto::from(&before);
+    apply_task_patch(&mut dto, &cmd.fields, &cmd.clear)?;
+    let mut task = Task::try_from(dto).map_err(scheduler_error_to_cli)?;
+    task.created_at = before.created_at;
+    task.created_by = before.created_by;
+    task.created_by_run_id = before.created_by_run_id;
+    task.deleted_at = before.deleted_at;
+    task.updated_at = now_rfc3339();
+    apply_repo_path_trust_policy_sqlite(&db, &mut task).await?;
+    prepare_task_schedule_sqlite(&mut task);
+    db.update_task(&task)
+        .await
+        .map_err(scheduler_error_to_cli)?;
+    create_task_audit_sqlite(
+        &db,
+        Some(&task.id),
+        "task.update",
+        Some(before_json),
+        Some(serde_json::to_value(TaskDto::from(&task)).map_err(json_to_cli)?),
+        cmd.reason.as_deref(),
+    )
+    .await?;
+    task_summary_output(TaskDto::from(&task))
+}
+
+async fn task_status_sqlite_fallback(
+    paths: &AppPaths,
+    id: &str,
+    label: &str,
+    method: &str,
+    reason: Option<&str>,
+) -> Result<CommandOutput, CliError> {
+    let db = db(paths).await?;
+    let mut task = db
+        .get_task(id)
+        .await
+        .map_err(scheduler_error_to_cli)?
+        .ok_or_else(|| CliError::task_not_found("task not found"))?;
+    let before_json = serde_json::to_value(TaskDto::from(&task)).map_err(json_to_cli)?;
+    task.status = if method == METHOD_TASK_PAUSE {
+        TaskStatus::Paused
+    } else {
+        TaskStatus::Active
+    };
+    if task.status == TaskStatus::Active && task.next_run_at.is_none() {
+        prepare_task_schedule_sqlite(&mut task);
+    }
+    task.updated_at = now_rfc3339();
+    db.update_task(&task)
+        .await
+        .map_err(scheduler_error_to_cli)?;
+    create_task_audit_sqlite(
+        &db,
+        Some(&task.id),
+        method,
+        Some(before_json),
+        Some(serde_json::to_value(TaskDto::from(&task)).map_err(json_to_cli)?),
+        reason,
+    )
+    .await?;
+    Ok(CommandOutput {
+        json: json!({ "ok": true, "task": task_summary_json(&TaskDto::from(&task)) }),
+        human: format!("{} {}", task.id, label),
+    })
+}
+
+async fn delete_task_sqlite_fallback(
+    paths: &AppPaths,
+    cmd: &TaskActionCommand,
+) -> Result<CommandOutput, CliError> {
+    let db = db(paths).await?;
+    let before = db
+        .get_task(&cmd.id)
+        .await
+        .map_err(scheduler_error_to_cli)?
+        .ok_or_else(|| CliError::task_not_found("task not found"))?;
+    let deleted = db
+        .delete_task(&cmd.id, &now_rfc3339())
+        .await
+        .map_err(scheduler_error_to_cli)?;
+    create_task_audit_sqlite(
+        &db,
+        Some(&cmd.id),
+        "task.delete",
+        Some(serde_json::to_value(TaskDto::from(&before)).map_err(json_to_cli)?),
+        None,
+        cmd.reason.as_deref(),
+    )
+    .await?;
+    Ok(CommandOutput {
+        json: json!({ "ok": true, "deleted": deleted }),
+        human: format!("deleted {}: {}", cmd.id, deleted),
+    })
+}
+
+async fn apply_repo_path_trust_policy_sqlite(
+    db: &SchedulerDb,
+    task: &mut Task,
+) -> Result<(), CliError> {
+    let Some(repo_path) = task.repo_path.clone() else {
+        return Ok(());
+    };
+    let canonical = std::fs::canonicalize(&repo_path).map_err(|err| {
+        CliError::validation(format!(
+            "unable to canonicalize repo_path `{repo_path}`: {err}"
+        ))
+    })?;
+    let canonical_str = canonical.to_string_lossy().into_owned();
+    task.repo_path = Some(canonical_str.clone());
+
+    let Some(project) = trusted_project_for_path(db, &canonical).await? else {
+        return Err(CliError::validation(format!(
+            "project.trust is required before scheduling repo_path `{canonical_str}`"
+        )));
+    };
+
+    if task.target_mode == RunTargetMode::RepoWorktree {
+        if project.kind != ProjectKind::Git {
+            return Err(CliError::validation(
+                "repo-worktree target requires a git repository",
+            ));
+        }
+        task.project_id = Some(project.id);
+    }
+    Ok(())
+}
+
+async fn trusted_project_for_path(
+    db: &SchedulerDb,
+    path: &Path,
+) -> Result<Option<Project>, CliError> {
+    let projects = db.list_projects().await.map_err(scheduler_error_to_cli)?;
+    Ok(projects
+        .into_iter()
+        .filter(|project| project.trusted_at.is_some())
+        .find(|project| {
+            let root = project.git_root.as_deref().unwrap_or(&project.path);
+            path.starts_with(Path::new(root))
+        }))
+}
+
+fn prepare_task_schedule_sqlite(task: &mut Task) {
+    if task.status != TaskStatus::Active || task.next_run_at.is_some() {
+        return;
+    }
+    match compute_next_run_at(task, Utc::now()) {
+        Ok(next_run_at) => {
+            task.next_run_at = next_run_at.map(format_utc_rfc3339);
+            task.schedule_status = ScheduleStatus::Valid;
+            task.schedule_error = None;
+        }
+        Err(err) => {
+            task.schedule_status = ScheduleStatus::Invalid;
+            task.schedule_error = Some(err.to_string());
+        }
+    }
+}
+
+async fn create_task_audit_sqlite(
+    db: &SchedulerDb,
+    task_id: Option<&str>,
+    action: &str,
+    before: Option<Value>,
+    after: Option<Value>,
+    reason: Option<&str>,
+) -> Result<(), CliError> {
+    let event = TaskAuditEvent {
+        id: new_task_audit_event_id(),
+        task_id: task_id.map(str::to_owned),
+        actor_type: AuditActorType::Cli,
+        actor_id: None,
+        action: action.to_owned(),
+        before_json: before
+            .map(|value| serde_json::to_string(&value))
+            .transpose()
+            .map_err(json_to_cli)?,
+        after_json: after
+            .map(|value| serde_json::to_string(&value))
+            .transpose()
+            .map_err(json_to_cli)?,
+        reason: reason.map(str::to_owned),
+        created_at: now_rfc3339(),
+    };
+    db.create_task_audit_event(&event)
+        .await
+        .map_err(scheduler_error_to_cli)
+}
+
 async fn complete_project_fields(
     client: &RpcClient,
     task: &mut TaskDto,
@@ -1084,6 +1383,7 @@ fn build_create_task(fields: &TaskFields, slug: String) -> Result<TaskDto, CliEr
                 fields.overlap_policy.as_deref(),
             )?,
             max_runtime_sec: fields.max_runtime_sec.unwrap_or(DEFAULT_MAX_RUNTIME_SEC),
+            max_created_schedules_per_run: Some(max_created_schedules_value(fields)),
             schedule_cli_capabilities: Some(vec![
                 "schedule:create".to_owned(),
                 "schedule:update-current".to_owned(),
@@ -1171,6 +1471,9 @@ fn apply_task_patch(
     if let Some(max_runtime_sec) = fields.max_runtime_sec {
         validate_positive(max_runtime_sec, "max-runtime-sec")?;
         task.policies.max_runtime_sec = max_runtime_sec;
+    }
+    if fields.max_created_schedules.is_some() {
+        task.policies.max_created_schedules_per_run = Some(max_created_schedules_value(fields));
     }
     if let Some(missed_policy) = &fields.missed_policy {
         task.policies.missed_policy = parse_enum::<MissedPolicy>(missed_policy, "missed-policy")?;
@@ -1443,6 +1746,10 @@ fn validate_positive(value: i64, field: &str) -> Result<(), CliError> {
     } else {
         Err(CliError::validation(format!("{field} must be positive")))
     }
+}
+
+fn max_created_schedules_value(fields: &TaskFields) -> i64 {
+    fields.max_created_schedules.unwrap_or(5).clamp(1, 100)
 }
 
 fn validate_count(count: usize) -> Result<(), CliError> {
@@ -1748,6 +2055,22 @@ fn write_requires_daemon(err: CliError) -> CliError {
     } else {
         err
     }
+}
+
+fn can_use_human_sqlite_fallback(err: &CliError) -> bool {
+    err.is_daemon_connection_failure() && !scheduled_run_context_present()
+}
+
+fn scheduler_error_to_cli(err: scheduler_core::SchedulerError) -> CliError {
+    match err {
+        scheduler_core::SchedulerError::Validation(_) => CliError::validation(err.to_string()),
+        scheduler_core::SchedulerError::Database(_) => CliError::database(err.to_string()),
+        _ => CliError::generic(err.to_string()),
+    }
+}
+
+fn json_to_cli(err: serde_json::Error) -> CliError {
+    CliError::generic(err.to_string())
 }
 
 fn ensure_data_dir_writable(paths: &AppPaths) -> std::io::Result<()> {

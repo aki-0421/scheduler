@@ -4,13 +4,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::model::{
-    AuditActorType, ProjectDto, RunDto, RunStatus, SettingDto, TaskAuditEvent, TaskDto, TaskStatus,
+    AuditActorType, ProjectDto, RunArtifactDto, RunDto, RunStatus, SettingDto, TaskAuditEvent,
+    TaskDto, TaskStatus,
 };
 
 pub const JSONRPC_VERSION: &str = "2.0";
 
 pub const METHOD_DAEMON_HEALTH: &str = "daemon.health";
 pub const METHOD_DAEMON_DIAGNOSTICS: &str = "daemon.diagnostics";
+pub const METHOD_DAEMON_TICK_NOW: &str = "daemon.tickNow";
 pub const METHOD_TASK_LIST: &str = "task.list";
 pub const METHOD_TASK_GET: &str = "task.get";
 pub const METHOD_TASK_CREATE: &str = "task.create";
@@ -223,6 +225,17 @@ pub struct DaemonDiagnosticsResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct DaemonTickNowParams {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonTickNowResult {
+    pub ok: bool,
+    pub triggered: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct TaskListParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<TaskStatus>,
@@ -349,6 +362,8 @@ pub struct RunGetParams {
 #[serde(rename_all = "camelCase")]
 pub struct RunResult {
     pub run: RunDto,
+    #[serde(default)]
+    pub artifacts: Vec<RunArtifactDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -364,6 +379,7 @@ pub struct RunCancelParams {
 pub enum LogStream {
     Stdout,
     Stderr,
+    Events,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

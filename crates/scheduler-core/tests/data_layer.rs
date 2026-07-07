@@ -46,6 +46,7 @@ fn sample_task(slug: &str) -> Task {
         allow_schedule_cli: true,
         schedule_cli_capabilities:
             r#"["schedule:create","schedule:update-current","schedule:list"]"#.to_owned(),
+        max_created_schedules_per_run: 5,
         missed_policy: MissedPolicy::LatestWithinWindow,
         missed_window_days: 7,
         overlap_policy: OverlapPolicy::Skip,
@@ -435,6 +436,10 @@ fn task_and_run_dto_serialize_to_spec_camel_case_shape() {
     assert_eq!(
         task_value["policies"]["missedPolicy"],
         json!("latest_within_window")
+    );
+    assert_eq!(
+        task_value["policies"]["maxCreatedSchedulesPerRun"],
+        json!(5)
     );
     assert!(task_value.get("cron_expr").is_none());
     assert!(task_value["target"].get("project_id").is_none());

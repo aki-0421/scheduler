@@ -6,10 +6,10 @@ use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::ipc::{JsonRpcErrorCode, METHOD_SETTINGS_SET};
 use scheduler_core::model::{
-    new_run_id, new_schedule_capability_token_id, ApprovalPolicy, CleanupPolicy, MissedPolicy,
-    OverlapPolicy, Run, RunStatus, RunTargetMode, SandboxMode, ScheduleCapabilityToken, Task,
-    TaskCodexDto, TaskDto, TaskKind, TaskPoliciesDto, TaskPromptDto, TaskStatus, TaskTargetDto,
-    TriggerType,
+    new_run_id, new_schedule_capability_token_id, ApprovalPolicy, AuditActorType, CleanupPolicy,
+    MissedPolicy, OverlapPolicy, Run, RunStatus, RunTargetMode, SandboxMode,
+    ScheduleCapabilityToken, Task, TaskCodexDto, TaskDto, TaskKind, TaskPoliciesDto, TaskPromptDto,
+    TaskStatus, TaskTargetDto, TriggerType,
 };
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
 use scheduler_core::util::sha256_hex;
@@ -110,6 +110,7 @@ fn sample_task_dto() -> TaskDto {
             missed_policy: MissedPolicy::LatestWithinWindow,
             overlap_policy: OverlapPolicy::Skip,
             max_runtime_sec: 7200,
+            max_created_schedules_per_run: Some(5),
             schedule_cli_capabilities: Some(vec!["schedule:list".to_owned()]),
             missed_window_days: Some(7),
             max_retries: Some(0),
@@ -564,21 +565,83 @@ async fn list_falls_back_to_sqlite_when_daemon_unavailable() {
     assert!(value["tasks"][0].get("prompt").is_none());
 }
 
-#[test]
-fn write_command_requires_daemon_when_unavailable() {
+#[tokio::test]
+async fn create_manual_chat_falls_back_to_sqlite_when_daemon_unavailable() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let output = cli_output(
         &temp_dir,
         &[
             "create",
             "--name",
-            "no daemon",
+            "sqlite fallback",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Fallback without daemon.",
+            "--max-created-schedules",
+            "12",
+            "--json",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = json_stdout(&output);
+    assert_eq!(value["ok"], true);
+    let task_id = value["task"]["id"].as_str().expect("task id");
+
+    let db = SchedulerDb::connect(temp_dir.path().join("scheduler.sqlite3"))
+        .await
+        .expect("db");
+    let task = db.get_task(task_id).await.expect("get task").expect("task");
+    assert_eq!(task.name, "sqlite fallback");
+    assert_eq!(task.created_by, "cli");
+    assert_eq!(task.max_created_schedules_per_run, 12);
+    let audits = db
+        .list_task_audit_events(task_id)
+        .await
+        .expect("audit events");
+    assert!(audits
+        .iter()
+        .any(|event| { event.actor_type == AuditActorType::Cli && event.action == "task.create" }));
+    drop(db);
+
+    let list = cli_output(&temp_dir, &["list", "--json"]);
+    assert!(list.status.success());
+    let list_json = json_stdout(&list);
+    assert!(list_json["tasks"]
+        .as_array()
+        .expect("tasks")
+        .iter()
+        .any(|task| task["id"] == task_id));
+
+    let next = cli_output(&temp_dir, &["next", task_id, "--json"]);
+    assert!(next.status.success());
+    let next_json = json_stdout(&next);
+    assert_eq!(next_json["ok"], true);
+    assert_eq!(next_json["times"].as_array().expect("times").len(), 0);
+}
+
+#[test]
+fn scheduled_write_with_token_requires_daemon_when_unavailable() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output = cli_output_with_token(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "scheduled no daemon",
             "--manual",
             "--chat",
             "--prompt",
             "No daemon.",
             "--json",
         ],
+        "task_test",
+        "run_test",
+        "token_test",
     );
     assert_eq!(output.status.code(), Some(3));
     let value = json_stdout(&output);

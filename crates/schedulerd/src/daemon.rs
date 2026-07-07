@@ -822,7 +822,7 @@ async fn issue_run_token(
         token_hash: sha256_hex(plaintext.as_bytes()),
         capabilities_json: serde_json::to_string(&capabilities)?,
         expires_at: format_utc_rfc3339(expires_at),
-        max_creates: 5,
+        max_creates: task.max_created_schedules_per_run.clamp(1, 100),
         create_count: 0,
         revoked_at: None,
         created_at: format_utc_rfc3339(now),
@@ -1268,6 +1268,10 @@ async fn route_rpc(
             let _params: DaemonDiagnosticsParams = parse_params(request.params)?;
             to_value(rpc_diagnostics(state).await?)
         }
+        METHOD_DAEMON_TICK_NOW => {
+            let _params: DaemonTickNowParams = parse_params(request.params)?;
+            to_value(rpc_tick_now(state).await)
+        }
         METHOD_TASK_LIST => {
             let params: TaskListParams = parse_params(request.params)?;
             to_value(rpc_task_list(state, params).await?)
@@ -1421,6 +1425,14 @@ async fn rpc_diagnostics(
         tick_interval_sec: state.config.tick_interval.as_secs(),
         last_tick_at,
     })
+}
+
+async fn rpc_tick_now(state: &Arc<DaemonState>) -> DaemonTickNowResult {
+    state.notify_tick.notify_waiters();
+    DaemonTickNowResult {
+        ok: true,
+        triggered: true,
+    }
 }
 
 async fn rpc_task_list(
@@ -1982,6 +1994,7 @@ async fn rpc_task_run_now(
     state.notify_tick.notify_waiters();
     Ok(RunResult {
         run: RunDto::from(&run),
+        artifacts: Vec::new(),
     })
 }
 
@@ -2020,8 +2033,14 @@ async fn rpc_run_get(
         .await
         .map_err(map_core_error)?
         .ok_or_else(run_not_found)?;
+    let artifacts = state
+        .db
+        .list_run_artifacts(&params.id)
+        .await
+        .map_err(map_core_error)?;
     Ok(RunResult {
         run: RunDto::from(&run),
+        artifacts: artifacts.iter().map(RunArtifactDto::from).collect(),
     })
 }
 
@@ -2056,6 +2075,7 @@ async fn rpc_run_tail_log(
     let path = match params.stream {
         LogStream::Stdout => run.stdout_log_path,
         LogStream::Stderr => run.stderr_log_path,
+        LogStream::Events => run.events_jsonl_path,
     }
     .ok_or_else(|| JsonRpcError::new(JsonRpcErrorCode::RunNotFound, "log path not available"))?;
     tail_log_file(
@@ -2245,6 +2265,7 @@ async fn cancel_run(
     .map_err(map_core_error)?;
     Ok(RunResult {
         run: RunDto::from(&run),
+        artifacts: Vec::new(),
     })
 }
 
