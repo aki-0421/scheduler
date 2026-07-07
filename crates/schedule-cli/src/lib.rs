@@ -527,30 +527,50 @@ impl RpcClient {
 }
 
 fn map_rpc_error(error: JsonRpcError) -> CliError {
-    match error.code {
+    let exit_code = match error.code {
         code if code == JsonRpcErrorCode::TaskNotFound.code() => {
-            CliError::task_not_found(error.message)
+            JsonRpcErrorCode::TaskNotFound.exit_code()
         }
         code if code == JsonRpcErrorCode::RunNotFound.code() => {
-            CliError::task_not_found(error.message)
+            JsonRpcErrorCode::RunNotFound.exit_code()
         }
         code if code == JsonRpcErrorCode::ValidationFailed.code() => {
-            CliError::validation(error.message)
+            JsonRpcErrorCode::ValidationFailed.exit_code()
         }
         code if code == JsonRpcErrorCode::PermissionDenied.code() => {
-            CliError::permission_denied(error.message)
+            JsonRpcErrorCode::PermissionDenied.exit_code()
         }
         code if code == JsonRpcErrorCode::Unavailable.code() => {
-            CliError::daemon_unavailable(error.message)
+            JsonRpcErrorCode::Unavailable.exit_code()
         }
         code if code == JsonRpcErrorCode::ParseError.code()
             || code == JsonRpcErrorCode::InvalidRequest.code()
             || code == JsonRpcErrorCode::InvalidParams.code()
             || code == JsonRpcErrorCode::MethodNotFound.code() =>
         {
-            CliError::invalid_args(error.message)
+            JsonRpcErrorCode::InvalidParams.exit_code()
         }
-        _ => CliError::generic(format!("rpc error {}: {}", error.code, error.message)),
+        code if code == JsonRpcErrorCode::Conflict.code() => JsonRpcErrorCode::Conflict.exit_code(),
+        code if code == JsonRpcErrorCode::InternalError.code() => {
+            JsonRpcErrorCode::InternalError.exit_code()
+        }
+        code if code == JsonRpcErrorCode::Canceled.code() => JsonRpcErrorCode::Canceled.exit_code(),
+        _ => 1,
+    };
+    let code = match exit_code {
+        2 => "invalid_arguments",
+        3 => "daemon_unavailable",
+        4 => "permission_denied",
+        5 => "validation_failed",
+        6 => "task_not_found",
+        7 => "database_error",
+        _ => "error",
+    };
+    CliError {
+        exit_code,
+        code,
+        message: error.message,
+        details: error.data,
     }
 }
 

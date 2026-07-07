@@ -2,11 +2,16 @@ use std::process::{Command, Output};
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::model::{
-    ApprovalPolicy, CleanupPolicy, MissedPolicy, OverlapPolicy, RunTargetMode, SandboxMode, Task,
+    new_run_id, new_schedule_capability_token_id, ApprovalPolicy, CleanupPolicy, MissedPolicy,
+    OverlapPolicy, Run, RunStatus, RunTargetMode, SandboxMode, ScheduleCapabilityToken, Task,
     TaskCodexDto, TaskDto, TaskKind, TaskPoliciesDto, TaskPromptDto, TaskStatus, TaskTargetDto,
+    TriggerType,
 };
+use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
+use scheduler_core::util::sha256_hex;
 use schedulerd::{start_daemon, DaemonConfig, DaemonHandle, MockExecutor};
 use serde_json::Value;
 use tempfile::TempDir;
@@ -27,6 +32,26 @@ fn cli_output(temp_dir: &TempDir, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
         .args(args)
         .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
+        .env_remove("CODEX_SCHEDULER_CURRENT_TASK_ID")
+        .env_remove("CODEX_SCHEDULER_CURRENT_RUN_ID")
+        .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
+        .output()
+        .expect("run codex-schedule")
+}
+
+fn cli_output_with_token(
+    temp_dir: &TempDir,
+    args: &[&str],
+    task_id: &str,
+    run_id: &str,
+    token: &str,
+) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
+        .args(args)
+        .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
+        .env("CODEX_SCHEDULER_CURRENT_TASK_ID", task_id)
+        .env("CODEX_SCHEDULER_CURRENT_RUN_ID", run_id)
+        .env("CODEX_SCHEDULER_RUN_TOKEN", token)
         .output()
         .expect("run codex-schedule")
 }
@@ -76,6 +101,78 @@ fn sample_task_dto() -> TaskDto {
             cleanup_after_days: None,
         },
     }
+}
+
+async fn seed_schedule_token(
+    handle: &DaemonHandle,
+    task_id: &str,
+    token: &str,
+    capabilities: &[&str],
+    create_count: i64,
+    max_creates: i64,
+) -> String {
+    let now = now_rfc3339();
+    let run = Run {
+        id: new_run_id(),
+        task_id: task_id.to_owned(),
+        trigger_type: TriggerType::Manual,
+        scheduled_for: None,
+        attempt: 1,
+        status: RunStatus::Succeeded,
+        status_reason: None,
+        queued_at: now.clone(),
+        started_at: Some(now.clone()),
+        ended_at: Some(now.clone()),
+        duration_ms: Some(0),
+        target_mode: RunTargetMode::Chat,
+        workspace_path: None,
+        worktree_path: None,
+        branch_name: None,
+        base_ref: None,
+        commit_before: None,
+        commit_after: None,
+        codex_command_json: "{}".to_owned(),
+        codex_session_id: None,
+        pid: None,
+        exit_code: Some(0),
+        signal: None,
+        stdout_log_path: None,
+        stderr_log_path: None,
+        events_jsonl_path: None,
+        last_message_path: None,
+        stdout_tail: None,
+        stderr_tail: None,
+        result_summary: None,
+        findings_count: Some(0),
+        created_schedule_count: Some(0),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    };
+    handle.db().create_run(&run).await.expect("seed run");
+
+    let capabilities = capabilities
+        .iter()
+        .map(|capability| (*capability).to_owned())
+        .collect::<Vec<_>>();
+    let row = ScheduleCapabilityToken {
+        id: new_schedule_capability_token_id(),
+        run_id: run.id.clone(),
+        task_id: task_id.to_owned(),
+        token_hash: sha256_hex(token.as_bytes()),
+        capabilities_json: serde_json::to_string(&capabilities).expect("capabilities json"),
+        expires_at: format_utc_rfc3339(Utc::now() + ChronoDuration::hours(1)),
+        max_creates,
+        create_count,
+        revoked_at: None,
+        created_at: now,
+    };
+    handle
+        .db()
+        .create_schedule_capability_token(&row)
+        .await
+        .expect("seed schedule token");
+
+    run.id
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -168,22 +265,24 @@ async fn update_current_uses_env_task_and_token() {
     );
     let created_json = json_stdout(&created);
     let task_id = created_json["task"]["id"].as_str().expect("task id");
+    let token = "token_update_current_success";
+    let run_id =
+        seed_schedule_token(&handle, task_id, token, &["schedule:update-current"], 0, 5).await;
 
-    let updated = Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
-        .args([
+    let updated = cli_output_with_token(
+        &temp_dir,
+        &[
             "update-current",
             "--at",
             "2999-01-02T00:00:00Z",
             "--reason",
             "reschedule test",
             "--json",
-        ])
-        .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
-        .env("CODEX_SCHEDULER_CURRENT_TASK_ID", task_id)
-        .env("CODEX_SCHEDULER_CURRENT_RUN_ID", "run_test")
-        .env("CODEX_SCHEDULER_RUN_TOKEN", "token_test")
-        .output()
-        .expect("run update-current");
+        ],
+        task_id,
+        &run_id,
+        token,
+    );
     assert!(
         updated.status.success(),
         "stderr={}",
@@ -194,6 +293,98 @@ async fn update_current_uses_env_task_and_token() {
     assert_eq!(updated_json["task"]["id"], task_id);
     assert_eq!(updated_json["task"]["kind"], "once");
     assert_eq!(updated_json["task"]["runAt"], "2999-01-02T00:00:00Z");
+
+    handle.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn update_current_without_capability_exits_4() {
+    let (temp_dir, handle) = start_test_daemon().await;
+    let created = cli_output(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "capability denied task",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Current prompt.",
+            "--json",
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let created_json = json_stdout(&created);
+    let task_id = created_json["task"]["id"].as_str().expect("task id");
+    let token = "token_update_current_denied";
+    let run_id = seed_schedule_token(&handle, task_id, token, &["schedule:create"], 0, 5).await;
+
+    let denied = cli_output_with_token(
+        &temp_dir,
+        &["update-current", "--manual", "--json"],
+        task_id,
+        &run_id,
+        token,
+    );
+    assert_eq!(denied.status.code(), Some(4));
+    let value = json_stdout(&denied);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "permission_denied");
+
+    handle.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn create_with_token_over_max_creates_exits_4() {
+    let (temp_dir, handle) = start_test_daemon().await;
+    let source = cli_output(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "source task",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Source prompt.",
+            "--json",
+        ],
+    );
+    assert!(
+        source.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&source.stderr)
+    );
+    let source_json = json_stdout(&source);
+    let source_task_id = source_json["task"]["id"].as_str().expect("source task id");
+    let token = "token_create_limit";
+    let run_id =
+        seed_schedule_token(&handle, source_task_id, token, &["schedule:create"], 1, 1).await;
+
+    let denied = cli_output_with_token(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "limit denied create",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Create should be denied.",
+            "--json",
+        ],
+        source_task_id,
+        &run_id,
+        token,
+    );
+    assert_eq!(denied.status.code(), Some(4));
+    let value = json_stdout(&denied);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "permission_denied");
 
     handle.shutdown().await;
 }
