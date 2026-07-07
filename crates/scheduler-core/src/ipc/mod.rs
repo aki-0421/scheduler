@@ -110,15 +110,14 @@ impl JsonRpcErrorCode {
 
     pub const fn exit_code(self) -> i32 {
         match self {
-            Self::ParseError | Self::InvalidRequest | Self::InvalidParams => 64,
-            Self::MethodNotFound => 64,
-            Self::TaskNotFound | Self::RunNotFound => 66,
-            Self::ValidationFailed => 65,
-            Self::PermissionDenied => 77,
-            Self::Conflict => 75,
-            Self::Unavailable => 69,
-            Self::Canceled => 130,
-            Self::InternalError => 70,
+            Self::ParseError | Self::InvalidRequest | Self::InvalidParams => 2,
+            Self::MethodNotFound => 2,
+            Self::Unavailable => 3,
+            Self::PermissionDenied => 4,
+            Self::ValidationFailed | Self::Conflict => 5,
+            Self::TaskNotFound | Self::RunNotFound => 6,
+            Self::InternalError => 7,
+            Self::Canceled => 1,
         }
     }
 }
