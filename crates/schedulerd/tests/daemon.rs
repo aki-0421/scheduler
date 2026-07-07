@@ -5,8 +5,10 @@ use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::ipc::*;
 use scheduler_core::model::*;
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
+use scheduler_core::util::sha256_hex;
 use schedulerd::executor::{MockBehavior, MockExecutor};
-use schedulerd::{rpc, start_daemon, DaemonConfig, DaemonHandle};
+use schedulerd::{rpc, start_daemon, DaemonConfig, DaemonHandle, ExecutionResult};
+use serde_json::{json, Value};
 use tempfile::TempDir;
 
 async fn start_test_daemon(behavior: MockBehavior) -> (TempDir, DaemonHandle, MockExecutor) {
@@ -71,6 +73,90 @@ fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
 
 fn sample_task_table(slug: &str, kind: TaskKind) -> Task {
     Task::try_from(sample_task_dto(slug, kind)).expect("task from dto")
+}
+
+fn with_invocation_metadata<T: serde::Serialize>(
+    params: T,
+    token: &str,
+    task_id: &str,
+    run_id: &str,
+    reason: &str,
+) -> Value {
+    let mut value = serde_json::to_value(params).expect("params json");
+    let object = value.as_object_mut().expect("params object");
+    object.insert("token".to_owned(), json!(token));
+    object.insert("currentTaskId".to_owned(), json!(task_id));
+    object.insert("currentRunId".to_owned(), json!(run_id));
+    object.insert("reason".to_owned(), json!(reason));
+    value
+}
+
+async fn wait_for_skipped_run(handle: &DaemonHandle, task_id: &str, timeout: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let runs = handle.db().list_runs_for_task(task_id).await.expect("runs");
+        if runs.iter().any(|run| {
+            run.status == RunStatus::Skipped
+                && run.status_reason.as_deref() == Some("previous_run_still_running")
+        }) {
+            return true;
+        }
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            return false;
+        }
+        tokio::time::sleep((deadline - now).min(Duration::from_millis(10))).await;
+    }
+}
+
+async fn wait_for_task_runs(
+    handle: &DaemonHandle,
+    task_id: &str,
+    predicate: impl Fn(&[Run]) -> bool,
+    timeout: Duration,
+) -> Vec<Run> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let runs = handle.db().list_runs_for_task(task_id).await.expect("runs");
+        if predicate(&runs) {
+            return runs;
+        }
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            return runs;
+        }
+        tokio::time::sleep((deadline - now).min(Duration::from_millis(10))).await;
+    }
+}
+
+async fn source_token(
+    handle: &DaemonHandle,
+    executor: &MockExecutor,
+    slug: &str,
+    capabilities: Vec<String>,
+) -> (TaskDto, String, String) {
+    let mut task = sample_task_dto(slug, TaskKind::Cron);
+    task.next_run_at = Some(now_rfc3339());
+    task.policies.schedule_cli_capabilities = Some(capabilities);
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams { task, actor: None },
+    )
+    .await
+    .expect("create source task");
+    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    let call = executor
+        .calls()
+        .await
+        .into_iter()
+        .find(|call| call.task.id == created.task.id)
+        .expect("source call");
+    (
+        created.task,
+        call.schedule_token.expect("schedule token"),
+        call.run.id,
+    )
 }
 
 fn sample_run(task: &Task, status: RunStatus) -> Run {
@@ -259,17 +345,8 @@ async fn overlap_skip_records_skipped_run_when_previous_is_running() {
     stored.updated_at = now_rfc3339();
     handle.db().update_task(&stored).await.expect("update task");
     handle.request_tick();
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
-    let runs = handle
-        .db()
-        .list_runs_for_task(&created.task.id)
-        .await
-        .expect("runs");
-    assert!(runs.iter().any(|run| {
-        run.status == RunStatus::Skipped
-            && run.status_reason.as_deref() == Some("previous_run_still_running")
-    }));
+    assert!(wait_for_skipped_run(&handle, &created.task.id, Duration::from_secs(2)).await);
 
     handle.shutdown().await;
 }
@@ -334,4 +411,262 @@ async fn graceful_shutdown_cancels_or_interrupts_running_run() {
     assert!(runs
         .iter()
         .any(|run| matches!(run.status, RunStatus::Canceled | RunStatus::Interrupted)));
+}
+
+#[tokio::test]
+async fn scheduler_disabled_keeps_manual_run_now_queued() {
+    let (_temp, handle, executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    handle
+        .db()
+        .set_setting("scheduler.enabled", &false)
+        .await
+        .expect("disable scheduler");
+
+    let task = sample_task_dto("manual-disabled", TaskKind::Manual);
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams { task, actor: None },
+    )
+    .await
+    .expect("create task");
+    let run: RunResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_RUN_NOW,
+        TaskIdParams {
+            id: created.task.id.clone(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("run now");
+
+    assert!(!executor.wait_for_calls(1, Duration::from_millis(150)).await);
+    let stored = handle
+        .db()
+        .get_run(&run.run.id)
+        .await
+        .expect("get run")
+        .expect("run");
+    assert_eq!(stored.status, RunStatus::Queued);
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn token_create_succeeds_and_max_create_limit_is_enforced() {
+    let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
+    let (source_task, token, run_id) = source_token(
+        &handle,
+        &executor,
+        "token-source",
+        vec![
+            "schedule:create".to_owned(),
+            "schedule:update-current".to_owned(),
+        ],
+    )
+    .await;
+
+    let create = sample_task_dto("token-created", TaskKind::Manual);
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        with_invocation_metadata(
+            TaskCreateParams {
+                task: create,
+                actor: Some(RpcActor {
+                    actor_type: AuditActorType::ScheduledRun,
+                    actor_id: Some(run_id.clone()),
+                }),
+            },
+            &token,
+            &source_task.id,
+            &run_id,
+            "create from run",
+        ),
+    )
+    .await
+    .expect("token create");
+    let stored = handle
+        .db()
+        .get_task(&created.task.id)
+        .await
+        .expect("get created")
+        .expect("created");
+    assert_eq!(stored.created_by, "codex");
+    assert_eq!(stored.created_by_run_id.as_deref(), Some(run_id.as_str()));
+
+    let mut token_row = handle
+        .db()
+        .get_schedule_capability_token_by_hash(&sha256_hex(token.as_bytes()))
+        .await
+        .expect("get token")
+        .expect("token row");
+    assert_eq!(token_row.create_count, 1);
+    token_row.max_creates = 1;
+    handle
+        .db()
+        .update_schedule_capability_token(&token_row)
+        .await
+        .expect("limit token");
+
+    let denied = rpc::call_raw(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        with_invocation_metadata(
+            TaskCreateParams {
+                task: sample_task_dto("token-created-2", TaskKind::Manual),
+                actor: Some(RpcActor {
+                    actor_type: AuditActorType::ScheduledRun,
+                    actor_id: Some(run_id.clone()),
+                }),
+            },
+            &token,
+            &source_task.id,
+            &run_id,
+            "second create",
+        ),
+    )
+    .await
+    .expect("denied response");
+    let error = denied.error.expect("rpc error");
+    assert_eq!(error.code, JsonRpcErrorCode::PermissionDenied.code());
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn token_create_without_capability_is_denied() {
+    let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
+    let (source_task, token, run_id) = source_token(
+        &handle,
+        &executor,
+        "token-no-create",
+        vec!["schedule:update-current".to_owned()],
+    )
+    .await;
+
+    let denied = rpc::call_raw(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        with_invocation_metadata(
+            TaskCreateParams {
+                task: sample_task_dto("denied-create", TaskKind::Manual),
+                actor: Some(RpcActor {
+                    actor_type: AuditActorType::ScheduledRun,
+                    actor_id: Some(run_id.clone()),
+                }),
+            },
+            &token,
+            &source_task.id,
+            &run_id,
+            "missing capability",
+        ),
+    )
+    .await
+    .expect("denied response");
+    let error = denied.error.expect("rpc error");
+    assert_eq!(error.code, JsonRpcErrorCode::PermissionDenied.code());
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
+    let (temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
+    let repo_path = temp.path().join("untrusted-repo");
+    std::fs::create_dir_all(&repo_path).expect("repo dir");
+    let (source_task, token, run_id) = source_token(
+        &handle,
+        &executor,
+        "token-untrusted",
+        vec!["schedule:create".to_owned()],
+    )
+    .await;
+
+    let mut task = sample_task_dto("untrusted-created", TaskKind::Manual);
+    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.repo_path = Some(repo_path.to_string_lossy().into_owned());
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        with_invocation_metadata(
+            TaskCreateParams {
+                task,
+                actor: Some(RpcActor {
+                    actor_type: AuditActorType::ScheduledRun,
+                    actor_id: Some(run_id.clone()),
+                }),
+            },
+            &token,
+            &source_task.id,
+            &run_id,
+            "create untrusted",
+        ),
+    )
+    .await
+    .expect("create paused");
+
+    let stored = handle
+        .db()
+        .get_task(&created.task.id)
+        .await
+        .expect("get task")
+        .expect("task");
+    assert_eq!(stored.status, TaskStatus::Paused);
+    assert_eq!(
+        stored.repo_path.as_deref(),
+        Some(
+            repo_path
+                .canonicalize()
+                .expect("canonical")
+                .to_str()
+                .unwrap()
+        )
+    );
+    let audits = handle
+        .db()
+        .list_task_audit_events(&stored.id)
+        .await
+        .expect("audits");
+    assert!(audits
+        .iter()
+        .any(|audit| audit.action == "task.review_required"
+            && audit.reason.as_deref() == Some("untrusted_repo_path")));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn permanent_failure_is_not_retried() {
+    let (_temp, handle, _executor) = start_test_daemon(MockBehavior {
+        delay: Duration::from_millis(10),
+        result: ExecutionResult::permanent_failed(),
+        hold_until_cancel: false,
+    })
+    .await;
+
+    let mut task = sample_task_dto("permanent-fail", TaskKind::Cron);
+    task.next_run_at = Some(now_rfc3339());
+    task.policies.max_retries = Some(1);
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams { task, actor: None },
+    )
+    .await
+    .expect("create task");
+
+    let runs = wait_for_task_runs(
+        &handle,
+        &created.task.id,
+        |runs| runs.iter().any(|run| run.status == RunStatus::Failed),
+        Duration::from_secs(2),
+    )
+    .await;
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].status, RunStatus::Failed);
+
+    handle.shutdown().await;
 }
