@@ -1,5 +1,5 @@
-import { screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunDetail } from "@/components/run-detail";
 import { ipcClient } from "@/lib/ipc";
@@ -21,6 +21,10 @@ const run: RunDto = {
 };
 
 describe("RunDetail", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("renders stdout and stderr tail data", async () => {
     const tailSpy = vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
       runId: params.runId,
@@ -40,7 +44,30 @@ describe("RunDetail", () => {
       cursor: 0,
       limit: 16384,
     });
+  });
 
-    tailSpy.mockRestore();
+  it("resets rendered log state when switching runs", async () => {
+    vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
+      runId: params.runId,
+      stream: params.stream,
+      cursor: params.cursor ?? 0,
+      nextCursor: 10,
+      eof: true,
+      data:
+        params.stream === "stdout"
+          ? `${params.runId === "run_test" ? "first" : "second"} run log\n`
+          : "",
+    }));
+
+    const { rerender } = renderWithClient(<RunDetail run={run} />);
+
+    expect(await screen.findByText(/first run log/)).toBeInTheDocument();
+
+    rerender(<RunDetail run={{ ...run, id: "run_next" }} />);
+
+    await waitFor(() =>
+      expect(screen.queryByText(/first run log/)).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByText(/second run log/)).toBeInTheDocument();
   });
 });

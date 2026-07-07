@@ -23,7 +23,9 @@ describe("TaskWizard cron validation", () => {
     await user.clear(cronInput);
     await user.type(cronInput, "0 0 1 1 * *");
 
-    expect(await screen.findByText("seconds are not supported")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Seconds field is not supported. Use 5-field cron."),
+    ).toBeInTheDocument();
   });
 
   it("renders the next five cron preview entries", () => {
