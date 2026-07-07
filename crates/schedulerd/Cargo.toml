@@ -1,0 +1,21 @@
+[package]
+name = "schedulerd"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "codex-schedulerd"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+scheduler-core = { path = "../scheduler-core" }
+tracing.workspace = true
+tracing-subscriber.workspace = true
