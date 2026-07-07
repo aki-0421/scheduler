@@ -10,6 +10,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::{OsStr, OsString};
 use std::fs;
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -28,7 +29,7 @@ use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
 use scheduler_core::util::sha256_hex;
 use serde::Serialize;
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::{broadcast, Mutex, Notify};
@@ -2607,21 +2608,46 @@ async fn tail_log_file(
     cursor: u64,
     limit: usize,
 ) -> Result<RunTailLogResult, JsonRpcError> {
-    let bytes = tokio::fs::read(path).await.map_err(|err| {
+    let mut file = tokio::fs::File::open(path).await.map_err(|err| {
         JsonRpcError::new(
             JsonRpcErrorCode::RunNotFound,
             format!("unable to read log file: {err}"),
         )
     })?;
-    let start = cursor.min(bytes.len() as u64) as usize;
-    let end = (start + limit).min(bytes.len());
+    let file_len = file
+        .metadata()
+        .await
+        .map_err(|err| {
+            JsonRpcError::new(
+                JsonRpcErrorCode::RunNotFound,
+                format!("unable to stat log file: {err}"),
+            )
+        })?
+        .len();
+    let start = cursor.min(file_len);
+    file.seek(SeekFrom::Start(start)).await.map_err(|err| {
+        JsonRpcError::new(
+            JsonRpcErrorCode::RunNotFound,
+            format!("unable to seek log file: {err}"),
+        )
+    })?;
+    let read_len = limit.min((file_len - start) as usize);
+    let mut bytes = vec![0; read_len];
+    let read = file.read(&mut bytes).await.map_err(|err| {
+        JsonRpcError::new(
+            JsonRpcErrorCode::RunNotFound,
+            format!("unable to read log file: {err}"),
+        )
+    })?;
+    bytes.truncate(read);
+    let next_cursor = start + read as u64;
     Ok(RunTailLogResult {
         run_id: run_id.to_owned(),
         stream,
         cursor,
-        next_cursor: end as u64,
-        eof: end >= bytes.len(),
-        data: String::from_utf8_lossy(&bytes[start..end]).into_owned(),
+        next_cursor,
+        eof: next_cursor >= file_len,
+        data: String::from_utf8_lossy(&bytes).into_owned(),
     })
 }
 

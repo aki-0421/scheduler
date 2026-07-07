@@ -696,6 +696,77 @@ async fn once_task_becomes_completed_after_run_creation() {
 }
 
 #[tokio::test]
+async fn run_tail_log_reads_large_file_from_cursor_with_bounded_chunks() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+
+    let task = sample_task_table("tail-large", TaskKind::Manual);
+    handle.db().create_task(&task).await.expect("create task");
+    let log_dir = temp.path().join("logs").join("tail-large-run");
+    std::fs::create_dir_all(&log_dir).expect("create log dir");
+    let stdout_path = log_dir.join("stdout.log");
+    let mut bytes = vec![b'a'; 70 * 1024];
+    bytes.extend_from_slice("あZ".as_bytes());
+    std::fs::write(&stdout_path, &bytes).expect("write stdout");
+
+    let mut run = sample_run(&task, RunStatus::Succeeded);
+    run.id = "run_tail_large".to_owned();
+    run.stdout_log_path = Some(stdout_path.to_string_lossy().into_owned());
+    handle.db().create_run(&run).await.expect("create run");
+
+    let first: RunTailLogResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_RUN_TAIL_LOG,
+        RunTailLogParams {
+            run_id: run.id.clone(),
+            stream: LogStream::Stdout,
+            cursor: Some(0),
+            limit: Some(32 * 1024),
+        },
+    )
+    .await
+    .expect("tail first chunk");
+    assert_eq!(first.next_cursor, 32 * 1024);
+    assert!(!first.eof);
+    assert_eq!(first.data.len(), 32 * 1024);
+
+    let second: RunTailLogResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_RUN_TAIL_LOG,
+        RunTailLogParams {
+            run_id: run.id.clone(),
+            stream: LogStream::Stdout,
+            cursor: Some(first.next_cursor),
+            limit: Some(32 * 1024),
+        },
+    )
+    .await
+    .expect("tail second chunk");
+    assert_eq!(second.cursor, first.next_cursor);
+    assert_eq!(second.next_cursor, 64 * 1024);
+    assert!(!second.eof);
+    assert_eq!(second.data.len(), 32 * 1024);
+
+    let split_utf8: RunTailLogResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_RUN_TAIL_LOG,
+        RunTailLogParams {
+            run_id: run.id.clone(),
+            stream: LogStream::Stdout,
+            cursor: Some((70 * 1024) as u64),
+            limit: Some(1),
+        },
+    )
+    .await
+    .expect("tail split utf8");
+    assert_eq!(split_utf8.next_cursor, (70 * 1024 + 1) as u64);
+    assert!(!split_utf8.eof);
+    assert_eq!(split_utf8.data, "\u{fffd}");
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn missed_latest_catchup_creates_one_run_and_skipped_audit() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let config = DaemonConfig::for_data_dir(temp_dir.path())

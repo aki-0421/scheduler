@@ -33,9 +33,51 @@ fn cli_output(temp_dir: &TempDir, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
         .args(args)
         .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
+        .env_remove("CODEX_SCHEDULER")
+        .env_remove("CODEX_SCHEDULER_APP_VERSION")
         .env_remove("CODEX_SCHEDULER_CURRENT_TASK_ID")
         .env_remove("CODEX_SCHEDULER_CURRENT_RUN_ID")
         .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
+        .env_remove("CODEX_SCHEDULER_TIMEZONE")
+        .env_remove("CODEX_SCHEDULE_ALLOW_DIRECT_DB")
+        .output()
+        .expect("run codex-schedule")
+}
+
+fn cli_output_no_scheduler_env(temp_dir: &TempDir, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
+        .arg("--data-dir")
+        .arg(temp_dir.path())
+        .args(args)
+        .env_remove("CODEX_SCHEDULER")
+        .env_remove("CODEX_SCHEDULER_APP_VERSION")
+        .env_remove("CODEX_SCHEDULER_DATA_DIR")
+        .env_remove("CODEX_SCHEDULER_DB")
+        .env_remove("CODEX_SCHEDULER_SOCKET")
+        .env_remove("CODEX_SCHEDULER_CURRENT_TASK_ID")
+        .env_remove("CODEX_SCHEDULER_CURRENT_RUN_ID")
+        .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
+        .env_remove("CODEX_SCHEDULER_TIMEZONE")
+        .env_remove("CODEX_SCHEDULE_ALLOW_DIRECT_DB")
+        .output()
+        .expect("run codex-schedule")
+}
+
+fn cli_output_direct_db_env(temp_dir: &TempDir, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
+        .arg("--data-dir")
+        .arg(temp_dir.path())
+        .args(args)
+        .env_remove("CODEX_SCHEDULER")
+        .env_remove("CODEX_SCHEDULER_APP_VERSION")
+        .env_remove("CODEX_SCHEDULER_DATA_DIR")
+        .env_remove("CODEX_SCHEDULER_DB")
+        .env_remove("CODEX_SCHEDULER_SOCKET")
+        .env_remove("CODEX_SCHEDULER_CURRENT_TASK_ID")
+        .env_remove("CODEX_SCHEDULER_CURRENT_RUN_ID")
+        .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
+        .env_remove("CODEX_SCHEDULER_TIMEZONE")
+        .env("CODEX_SCHEDULE_ALLOW_DIRECT_DB", "1")
         .output()
         .expect("run codex-schedule")
 }
@@ -50,9 +92,11 @@ fn cli_output_with_token(
     Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
         .args(args)
         .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
+        .env("CODEX_SCHEDULER", "1")
         .env("CODEX_SCHEDULER_CURRENT_TASK_ID", task_id)
         .env("CODEX_SCHEDULER_CURRENT_RUN_ID", run_id)
         .env("CODEX_SCHEDULER_RUN_TOKEN", token)
+        .env_remove("CODEX_SCHEDULE_ALLOW_DIRECT_DB")
         .output()
         .expect("run codex-schedule")
 }
@@ -66,9 +110,11 @@ fn cli_output_scheduled_without_token(
     Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
         .args(args)
         .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
+        .env("CODEX_SCHEDULER", "1")
         .env("CODEX_SCHEDULER_CURRENT_TASK_ID", task_id)
         .env("CODEX_SCHEDULER_CURRENT_RUN_ID", run_id)
         .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
+        .env_remove("CODEX_SCHEDULE_ALLOW_DIRECT_DB")
         .output()
         .expect("run codex-schedule")
 }
@@ -566,11 +612,34 @@ async fn list_falls_back_to_sqlite_when_daemon_unavailable() {
 }
 
 #[tokio::test]
-async fn create_manual_chat_falls_back_to_sqlite_when_daemon_unavailable() {
+async fn write_without_direct_db_opt_in_requires_daemon_when_unavailable() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let output = cli_output(
+    let output = cli_output_no_scheduler_env(
         &temp_dir,
         &[
+            "create",
+            "--name",
+            "no direct db",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "No direct DB.",
+            "--json",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(3));
+    let value = json_stdout(&output);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "daemon_unavailable");
+}
+
+#[tokio::test]
+async fn create_manual_chat_falls_back_to_sqlite_with_direct_db_flag() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output = cli_output_no_scheduler_env(
+        &temp_dir,
+        &[
+            "--allow-direct-db",
             "create",
             "--name",
             "sqlite fallback",
@@ -624,6 +693,32 @@ async fn create_manual_chat_falls_back_to_sqlite_when_daemon_unavailable() {
     assert_eq!(next_json["times"].as_array().expect("times").len(), 0);
 }
 
+#[tokio::test]
+async fn create_manual_chat_falls_back_to_sqlite_with_direct_db_env() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output = cli_output_direct_db_env(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "sqlite fallback env",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Fallback from env.",
+            "--json",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = json_stdout(&output);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["task"]["name"], "sqlite fallback env");
+}
+
 #[test]
 fn scheduled_write_with_token_requires_daemon_when_unavailable() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -647,6 +742,62 @@ fn scheduled_write_with_token_requires_daemon_when_unavailable() {
     let value = json_stdout(&output);
     assert_eq!(value["ok"], false);
     assert_eq!(value["error"]["code"], "daemon_unavailable");
+}
+
+#[test]
+fn scheduled_write_with_direct_db_flag_is_denied_when_daemon_unavailable() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output = cli_output_with_token(
+        &temp_dir,
+        &[
+            "--allow-direct-db",
+            "create",
+            "--name",
+            "scheduled direct denied",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Direct DB should be denied.",
+            "--json",
+        ],
+        "task_test",
+        "run_test",
+        "token_test",
+    );
+    assert_eq!(output.status.code(), Some(4));
+    let value = json_stdout(&output);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "permission_denied");
+}
+
+#[test]
+fn scheduler_marker_without_token_is_denied_for_writes() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
+        .arg("--data-dir")
+        .arg(temp_dir.path())
+        .args([
+            "--allow-direct-db",
+            "create",
+            "--name",
+            "scheduler marker denied",
+            "--manual",
+            "--chat",
+            "--prompt",
+            "Denied.",
+            "--json",
+        ])
+        .env("CODEX_SCHEDULER", "1")
+        .env_remove("CODEX_SCHEDULER_DATA_DIR")
+        .env_remove("CODEX_SCHEDULER_CURRENT_TASK_ID")
+        .env_remove("CODEX_SCHEDULER_CURRENT_RUN_ID")
+        .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
+        .output()
+        .expect("run codex-schedule");
+    assert_eq!(output.status.code(), Some(4));
+    let value = json_stdout(&output);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "permission_denied");
 }
 
 #[test]

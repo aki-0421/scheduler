@@ -62,6 +62,14 @@ pub struct Cli {
     #[arg(long = "socket", global = true, env = "CODEX_SCHEDULER_SOCKET")]
     socket_path: Option<PathBuf>,
 
+    #[arg(
+        long,
+        global = true,
+        action = clap::ArgAction::SetTrue,
+        help = "daemon 停止時のみ使用。scheduled run 内では使用不可"
+    )]
+    allow_direct_db: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -275,6 +283,7 @@ struct AppPaths {
     data_dir: PathBuf,
     db_path: PathBuf,
     socket_path: PathBuf,
+    allow_direct_db: bool,
 }
 
 impl AppPaths {
@@ -284,6 +293,7 @@ impl AppPaths {
             db_path: data_dir.join("scheduler.sqlite3"),
             socket_path: data_dir.join("scheduler.sock"),
             data_dir,
+            allow_direct_db: cli.allow_direct_db || direct_db_env_requested(),
         };
         if let Some(db_path) = &cli.db_path {
             paths.db_path = db_path.clone();
@@ -599,10 +609,12 @@ async fn create_task(paths: &AppPaths, cmd: &CreateCommand) -> Result<CommandOut
         .await
     {
         Ok(existing) => existing,
-        Err(err) if can_use_human_sqlite_fallback(&err) => {
-            return create_task_sqlite_fallback(paths, cmd).await;
+        Err(err) => {
+            if should_use_sqlite_write_fallback(paths, &err)? {
+                return create_task_sqlite_fallback(paths, cmd).await;
+            }
+            return Err(write_requires_daemon(err));
         }
-        Err(err) => return Err(write_requires_daemon(err)),
     };
     let slug = unique_slug(
         cmd.fields.name.as_deref().unwrap_or_default(),
@@ -611,7 +623,7 @@ async fn create_task(paths: &AppPaths, cmd: &CreateCommand) -> Result<CommandOut
     .map_err(|err| CliError::validation(err.to_string()))?;
     let mut task = build_create_task(&cmd.fields, slug)?;
     if let Err(err) = complete_project_fields(&client, &mut task, cmd.reason.as_deref()).await {
-        if can_use_human_sqlite_fallback(&err) {
+        if should_use_sqlite_write_fallback(paths, &err)? {
             return create_task_sqlite_fallback(paths, cmd).await;
         }
         return Err(err);
@@ -628,10 +640,12 @@ async fn create_task(paths: &AppPaths, cmd: &CreateCommand) -> Result<CommandOut
         .await
     {
         Ok(created) => created,
-        Err(err) if can_use_human_sqlite_fallback(&err) => {
-            return create_task_sqlite_fallback(paths, cmd).await;
+        Err(err) => {
+            if should_use_sqlite_write_fallback(paths, &err)? {
+                return create_task_sqlite_fallback(paths, cmd).await;
+            }
+            return Err(write_requires_daemon(err));
         }
-        Err(err) => return Err(write_requires_daemon(err)),
     };
     task_summary_output(created.task)
 }
@@ -643,14 +657,16 @@ async fn update_task(paths: &AppPaths, cmd: &UpdateCommand) -> Result<CommandOut
     let client = RpcClient::new(paths.socket_path.clone());
     let mut task = match get_task_via_daemon(&client, &cmd.id).await {
         Ok(task) => task,
-        Err(err) if can_use_human_sqlite_fallback(&err) => {
-            return update_task_sqlite_fallback(paths, cmd).await;
+        Err(err) => {
+            if should_use_sqlite_write_fallback(paths, &err)? {
+                return update_task_sqlite_fallback(paths, cmd).await;
+            }
+            return Err(write_requires_daemon(err));
         }
-        Err(err) => return Err(write_requires_daemon(err)),
     };
     apply_task_patch(&mut task, &cmd.fields, &cmd.clear)?;
     if let Err(err) = complete_project_fields(&client, &mut task, cmd.reason.as_deref()).await {
-        if can_use_human_sqlite_fallback(&err) {
+        if should_use_sqlite_write_fallback(paths, &err)? {
             return update_task_sqlite_fallback(paths, cmd).await;
         }
         return Err(err);
@@ -667,10 +683,12 @@ async fn update_task(paths: &AppPaths, cmd: &UpdateCommand) -> Result<CommandOut
         .await
     {
         Ok(updated) => updated,
-        Err(err) if can_use_human_sqlite_fallback(&err) => {
-            return update_task_sqlite_fallback(paths, cmd).await;
+        Err(err) => {
+            if should_use_sqlite_write_fallback(paths, &err)? {
+                return update_task_sqlite_fallback(paths, cmd).await;
+            }
+            return Err(write_requires_daemon(err));
         }
-        Err(err) => return Err(write_requires_daemon(err)),
     };
     task_summary_output(updated.task)
 }
@@ -761,17 +779,19 @@ async fn task_status_action(
         .await
     {
         Ok(result) => result,
-        Err(err) if can_use_human_sqlite_fallback(&err) => {
-            return task_status_sqlite_fallback(
-                paths,
-                &cmd.id,
-                label,
-                method,
-                cmd.reason.as_deref(),
-            )
-            .await;
+        Err(err) => {
+            if should_use_sqlite_write_fallback(paths, &err)? {
+                return task_status_sqlite_fallback(
+                    paths,
+                    &cmd.id,
+                    label,
+                    method,
+                    cmd.reason.as_deref(),
+                )
+                .await;
+            }
+            return Err(write_requires_daemon(err));
         }
-        Err(err) => return Err(write_requires_daemon(err)),
     };
     Ok(CommandOutput {
         json: json!({ "ok": true, "task": task_summary_json(&result.task) }),
@@ -794,10 +814,12 @@ async fn delete_task(paths: &AppPaths, cmd: &TaskActionCommand) -> Result<Comman
         .await
     {
         Ok(result) => result,
-        Err(err) if can_use_human_sqlite_fallback(&err) => {
-            return delete_task_sqlite_fallback(paths, cmd).await;
+        Err(err) => {
+            if should_use_sqlite_write_fallback(paths, &err)? {
+                return delete_task_sqlite_fallback(paths, cmd).await;
+            }
+            return Err(write_requires_daemon(err));
         }
-        Err(err) => return Err(write_requires_daemon(err)),
     };
     Ok(CommandOutput {
         json: json!({ "ok": true, "deleted": result.deleted }),
@@ -1991,34 +2013,18 @@ fn current_actor() -> RpcActor {
 }
 
 fn scheduled_run_context_present() -> bool {
-    std::env::var("CODEX_SCHEDULER_RUN_TOKEN")
-        .ok()
-        .filter(|token| !token.trim().is_empty())
-        .is_some()
-        || std::env::var("CODEX_SCHEDULER_CURRENT_TASK_ID")
-            .ok()
-            .filter(|task_id| !task_id.trim().is_empty())
-            .is_some()
-        || std::env::var("CODEX_SCHEDULER_CURRENT_RUN_ID")
-            .ok()
-            .filter(|run_id| !run_id.trim().is_empty())
-            .is_some()
+    scheduler_marker_present()
+        || nonempty_env("CODEX_SCHEDULER_RUN_TOKEN")
+        || nonempty_env("CODEX_SCHEDULER_CURRENT_TASK_ID")
+        || nonempty_env("CODEX_SCHEDULER_CURRENT_RUN_ID")
 }
 
 fn ensure_write_token_if_scheduled() -> Result<(), CliError> {
-    let task_context = std::env::var("CODEX_SCHEDULER_CURRENT_TASK_ID")
-        .ok()
-        .filter(|task_id| !task_id.trim().is_empty())
-        .is_some();
-    let run_context = std::env::var("CODEX_SCHEDULER_CURRENT_RUN_ID")
-        .ok()
-        .filter(|run_id| !run_id.trim().is_empty())
-        .is_some();
-    let token = std::env::var("CODEX_SCHEDULER_RUN_TOKEN")
-        .ok()
-        .filter(|token| !token.trim().is_empty())
-        .is_some();
-    if (task_context || run_context) && !token {
+    let scheduled_context = scheduler_marker_present()
+        || nonempty_env("CODEX_SCHEDULER_CURRENT_TASK_ID")
+        || nonempty_env("CODEX_SCHEDULER_CURRENT_RUN_ID");
+    let token = nonempty_env("CODEX_SCHEDULER_RUN_TOKEN");
+    if scheduled_context && !token {
         return Err(CliError::permission_denied(
             "CODEX_SCHEDULER_RUN_TOKEN is required for scheduled-run write commands",
         ));
@@ -2057,8 +2063,51 @@ fn write_requires_daemon(err: CliError) -> CliError {
     }
 }
 
-fn can_use_human_sqlite_fallback(err: &CliError) -> bool {
-    err.is_daemon_connection_failure() && !scheduled_run_context_present()
+fn should_use_sqlite_write_fallback(paths: &AppPaths, err: &CliError) -> Result<bool, CliError> {
+    if !err.is_daemon_connection_failure() {
+        return Ok(false);
+    }
+    if !paths.allow_direct_db {
+        return Ok(false);
+    }
+    if any_codex_scheduler_env_present() {
+        return Err(CliError::permission_denied(
+            "direct SQLite writes are not allowed inside scheduled runs",
+        ));
+    }
+    Ok(true)
+}
+
+fn direct_db_env_requested() -> bool {
+    truthy_env("CODEX_SCHEDULE_ALLOW_DIRECT_DB")
+}
+
+fn any_codex_scheduler_env_present() -> bool {
+    std::env::vars_os().any(|(key, value)| {
+        key.to_string_lossy().starts_with("CODEX_SCHEDULER")
+            && !value.to_string_lossy().trim().is_empty()
+    })
+}
+
+fn scheduler_marker_present() -> bool {
+    std::env::var("CODEX_SCHEDULER")
+        .ok()
+        .is_some_and(|value| value.trim() == "1")
+}
+
+fn nonempty_env(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty())
+}
+
+fn truthy_env(name: &str) -> bool {
+    std::env::var(name).ok().is_some_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 fn scheduler_error_to_cli(err: scheduler_core::SchedulerError) -> CliError {
