@@ -491,6 +491,62 @@ async fn scheduler_disabled_keeps_manual_run_now_queued() {
 }
 
 #[tokio::test]
+async fn setup_failure_marks_run_failed() {
+    let (temp, handle, executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let logs_dir = temp.path().join("logs");
+    std::fs::remove_dir_all(&logs_dir).expect("remove logs dir");
+    std::fs::write(&logs_dir, b"not a directory").expect("write logs file");
+
+    let task = sample_task_dto("setup-failure", TaskKind::Manual);
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams { task, actor: None },
+    )
+    .await
+    .expect("create task");
+    let run: RunResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_RUN_NOW,
+        TaskIdParams {
+            id: created.task.id.clone(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("run now");
+
+    let runs = wait_for_task_runs(
+        &handle,
+        &created.task.id,
+        |runs| {
+            runs.iter().any(|stored| {
+                stored.id == run.run.id
+                    && stored.status == RunStatus::Failed
+                    && stored.status_reason.as_deref() == Some("setup_failure")
+            })
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(runs.iter().any(|stored| stored.id == run.run.id
+        && stored.status == RunStatus::Failed
+        && stored.status_reason.as_deref() == Some("setup_failure")));
+    assert!(executor.calls().await.is_empty());
+    let events = handle
+        .db()
+        .list_run_events(&run.run.id)
+        .await
+        .expect("events");
+    assert!(events
+        .iter()
+        .any(|event| event.event_type == "run.setup_failed"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn token_create_succeeds_and_max_create_limit_is_enforced() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
     let (source_task, token, run_id) = source_token(
@@ -604,6 +660,84 @@ async fn token_create_without_capability_is_denied() {
     .expect("denied response");
     let error = denied.error.expect("rpc error");
     assert_eq!(error.code, JsonRpcErrorCode::PermissionDenied.code());
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_token_can_only_cancel_own_run_and_revokes_immediately() {
+    let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
+    let (source_task, token, run_id) = source_token(
+        &handle,
+        &executor,
+        "token-cancel-source",
+        vec!["schedule:update-any".to_owned()],
+    )
+    .await;
+
+    let source_table = handle
+        .db()
+        .get_task(&source_task.id)
+        .await
+        .expect("get task")
+        .expect("task");
+    let mut other_run = sample_run(&source_table, RunStatus::Queued);
+    other_run.scheduled_for = Some(format_utc_rfc3339(Utc::now() + ChronoDuration::hours(1)));
+    handle
+        .db()
+        .create_run(&other_run)
+        .await
+        .expect("create other run");
+
+    let denied = rpc::call_raw(
+        &handle.socket_path(),
+        METHOD_RUN_CANCEL,
+        with_invocation_metadata(
+            RunCancelParams {
+                id: other_run.id.clone(),
+                actor: Some(RpcActor {
+                    actor_type: AuditActorType::ScheduledRun,
+                    actor_id: Some(run_id.clone()),
+                }),
+            },
+            &token,
+            &source_task.id,
+            &run_id,
+            "cancel other run",
+        ),
+    )
+    .await
+    .expect("denied cancel response");
+    let error = denied.error.expect("rpc error");
+    assert_eq!(error.code, JsonRpcErrorCode::PermissionDenied.code());
+
+    let canceled: RunResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_RUN_CANCEL,
+        with_invocation_metadata(
+            RunCancelParams {
+                id: run_id.clone(),
+                actor: Some(RpcActor {
+                    actor_type: AuditActorType::ScheduledRun,
+                    actor_id: Some(run_id.clone()),
+                }),
+            },
+            &token,
+            &source_task.id,
+            &run_id,
+            "cancel own run",
+        ),
+    )
+    .await
+    .expect("cancel own run");
+    assert_eq!(canceled.run.id, run_id);
+    let token_row = handle
+        .db()
+        .get_schedule_capability_token_by_hash(&sha256_hex(token.as_bytes()))
+        .await
+        .expect("get token")
+        .expect("token");
+    assert!(token_row.revoked_at.is_some());
 
     handle.shutdown().await;
 }

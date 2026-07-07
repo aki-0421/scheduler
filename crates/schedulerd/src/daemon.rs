@@ -1,3 +1,12 @@
+//! Scheduler daemon process and JSON-RPC server.
+//!
+//! Trust boundary: the daemon's Unix domain socket is a same-user local control
+//! interface. A process that can connect to that socket is treated as a human
+//! terminal with local scheduler authority unless it explicitly presents
+//! scheduled-run metadata and a run-scoped capability token. True isolation for
+//! scheduled Codex executions is enforced by the Codex sandbox/runner layer, not
+//! by attempting to distinguish same-UID Unix processes at the JSON-RPC layer.
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -574,7 +583,54 @@ async fn revoke_run_tokens(
     Ok(())
 }
 
-async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> anyhow::Result<()> {
+struct PreparedRun {
+    run: Run,
+    task: Task,
+    request: ExecutionRequest,
+    cancel: CancellationToken,
+}
+
+async fn start_one_run(state: &Arc<DaemonState>, run: Run, task: Task) -> anyhow::Result<()> {
+    let run_id = run.id.clone();
+    let prepared = match prepare_run_execution(state, run, task).await {
+        Ok(prepared) => prepared,
+        Err(err) => {
+            state.active_runs.lock().await.remove(&run_id);
+            if let Err(mark_err) = mark_run_setup_failure(&state.db, &run_id, err.to_string()).await
+            {
+                error!(
+                    run_id = %run_id,
+                    error = %mark_err,
+                    "failed to record run setup failure"
+                );
+            }
+            return Err(err);
+        }
+    };
+
+    let PreparedRun {
+        run,
+        task,
+        request,
+        cancel,
+    } = prepared;
+
+    let state_for_task = state.clone();
+    tokio::spawn(async move {
+        let result = state_for_task.executor.execute(request, cancel).await;
+        if let Err(err) = finish_run(&state_for_task, run.id.clone(), task, result).await {
+            error!(run_id = %run.id, error = %err, "failed to finish run");
+        }
+    });
+
+    Ok(())
+}
+
+async fn prepare_run_execution(
+    state: &Arc<DaemonState>,
+    mut run: Run,
+    task: Task,
+) -> anyhow::Result<PreparedRun> {
     let run_dir = state.config.paths.logs_dir.join(&run.id);
     tokio::fs::create_dir_all(&run_dir).await?;
     let stdout_log_path = run_dir.join("stdout.log");
@@ -595,7 +651,7 @@ async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> an
     run.updated_at = now_rfc3339();
     state.db.update_run(&run).await?;
 
-    if let Err(err) = create_run_event(
+    create_run_event(
         &state.db,
         &run.id,
         "info",
@@ -603,11 +659,7 @@ async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> an
         Some("run started".to_owned()),
         None,
     )
-    .await
-    {
-        mark_run_setup_failure(&state.db, &run.id, err.to_string()).await?;
-        return Err(err.into());
-    }
+    .await?;
     publish_event(
         state,
         "run.started",
@@ -625,14 +677,7 @@ async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> an
         },
     );
 
-    let token = match issue_run_token(&state.db, &run, &task).await {
-        Ok(token) => token,
-        Err(err) => {
-            state.active_runs.lock().await.remove(&run.id);
-            mark_run_setup_failure(&state.db, &run.id, err.to_string()).await?;
-            return Err(err.into());
-        }
-    };
+    let token = issue_run_token(&state.db, &run, &task).await?;
     let request = ExecutionRequest {
         run: run.clone(),
         task: task.clone(),
@@ -646,15 +691,12 @@ async fn start_one_run(state: &Arc<DaemonState>, mut run: Run, task: Task) -> an
             .unwrap_or_default(),
     };
 
-    let state_for_task = state.clone();
-    tokio::spawn(async move {
-        let result = state_for_task.executor.execute(request, cancel).await;
-        if let Err(err) = finish_run(&state_for_task, run.id.clone(), task, result).await {
-            error!(run_id = %run.id, error = %err, "failed to finish run");
-        }
-    });
-
-    Ok(())
+    Ok(PreparedRun {
+        run,
+        task,
+        request,
+        cancel,
+    })
 }
 
 async fn finish_run(
@@ -1623,7 +1665,10 @@ async fn rpc_run_cancel(
     let authorization = authorize_write(state, params.actor, &metadata).await?;
     if let Some(token) = &authorization.token {
         if params.id != token.run_id {
-            ensure_capability(token, CAP_SCHEDULE_UPDATE_ANY)?;
+            return Err(JsonRpcError::new(
+                JsonRpcErrorCode::PermissionDenied,
+                "run token can only cancel its own run",
+            ));
         }
     }
     let actor = authorization.actor;
@@ -1808,11 +1853,15 @@ async fn cancel_run(
         .await
         .map_err(map_core_error)?
         .ok_or_else(run_not_found)?;
+    let revoked_at = now_rfc3339();
+    revoke_run_tokens(&state.db, run_id, &revoked_at)
+        .await
+        .map_err(map_core_error)?;
     if run.status == RunStatus::Queued {
         run.status = RunStatus::Canceled;
         run.status_reason = Some("canceled".to_owned());
-        run.ended_at = Some(now_rfc3339());
-        run.updated_at = now_rfc3339();
+        run.ended_at = Some(revoked_at.clone());
+        run.updated_at = revoked_at;
         state.db.update_run(&run).await.map_err(map_core_error)?;
     }
     create_task_audit(

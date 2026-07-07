@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use tracing::level_filters::LevelFilter;
+use tracing::warn;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
@@ -95,18 +96,18 @@ impl AppPaths {
         std::fs::create_dir_all(&self.data_dir)?;
         set_private_dir_permissions(&self.data_dir)?;
         std::fs::create_dir_all(&self.logs_dir)?;
-        set_private_dir_permissions(&self.logs_dir)?;
+        maybe_set_private_dir_permissions(&self.logs_dir, &self.data_dir, "logs dir")?;
         if let Some(parent) = self.db_path.parent() {
             std::fs::create_dir_all(parent)?;
-            set_private_dir_permissions(parent)?;
+            maybe_set_private_dir_permissions(parent, &self.data_dir, "db parent")?;
         }
         if let Some(parent) = self.socket_path.parent() {
             std::fs::create_dir_all(parent)?;
-            set_private_dir_permissions(parent)?;
+            maybe_set_private_dir_permissions(parent, &self.data_dir, "socket parent")?;
         }
         if let Some(parent) = self.lock_path.parent() {
             std::fs::create_dir_all(parent)?;
-            set_private_dir_permissions(parent)?;
+            maybe_set_private_dir_permissions(parent, &self.data_dir, "lock parent")?;
         }
         Ok(())
     }
@@ -194,6 +195,23 @@ fn log_parent(path: &Path) -> PathBuf {
     path.parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn maybe_set_private_dir_permissions(
+    path: &Path,
+    data_dir: &Path,
+    label: &str,
+) -> std::io::Result<()> {
+    if path.starts_with(data_dir) {
+        set_private_dir_permissions(path)?;
+    } else {
+        warn!(
+            path = %path.display(),
+            data_dir = %data_dir.display(),
+            "{label} is outside scheduler data dir; leaving directory permissions unchanged"
+        );
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
