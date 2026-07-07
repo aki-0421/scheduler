@@ -4,6 +4,7 @@ use scheduler_core::time::now_rfc3339;
 use scheduler_core::util::{prompt_hash, unique_slug};
 use scheduler_core::{SchedulerError, ValidationError};
 use serde_json::json;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::fs;
 use tempfile::TempDir;
 
@@ -342,6 +343,28 @@ async fn backup_is_created_only_when_existing_database_needs_migration() {
         .expect("legacy migration");
     drop(db);
     assert_eq!(backup_count(&backup_dir), 1);
+
+    let inconsistent_path = temp_dir.path().join("user-version-only.sqlite3");
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(&inconsistent_path)
+                .create_if_missing(true),
+        )
+        .await
+        .expect("create inconsistent db");
+    sqlx::query("PRAGMA user_version = 1")
+        .execute(&pool)
+        .await
+        .expect("set user_version");
+    pool.close().await;
+
+    let db = SchedulerDb::connect(&inconsistent_path)
+        .await
+        .expect("migration with missing sqlx state");
+    drop(db);
+    assert_eq!(backup_count(&backup_dir), 2);
 }
 
 fn backup_count(backup_dir: &std::path::Path) -> usize {

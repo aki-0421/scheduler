@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -911,7 +912,56 @@ async fn has_pending_migration(pool: &SqlitePool) -> Result<bool> {
     let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(pool)
         .await?;
-    Ok(user_version < SCHEMA_VERSION)
+    if user_version < SCHEMA_VERSION {
+        return Ok(true);
+    }
+
+    let has_sqlx_migrations: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1)
+         FROM sqlite_master
+         WHERE type = 'table' AND name = '_sqlx_migrations'",
+    )
+    .fetch_one(pool)
+    .await?;
+    if has_sqlx_migrations == 0 {
+        return Ok(MIGRATOR
+            .migrations
+            .iter()
+            .any(|migration| migration.migration_type.is_up_migration()));
+    }
+
+    let applied_rows = match sqlx::query_as::<_, (i64, Vec<u8>, i64)>(
+        "SELECT version, checksum, success FROM _sqlx_migrations ORDER BY version",
+    )
+    .fetch_all(pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(_) => return Ok(true),
+    };
+
+    let mut applied_migrations = HashMap::with_capacity(applied_rows.len());
+    for (version, checksum, success) in applied_rows {
+        if success == 0 {
+            return Ok(true);
+        }
+        applied_migrations.insert(version, checksum);
+    }
+
+    for migration in MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.migration_type.is_up_migration())
+    {
+        let Some(applied_checksum) = applied_migrations.get(&migration.version) else {
+            return Ok(true);
+        };
+        if applied_checksum.as_slice() != migration.checksum.as_ref() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, description, status, kind, cron_expr,
