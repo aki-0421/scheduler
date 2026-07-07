@@ -1351,6 +1351,11 @@ async fn route_rpc(
             let params: ProjectTrustParams = parse_params(request.params)?;
             to_value(rpc_project_trust(state, params, metadata).await?)
         }
+        METHOD_PROJECT_UNTRUST => {
+            let metadata = RpcMetadata::from_value(request.params.as_ref());
+            let params: ProjectUntrustParams = parse_params(request.params)?;
+            to_value(rpc_project_untrust(state, params, metadata).await?)
+        }
         METHOD_SETTINGS_GET => {
             let params: SettingsGetParams = parse_params(request.params)?;
             to_value(rpc_settings_get(state, params).await?)
@@ -2169,6 +2174,62 @@ async fn rpc_project_trust(
     .map_err(map_core_error)?;
     Ok(ProjectTrustResult {
         project: ProjectDto::from(&project),
+    })
+}
+
+async fn rpc_project_untrust(
+    state: &Arc<DaemonState>,
+    params: ProjectUntrustParams,
+    metadata: RpcMetadata,
+) -> Result<ProjectUntrustResult, JsonRpcError> {
+    let actor = reject_scheduled_control_write(params.actor, &metadata, "project.untrust")?;
+    let before = state
+        .db
+        .get_project(&params.project_id)
+        .await
+        .map_err(map_core_error)?
+        .ok_or_else(|| {
+            JsonRpcError::new(
+                JsonRpcErrorCode::ValidationFailed,
+                format!("project not found: {}", params.project_id),
+            )
+        })?;
+    let before_json = serde_json::to_value(ProjectDto::from(&before)).map_err(map_json_error)?;
+    let affected_task_count = state
+        .db
+        .count_active_repo_tasks_for_project(&before)
+        .await
+        .map_err(map_core_error)?;
+    let project = state
+        .db
+        .untrust_project(&params.project_id, &now_rfc3339())
+        .await
+        .map_err(map_core_error)?
+        .ok_or_else(|| {
+            JsonRpcError::new(
+                JsonRpcErrorCode::ValidationFailed,
+                format!("project not found: {}", params.project_id),
+            )
+        })?;
+    let after_json = serde_json::to_value(ProjectDto::from(&project)).map_err(map_json_error)?;
+
+    create_task_audit(
+        &state.db,
+        None,
+        actor,
+        "project.untrust",
+        Some(before_json),
+        Some(json!({
+            "project": after_json,
+            "affectedTaskCount": affected_task_count,
+        })),
+        metadata.reason.as_deref(),
+    )
+    .await
+    .map_err(map_core_error)?;
+    Ok(ProjectUntrustResult {
+        project: ProjectDto::from(&project),
+        affected_task_count,
     })
 }
 

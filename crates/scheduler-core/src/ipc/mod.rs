@@ -28,6 +28,7 @@ pub const METHOD_RUN_CANCEL: &str = "run.cancel";
 pub const METHOD_RUN_TAIL_LOG: &str = "run.tailLog";
 pub const METHOD_PROJECT_LIST: &str = "project.list";
 pub const METHOD_PROJECT_TRUST: &str = "project.trust";
+pub const METHOD_PROJECT_UNTRUST: &str = "project.untrust";
 pub const METHOD_SETTINGS_GET: &str = "settings.get";
 pub const METHOD_SETTINGS_SET: &str = "settings.set";
 
@@ -426,6 +427,21 @@ pub struct ProjectTrustParams {
 #[serde(rename_all = "camelCase")]
 pub struct ProjectTrustResult {
     pub project: ProjectDto,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectUntrustParams {
+    pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<RpcActor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectUntrustResult {
+    pub project: ProjectDto,
+    pub affected_task_count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

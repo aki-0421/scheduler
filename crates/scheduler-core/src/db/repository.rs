@@ -153,6 +153,48 @@ impl SchedulerDb {
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn untrust_project(&self, id: &str, updated_at: &str) -> Result<Option<Project>> {
+        let result = sqlx::query(
+            "UPDATE projects
+             SET trusted_at = NULL, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(updated_at)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_project(id).await
+    }
+
+    pub async fn count_active_repo_tasks_for_project(&self, project: &Project) -> Result<i64> {
+        let root = project.git_root.as_deref().unwrap_or(&project.path);
+        let child_prefix = if root.ends_with(std::path::MAIN_SEPARATOR) {
+            root.to_owned()
+        } else {
+            format!("{}{}", root, std::path::MAIN_SEPARATOR)
+        };
+        let child_pattern = format!("{}%", escape_sql_like(&child_prefix));
+        Ok(sqlx::query_scalar(
+            "SELECT COUNT(1)
+             FROM tasks
+             WHERE status = 'active'
+               AND target_mode IN ('repo-local', 'repo-worktree')
+               AND (
+                    project_id = ?
+                    OR repo_path = ?
+                    OR repo_path LIKE ? ESCAPE '!'
+               )",
+        )
+        .bind(&project.id)
+        .bind(root)
+        .bind(child_pattern)
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
     pub async fn delete_project(&self, id: &str) -> Result<bool> {
         let result = sqlx::query("DELETE FROM projects WHERE id = ?")
             .bind(id)
@@ -1028,6 +1070,17 @@ fn empty_opt(value: Option<&str>) -> bool {
 
 fn non_negative_setting(value: Option<i64>, default: i64) -> i64 {
     value.unwrap_or(default).max(0)
+}
+
+fn escape_sql_like(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(ch, '!' | '%' | '_') {
+            escaped.push('!');
+        }
+        escaped.push(ch);
+    }
+    escaped
 }
 
 pub async fn backup_database(pool: &SqlitePool, path: &Path) -> Result<Option<PathBuf>> {

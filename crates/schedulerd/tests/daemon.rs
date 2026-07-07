@@ -380,6 +380,150 @@ async fn task_audit_list_returns_task_audit_events_over_uds() {
 }
 
 #[tokio::test]
+async fn project_untrust_clears_trusted_at_in_project_list_and_counts_active_tasks() {
+    let (temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
+    let project_path = temp.path().join("trusted-project");
+    std::fs::create_dir_all(&project_path).expect("create project dir");
+
+    let trusted: ProjectTrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: project_path.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("trust project");
+    assert!(trusted.project.trusted_at.is_some());
+
+    let mut task = sample_task_dto("untrust-affected", TaskKind::Manual);
+    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.project_id = Some(trusted.project.id.clone());
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams { task, actor: None },
+    )
+    .await
+    .expect("create affected task");
+
+    let untrusted: ProjectUntrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_UNTRUST,
+        ProjectUntrustParams {
+            project_id: trusted.project.id.clone(),
+            actor: Some(RpcActor {
+                actor_type: AuditActorType::Cli,
+                actor_id: Some("scheduler-cli".to_owned()),
+            }),
+        },
+    )
+    .await
+    .expect("untrust project");
+    assert_eq!(untrusted.project.id, trusted.project.id);
+    assert!(untrusted.project.trusted_at.is_none());
+    assert_eq!(untrusted.affected_task_count, 1);
+
+    let projects: ProjectListResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_LIST,
+        ProjectListParams {},
+    )
+    .await
+    .expect("project list");
+    let listed = projects
+        .projects
+        .iter()
+        .find(|project| project.id == trusted.project.id)
+        .expect("listed project");
+    assert!(listed.trusted_at.is_none());
+
+    let stored_task = handle
+        .db()
+        .get_task(&created.task.id)
+        .await
+        .expect("get affected task")
+        .expect("affected task");
+    assert_eq!(stored_task.status, TaskStatus::Active);
+    assert_eq!(
+        stored_task.project_id.as_deref(),
+        Some(trusted.project.id.as_str())
+    );
+
+    let audit: (String, String, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT action, actor_type, task_id, after_json
+         FROM task_audit_events
+         WHERE action = 'project.untrust'
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1",
+    )
+    .fetch_one(handle.db().pool())
+    .await
+    .expect("project untrust audit");
+    assert_eq!(audit.0, "project.untrust");
+    assert_eq!(audit.1, "cli");
+    assert!(audit.2.is_none());
+    let after_json: Value =
+        serde_json::from_str(audit.3.as_deref().expect("after json")).expect("after value");
+    assert_eq!(after_json["affectedTaskCount"], json!(1));
+    assert_eq!(after_json["project"]["id"], json!(trusted.project.id));
+
+    let retrusted: ProjectTrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: project_path.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("retrust project");
+    assert_eq!(retrusted.project.id, trusted.project.id);
+    assert!(retrusted.project.trusted_at.is_some());
+
+    let (source_task, token, run_id) = source_token(
+        &handle,
+        &executor,
+        "untrust-token-source",
+        vec!["schedule:update-any".to_owned()],
+    )
+    .await;
+
+    let denied = rpc::call_raw(
+        &handle.socket_path(),
+        METHOD_PROJECT_UNTRUST,
+        with_invocation_metadata(
+            ProjectUntrustParams {
+                project_id: retrusted.project.id.clone(),
+                actor: Some(RpcActor {
+                    actor_type: AuditActorType::ScheduledRun,
+                    actor_id: Some(run_id.clone()),
+                }),
+            },
+            &token,
+            &source_task.id,
+            &run_id,
+            "untrust from scheduled run",
+        ),
+    )
+    .await
+    .expect("denied response");
+    let error = denied.error.expect("rpc error");
+    assert_eq!(error.code, JsonRpcErrorCode::PermissionDenied.code());
+
+    let stored = handle
+        .db()
+        .get_project(&retrusted.project.id)
+        .await
+        .expect("get project")
+        .expect("project");
+    assert!(stored.trusted_at.is_some());
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn retention_cleanup_removes_expired_runs_logs_and_tokens() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
