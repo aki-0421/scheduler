@@ -1,1 +1,0 @@
--- Placeholder migration for the M0 scaffold.
