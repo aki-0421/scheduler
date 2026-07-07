@@ -5,6 +5,7 @@ pub mod error;
 pub mod ipc;
 pub mod model;
 pub mod schedule;
+pub mod settings;
 pub mod time;
 pub mod util;
 

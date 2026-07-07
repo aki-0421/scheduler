@@ -7,30 +7,34 @@
 //! scheduled Codex executions is enforced by the Codex sandbox/runner layer, not
 //! by attempting to distinguish same-UID Unix processes at the JSON-RPC layer.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::ffi::{OsStr, OsString};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use scheduler_core::db::SchedulerDb;
+use scheduler_core::db::{RunHistoryCleanupCounts, SchedulerDb};
 use scheduler_core::ipc::*;
 use scheduler_core::model::*;
 use scheduler_core::schedule::{
     compute_next_run_at, decide_overlap, retry_decision, select_missed_runs, MissedRunCursor,
     MissedRunOptions, OverlapDecision,
 };
+use scheduler_core::settings::{SETTING_RUNNER_CODEX_PATH, SETTING_SCHEDULER_ENABLED};
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
 use scheduler_core::util::sha256_hex;
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::process::Command as TokioCommand;
 use tokio::sync::{broadcast, Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::config::DaemonConfig;
 use crate::executor::{
@@ -43,6 +47,8 @@ const CAP_SCHEDULE_UPDATE_CURRENT: &str = "schedule:update-current";
 const CAP_SCHEDULE_UPDATE_ANY: &str = "schedule:update-any";
 const CAP_SCHEDULE_PAUSE_CURRENT: &str = "schedule:pause-current";
 const CAP_SCHEDULE_RUN_NOW: &str = "schedule:run-now";
+const RETENTION_CLEANUP_INITIAL_DELAY: Duration = Duration::from_secs(5 * 60);
+const RETENTION_CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -89,12 +95,24 @@ pub(crate) struct DaemonState {
     shutdown: CancellationToken,
     accepting_runs: AtomicBool,
     active_runs: Mutex<HashMap<String, ActiveRun>>,
+    last_tick_at: Mutex<Option<String>>,
     events_tx: broadcast::Sender<DaemonEvent>,
 }
 
 pub struct DaemonHandle {
     state: Arc<DaemonState>,
     joins: Vec<JoinHandle<()>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RetentionCleanupResult {
+    pub capability_tokens_deleted: u64,
+    pub log_dirs_deleted: u64,
+    pub log_dirs_skipped: u64,
+    pub worktrees_deleted: u64,
+    pub worktrees_skipped_dirty: u64,
+    pub worktrees_skipped: u64,
+    pub run_history: RunHistoryCleanupCounts,
 }
 
 impl DaemonHandle {
@@ -146,13 +164,16 @@ pub async fn start_daemon(
         shutdown: CancellationToken::new(),
         accepting_runs: AtomicBool::new(true),
         active_runs: Mutex::new(HashMap::new()),
+        last_tick_at: Mutex::new(None),
         events_tx,
     });
 
     let scheduler_state = state.clone();
     let rpc_state = state.clone();
+    let cleanup_state = state.clone();
     let joins = vec![
         tokio::spawn(async move { scheduler_loop(scheduler_state).await }),
+        tokio::spawn(async move { retention_cleanup_loop(cleanup_state).await }),
         tokio::spawn(async move { rpc_server_loop(rpc_state, listener).await }),
     ];
 
@@ -183,6 +204,266 @@ async fn scheduler_loop(state: Arc<DaemonState>) {
     }
 }
 
+async fn retention_cleanup_loop(state: Arc<DaemonState>) {
+    tokio::select! {
+        () = state.shutdown.cancelled() => return,
+        () = tokio::time::sleep(RETENTION_CLEANUP_INITIAL_DELAY) => {}
+    }
+
+    loop {
+        if state.shutdown.is_cancelled() {
+            break;
+        }
+
+        match run_retention_cleanup(&state.db, &state.config.paths, Utc::now()).await {
+            Ok(result) => {
+                info!(
+                    capability_tokens_deleted = result.capability_tokens_deleted,
+                    log_dirs_deleted = result.log_dirs_deleted,
+                    log_dirs_skipped = result.log_dirs_skipped,
+                    worktrees_deleted = result.worktrees_deleted,
+                    worktrees_skipped_dirty = result.worktrees_skipped_dirty,
+                    worktrees_skipped = result.worktrees_skipped,
+                    task_run_references_cleared = result.run_history.task_run_references_cleared,
+                    run_events_deleted = result.run_history.run_events_deleted,
+                    run_artifacts_deleted = result.run_history.run_artifacts_deleted,
+                    runs_deleted = result.run_history.runs_deleted,
+                    "retention cleanup completed"
+                );
+            }
+            Err(err) => warn!(error = %err, "retention cleanup failed"),
+        }
+
+        tokio::select! {
+            () = state.shutdown.cancelled() => break,
+            () = tokio::time::sleep(RETENTION_CLEANUP_INTERVAL) => {}
+        }
+    }
+}
+
+pub async fn run_retention_cleanup(
+    db: &SchedulerDb,
+    paths: &crate::config::AppPaths,
+    now: DateTime<Utc>,
+) -> anyhow::Result<RetentionCleanupResult> {
+    let settings = db.retention_settings().await?;
+    let run_history_cutoff =
+        format_utc_rfc3339(now - ChronoDuration::days(settings.run_history_days));
+    let succeeded_logs_cutoff =
+        format_utc_rfc3339(now - ChronoDuration::days(settings.succeeded_run_logs_days));
+    let failed_logs_cutoff =
+        format_utc_rfc3339(now - ChronoDuration::days(settings.failed_run_logs_days));
+    let token_cutoff = format_utc_rfc3339(
+        now - ChronoDuration::hours(settings.capability_token_delete_after_hours),
+    );
+
+    let log_candidates = db
+        .list_runs_for_log_cleanup(&succeeded_logs_cutoff, &failed_logs_cutoff)
+        .await?;
+    let worktree_candidates = db.list_delete_after_days_worktree_runs().await?;
+
+    let capability_tokens_deleted = db
+        .delete_expired_schedule_capability_tokens(&token_cutoff)
+        .await?;
+
+    let mut result = RetentionCleanupResult {
+        capability_tokens_deleted,
+        ..RetentionCleanupResult::default()
+    };
+
+    for run in log_candidates {
+        match remove_run_logs_dir(&paths.logs_dir, &run.id) {
+            Ok(true) => result.log_dirs_deleted += 1,
+            Ok(false) => {}
+            Err(err) => {
+                result.log_dirs_skipped += 1;
+                warn!(
+                    run_id = %run.id,
+                    error = %err,
+                    "retention cleanup skipped run logs dir"
+                );
+            }
+        }
+    }
+
+    for run in worktree_candidates {
+        match cleanup_delete_after_days_worktree(db, paths, run, now).await {
+            Ok(WorktreeCleanupOutcome::Deleted) => result.worktrees_deleted += 1,
+            Ok(WorktreeCleanupOutcome::SkippedDirty) => result.worktrees_skipped_dirty += 1,
+            Ok(WorktreeCleanupOutcome::Skipped) => result.worktrees_skipped += 1,
+            Err(err) => {
+                result.worktrees_skipped += 1;
+                warn!(error = %err, "worktree retention cleanup failed");
+            }
+        }
+    }
+
+    result.run_history = db
+        .delete_terminal_runs_ended_before(&run_history_cutoff)
+        .await?;
+    Ok(result)
+}
+
+fn remove_run_logs_dir(logs_root: &Path, run_id: &str) -> anyhow::Result<bool> {
+    let run_dir = logs_root.join(run_id);
+    if !run_dir.exists() {
+        return Ok(false);
+    }
+
+    let canonical_root = fs::canonicalize(logs_root)?;
+    let canonical_run_dir = fs::canonicalize(&run_dir)?;
+    if canonical_run_dir == canonical_root || !canonical_run_dir.starts_with(&canonical_root) {
+        anyhow::bail!(
+            "refusing to remove logs dir outside logs root: {}",
+            canonical_run_dir.display()
+        );
+    }
+    if !canonical_run_dir.is_dir() {
+        anyhow::bail!(
+            "run logs path is not a directory: {}",
+            canonical_run_dir.display()
+        );
+    }
+
+    fs::remove_dir_all(&canonical_run_dir)?;
+    Ok(true)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorktreeCleanupOutcome {
+    Deleted,
+    SkippedDirty,
+    Skipped,
+}
+
+async fn cleanup_delete_after_days_worktree(
+    db: &SchedulerDb,
+    paths: &crate::config::AppPaths,
+    mut run: Run,
+    now: DateTime<Utc>,
+) -> anyhow::Result<WorktreeCleanupOutcome> {
+    let Some(ended_at) = run
+        .ended_at
+        .as_deref()
+        .and_then(|value| parse_utc_rfc3339(value).ok())
+    else {
+        return Ok(WorktreeCleanupOutcome::Skipped);
+    };
+    let Some(task) = db.get_task(&run.task_id).await? else {
+        return Ok(WorktreeCleanupOutcome::Skipped);
+    };
+    let cleanup_after_days = task.cleanup_after_days.unwrap_or(1).max(0);
+    if ended_at + ChronoDuration::days(cleanup_after_days) > now {
+        return Ok(WorktreeCleanupOutcome::Skipped);
+    }
+
+    let Some(worktree_path) = run.worktree_path.as_deref().map(PathBuf::from) else {
+        return Ok(WorktreeCleanupOutcome::Skipped);
+    };
+    if !worktree_path.exists() {
+        run.worktree_path = None;
+        run.updated_at = now_rfc3339();
+        db.update_run(&run).await?;
+        return Ok(WorktreeCleanupOutcome::Deleted);
+    }
+
+    let worktrees_root = paths.data_dir.join("worktrees");
+    let canonical_root = fs::canonicalize(&worktrees_root)?;
+    let canonical_worktree = fs::canonicalize(&worktree_path)?;
+    if !canonical_worktree.starts_with(&canonical_root) {
+        warn!(
+            run_id = %run.id,
+            worktree_path = %canonical_worktree.display(),
+            worktrees_root = %canonical_root.display(),
+            "worktree cleanup skipped path outside scheduler worktrees root"
+        );
+        return Ok(WorktreeCleanupOutcome::Skipped);
+    }
+
+    let status = cleanup_git_output(
+        &canonical_worktree,
+        [OsString::from("status"), OsString::from("--porcelain=v1")],
+    )
+    .await?;
+    if !status.trim().is_empty() {
+        warn!(
+            run_id = %run.id,
+            worktree_path = %canonical_worktree.display(),
+            "worktree cleanup skipped dirty worktree"
+        );
+        return Ok(WorktreeCleanupOutcome::SkippedDirty);
+    }
+
+    let Some(repo_path) = repo_path_for_worktree_cleanup(db, &task).await? else {
+        warn!(run_id = %run.id, "worktree cleanup skipped because repo path is unavailable");
+        return Ok(WorktreeCleanupOutcome::Skipped);
+    };
+    let canonical_repo = fs::canonicalize(repo_path)?;
+    cleanup_git_output(
+        &canonical_repo,
+        [
+            OsString::from("worktree"),
+            OsString::from("remove"),
+            canonical_worktree.as_os_str().to_os_string(),
+        ],
+    )
+    .await?;
+
+    run.worktree_path = None;
+    run.updated_at = now_rfc3339();
+    db.update_run(&run).await?;
+    Ok(WorktreeCleanupOutcome::Deleted)
+}
+
+async fn repo_path_for_worktree_cleanup(
+    db: &SchedulerDb,
+    task: &Task,
+) -> scheduler_core::Result<Option<PathBuf>> {
+    if let Some(path) = task
+        .repo_path
+        .as_deref()
+        .filter(|path| !path.trim().is_empty())
+    {
+        return Ok(Some(PathBuf::from(path)));
+    }
+    let Some(project_id) = task.project_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(project) = db.get_project(project_id).await? else {
+        return Ok(None);
+    };
+    Ok(project
+        .git_root
+        .as_deref()
+        .or(Some(project.path.as_str()))
+        .map(PathBuf::from))
+}
+
+async fn cleanup_git_output<I, S>(cwd: &Path, args: I) -> anyhow::Result<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let args = args
+        .into_iter()
+        .map(|arg| arg.as_ref().to_os_string())
+        .collect::<Vec<_>>();
+    let output = TokioCommand::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(&args)
+        .output()
+        .await?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
+    anyhow::bail!(
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+}
+
 fn next_tick_delay(interval: Duration) -> Duration {
     if interval == Duration::from_secs(60) {
         let now = Utc::now();
@@ -198,6 +479,7 @@ fn next_tick_delay(interval: Duration) -> Duration {
 }
 
 async fn perform_tick(state: &Arc<DaemonState>) -> anyhow::Result<()> {
+    *state.last_tick_at.lock().await = Some(now_rfc3339());
     if !scheduler_enabled(&state.db).await? {
         return Ok(());
     }
@@ -208,7 +490,7 @@ async fn perform_tick(state: &Arc<DaemonState>) -> anyhow::Result<()> {
 
 async fn scheduler_enabled(db: &SchedulerDb) -> scheduler_core::Result<bool> {
     Ok(db
-        .get_setting::<bool>("scheduler.enabled")
+        .get_setting::<bool>(SETTING_SCHEDULER_ENABLED)
         .await?
         .unwrap_or(true))
 }
@@ -982,6 +1264,10 @@ async fn route_rpc(
 ) -> Result<Value, JsonRpcError> {
     match request.method.as_str() {
         METHOD_DAEMON_HEALTH => to_value(rpc_health(state).await),
+        METHOD_DAEMON_DIAGNOSTICS => {
+            let _params: DaemonDiagnosticsParams = parse_params(request.params)?;
+            to_value(rpc_diagnostics(state).await?)
+        }
         METHOD_TASK_LIST => {
             let params: TaskListParams = parse_params(request.params)?;
             to_value(rpc_task_list(state, params).await?)
@@ -1082,6 +1368,55 @@ async fn rpc_health(state: &Arc<DaemonState>) -> DaemonHealthResult {
         running_count: count_running(&state.db).await.unwrap_or_default(),
         queued_count: count_queued(&state.db).await.unwrap_or_default(),
     }
+}
+
+async fn rpc_diagnostics(
+    state: &Arc<DaemonState>,
+) -> Result<DaemonDiagnosticsResult, JsonRpcError> {
+    let codex_path_value = state
+        .db
+        .get_setting::<String>(SETTING_RUNNER_CODEX_PATH)
+        .await
+        .map_err(map_core_error)?
+        .and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_owned())
+        });
+    let codex_path_exists = codex_path_value
+        .as_deref()
+        .map(command_or_path_exists)
+        .unwrap_or_else(|| command_or_path_exists("codex"));
+    let last_tick_at = state.last_tick_at.lock().await.clone();
+
+    Ok(DaemonDiagnosticsResult {
+        version: state.config.version.clone(),
+        db_schema_version: scheduler_core::db::migrations::SCHEMA_VERSION,
+        data_dir: path_to_string(&state.config.paths.data_dir),
+        socket_path: path_to_string(&state.config.paths.socket_path),
+        db_size_bytes: scheduler_db_size_bytes(&state.config.paths.db_path),
+        logs_size_bytes: path_size_bytes(&state.config.paths.logs_dir),
+        task_counts: state
+            .db
+            .count_tasks_by_status()
+            .await
+            .map_err(map_core_error)?
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+        run_counts: state
+            .db
+            .count_runs_by_status()
+            .await
+            .map_err(map_core_error)?
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+        scheduler_enabled: scheduler_enabled(&state.db).await.map_err(map_core_error)?,
+        codex_path: CodexPathDiagnostics {
+            value: codex_path_value,
+            exists: codex_path_exists,
+        },
+        tick_interval_sec: state.config.tick_interval.as_secs(),
+        last_tick_at,
+    })
 }
 
 async fn rpc_task_list(
@@ -2271,6 +2606,58 @@ fn detect_git_root(path: &Path) -> Option<String> {
 
 fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+fn scheduler_db_size_bytes(db_path: &Path) -> u64 {
+    let mut total = file_size_bytes(db_path);
+    let db_path_string = db_path.to_string_lossy();
+    total += file_size_bytes(Path::new(&format!("{db_path_string}-wal")));
+    total += file_size_bytes(Path::new(&format!("{db_path_string}-shm")));
+    total
+}
+
+fn path_size_bytes(path: &Path) -> u64 {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if metadata.is_file() || metadata.file_type().is_symlink() {
+        return metadata.len();
+    }
+    if !metadata.is_dir() {
+        return 0;
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| path_size_bytes(&entry.path()))
+        .sum()
+}
+
+fn file_size_bytes(path: &Path) -> u64 {
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
+}
+
+fn command_or_path_exists(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let path = Path::new(trimmed);
+    if path.is_absolute() || trimmed.contains(std::path::MAIN_SEPARATOR) {
+        return path.exists();
+    }
+    std::env::var_os("PATH")
+        .map(|paths| {
+            std::env::split_paths(&paths).any(|dir| {
+                let candidate = dir.join(trimmed);
+                candidate.is_file()
+            })
+        })
+        .unwrap_or(false)
 }
 
 fn string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {

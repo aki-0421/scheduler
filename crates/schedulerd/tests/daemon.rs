@@ -1,14 +1,19 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::ipc::*;
 use scheduler_core::model::*;
+use scheduler_core::settings::SETTING_RETENTION_RUN_HISTORY_DAYS;
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
 use scheduler_core::util::sha256_hex;
 use schedulerd::executor::{MockBehavior, MockExecutor};
-use schedulerd::{rpc, start_daemon, CodexExecutor, DaemonConfig, DaemonHandle, ExecutionResult};
+use schedulerd::{
+    rpc, run_retention_cleanup, start_daemon, CodexExecutor, DaemonConfig, DaemonHandle,
+    ExecutionResult,
+};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -209,6 +214,33 @@ fn sample_run(task: &Task, status: RunStatus) -> Run {
     }
 }
 
+fn finished_run(task: &Task, status: RunStatus, ended_at: chrono::DateTime<Utc>) -> Run {
+    let ended_at = format_utc_rfc3339(ended_at);
+    let mut run = sample_run(task, status);
+    run.scheduled_for = Some(format!("{}#{}", ended_at, run.id));
+    run.queued_at = ended_at.clone();
+    run.started_at = Some(ended_at.clone());
+    run.ended_at = Some(ended_at.clone());
+    run.created_at = ended_at.clone();
+    run.updated_at = ended_at;
+    run
+}
+
+fn run_git(cwd: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(args)
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[tokio::test]
 async fn daemon_health_returns_shape_over_uds() {
     let (_temp, handle, _executor) =
@@ -228,6 +260,297 @@ async fn daemon_health_returns_shape_over_uds() {
     assert_eq!(health.running_count, 0);
     assert_eq!(health.queued_count, 0);
 
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn daemon_diagnostics_returns_runtime_state_over_uds() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    handle.request_tick();
+
+    let diagnostics: DaemonDiagnosticsResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_DAEMON_DIAGNOSTICS,
+        DaemonDiagnosticsParams {},
+    )
+    .await
+    .expect("diagnostics rpc");
+
+    assert_eq!(diagnostics.db_schema_version, 1);
+    assert_eq!(
+        diagnostics.data_dir,
+        temp.path().to_string_lossy().into_owned()
+    );
+    assert_eq!(
+        diagnostics.socket_path,
+        handle.socket_path().to_string_lossy()
+    );
+    assert!(diagnostics.scheduler_enabled);
+    assert_eq!(diagnostics.tick_interval_sec, 3600);
+    assert!(diagnostics.last_tick_at.is_some());
+    assert!(diagnostics.db_size_bytes > 0);
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn retention_cleanup_removes_expired_runs_logs_and_tokens() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let db = handle.db();
+    db.set_setting(SETTING_RETENTION_RUN_HISTORY_DAYS, &365_i64)
+        .await
+        .expect("set run history retention");
+
+    let task = sample_task_table("retention-source", TaskKind::Manual);
+    db.create_task(&task).await.expect("create task");
+
+    let now = Utc::now();
+    let old_history = finished_run(&task, RunStatus::Succeeded, now - ChronoDuration::days(366));
+    let old_success_logs =
+        finished_run(&task, RunStatus::Succeeded, now - ChronoDuration::days(31));
+    let recent_success_logs =
+        finished_run(&task, RunStatus::Succeeded, now - ChronoDuration::days(29));
+    let old_failed_logs = finished_run(&task, RunStatus::Failed, now - ChronoDuration::days(181));
+    let recent_failed_logs =
+        finished_run(&task, RunStatus::Failed, now - ChronoDuration::days(179));
+    let running_old = finished_run(&task, RunStatus::Running, now - ChronoDuration::days(500));
+    let runs = [
+        old_history.clone(),
+        old_success_logs.clone(),
+        recent_success_logs.clone(),
+        old_failed_logs.clone(),
+        recent_failed_logs.clone(),
+        running_old.clone(),
+    ];
+    for run in &runs {
+        db.create_run(run).await.expect("create run");
+        let log_dir = temp.path().join("logs").join(&run.id);
+        std::fs::create_dir_all(&log_dir).expect("create run logs dir");
+        std::fs::write(log_dir.join("stdout.log"), b"stdout").expect("write stdout");
+    }
+
+    db.create_run_event(&RunEvent {
+        id: new_run_event_id(),
+        run_id: old_history.id.clone(),
+        event_index: 0,
+        source: RunEventSource::Daemon,
+        level: "info".to_owned(),
+        event_type: "test.event".to_owned(),
+        message: Some("old".to_owned()),
+        payload_json: Some(json!({ "old": true }).to_string()),
+        created_at: old_history.created_at.clone(),
+    })
+    .await
+    .expect("create event");
+    db.create_run_artifact(&RunArtifact {
+        id: new_run_artifact_id(),
+        run_id: old_history.id.clone(),
+        kind: RunArtifactKind::Log,
+        path: "logs/old".to_owned(),
+        title: None,
+        mime_type: None,
+        size_bytes: Some(1),
+        created_at: old_history.created_at.clone(),
+    })
+    .await
+    .expect("create artifact");
+
+    let token_run = recent_success_logs.clone();
+    db.create_schedule_capability_token(&ScheduleCapabilityToken {
+        id: new_schedule_capability_token_id(),
+        run_id: token_run.id.clone(),
+        task_id: task.id.clone(),
+        token_hash: sha256_hex(b"old-token"),
+        capabilities_json: "[]".to_owned(),
+        expires_at: format_utc_rfc3339(now - ChronoDuration::hours(25)),
+        max_creates: 5,
+        create_count: 0,
+        revoked_at: None,
+        created_at: format_utc_rfc3339(now - ChronoDuration::hours(26)),
+    })
+    .await
+    .expect("create old token");
+    let kept_token_id = new_schedule_capability_token_id();
+    db.create_schedule_capability_token(&ScheduleCapabilityToken {
+        id: kept_token_id.clone(),
+        run_id: token_run.id.clone(),
+        task_id: task.id.clone(),
+        token_hash: sha256_hex(b"kept-token"),
+        capabilities_json: "[]".to_owned(),
+        expires_at: format_utc_rfc3339(now - ChronoDuration::hours(23)),
+        max_creates: 5,
+        create_count: 0,
+        revoked_at: None,
+        created_at: format_utc_rfc3339(now - ChronoDuration::hours(24)),
+    })
+    .await
+    .expect("create kept token");
+
+    let paths = DaemonConfig::for_data_dir(temp.path()).paths;
+    let result = run_retention_cleanup(&db, &paths, now)
+        .await
+        .expect("retention cleanup");
+
+    assert_eq!(result.capability_tokens_deleted, 1);
+    assert_eq!(result.run_history.runs_deleted, 1);
+    assert_eq!(result.run_history.run_events_deleted, 1);
+    assert_eq!(result.run_history.run_artifacts_deleted, 1);
+    assert!(db
+        .get_run(&old_history.id)
+        .await
+        .expect("get old history")
+        .is_none());
+    assert!(db
+        .get_run(&running_old.id)
+        .await
+        .expect("get running")
+        .is_some());
+    assert!(db
+        .get_schedule_capability_token(&kept_token_id)
+        .await
+        .expect("get kept token")
+        .is_some());
+
+    assert!(!temp.path().join("logs").join(&old_history.id).exists());
+    assert!(!temp.path().join("logs").join(&old_success_logs.id).exists());
+    assert!(temp
+        .path()
+        .join("logs")
+        .join(&recent_success_logs.id)
+        .exists());
+    assert!(!temp.path().join("logs").join(&old_failed_logs.id).exists());
+    assert!(temp
+        .path()
+        .join("logs")
+        .join(&recent_failed_logs.id)
+        .exists());
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn retention_cleanup_removes_clean_delete_after_days_worktree_and_skips_dirty() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let db = handle.db();
+    let now = Utc::now();
+
+    let repo = temp.path().join("repo");
+    std::fs::create_dir_all(&repo).expect("create repo");
+    run_git(&repo, &["init"]);
+    run_git(&repo, &["config", "user.email", "scheduler@example.com"]);
+    run_git(&repo, &["config", "user.name", "Scheduler Test"]);
+    std::fs::write(repo.join("README.md"), "hello\n").expect("write readme");
+    run_git(&repo, &["add", "README.md"]);
+    run_git(&repo, &["commit", "-m", "initial"]);
+    let repo = std::fs::canonicalize(&repo).expect("canonical repo");
+
+    let project = Project {
+        id: new_project_id(),
+        name: "repo".to_owned(),
+        path: repo.to_string_lossy().into_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some(repo.to_string_lossy().into_owned()),
+        git_remote_url: None,
+        default_branch: None,
+        trusted_at: Some(now_rfc3339()),
+        created_at: now_rfc3339(),
+        updated_at: now_rfc3339(),
+    };
+    db.create_project(&project).await.expect("create project");
+
+    let mut task = sample_task_table("worktree-retention", TaskKind::Manual);
+    task.target_mode = RunTargetMode::RepoWorktree;
+    task.project_id = Some(project.id.clone());
+    task.repo_path = Some(repo.to_string_lossy().into_owned());
+    task.cleanup_policy = CleanupPolicy::DeleteAfterDays;
+    task.cleanup_after_days = Some(1);
+    db.create_task(&task).await.expect("create task");
+
+    let worktrees_root = temp.path().join("worktrees").join(&task.slug);
+    std::fs::create_dir_all(&worktrees_root).expect("create worktrees root");
+    let clean_worktree = worktrees_root.join("clean");
+    let dirty_worktree = worktrees_root.join("dirty");
+    run_git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "scheduler-clean",
+            clean_worktree.to_str().expect("clean path"),
+            "HEAD",
+        ],
+    );
+    run_git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "scheduler-dirty",
+            dirty_worktree.to_str().expect("dirty path"),
+            "HEAD",
+        ],
+    );
+    std::fs::write(dirty_worktree.join("dirty.txt"), "dirty\n").expect("dirty file");
+
+    let mut clean_run = finished_run(&task, RunStatus::Succeeded, now - ChronoDuration::days(2));
+    clean_run.target_mode = RunTargetMode::RepoWorktree;
+    clean_run.workspace_path = Some(clean_worktree.to_string_lossy().into_owned());
+    clean_run.worktree_path = Some(
+        std::fs::canonicalize(&clean_worktree)
+            .expect("canonical clean")
+            .to_string_lossy()
+            .into_owned(),
+    );
+    let mut dirty_run = finished_run(&task, RunStatus::Succeeded, now - ChronoDuration::days(2));
+    dirty_run.target_mode = RunTargetMode::RepoWorktree;
+    dirty_run.workspace_path = Some(dirty_worktree.to_string_lossy().into_owned());
+    dirty_run.worktree_path = Some(
+        std::fs::canonicalize(&dirty_worktree)
+            .expect("canonical dirty")
+            .to_string_lossy()
+            .into_owned(),
+    );
+    db.create_run(&clean_run).await.expect("create clean run");
+    db.create_run(&dirty_run).await.expect("create dirty run");
+
+    let paths = DaemonConfig::for_data_dir(temp.path()).paths;
+    let result = run_retention_cleanup(&db, &paths, now)
+        .await
+        .expect("retention cleanup");
+
+    assert_eq!(result.worktrees_deleted, 1);
+    assert_eq!(result.worktrees_skipped_dirty, 1);
+    assert!(!clean_worktree.exists());
+    assert!(dirty_worktree.exists());
+    assert!(db
+        .get_run(&clean_run.id)
+        .await
+        .expect("clean run")
+        .expect("clean run exists")
+        .worktree_path
+        .is_none());
+    assert!(db
+        .get_run(&dirty_run.id)
+        .await
+        .expect("dirty run")
+        .expect("dirty run exists")
+        .worktree_path
+        .is_some());
+
+    run_git(
+        &repo,
+        &[
+            "worktree",
+            "remove",
+            "--force",
+            dirty_worktree.to_str().unwrap(),
+        ],
+    );
     handle.shutdown().await;
 }
 

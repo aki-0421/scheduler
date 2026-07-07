@@ -1,4 +1,4 @@
 pub mod migrations;
 pub mod repository;
 
-pub use repository::{IdempotentInsert, SchedulerDb};
+pub use repository::{IdempotentInsert, RunHistoryCleanupCounts, SchedulerDb};

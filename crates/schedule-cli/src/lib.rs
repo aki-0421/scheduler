@@ -7,14 +7,14 @@ use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::ipc::{
-    DaemonHealthParams, DaemonHealthResult, JsonRpcError, JsonRpcErrorCode, JsonRpcId,
-    JsonRpcRequest, JsonRpcResponse, ProjectTrustParams, ProjectTrustResult, RpcActor,
-    RunListParams, RunListResult, RunResult, SettingsGetParams, SettingsGetResult,
-    TaskCreateParams, TaskDeleteResult, TaskGetParams, TaskIdParams, TaskListParams,
-    TaskListResult, TaskResult, TaskUpdateParams, JSONRPC_VERSION, METHOD_DAEMON_HEALTH,
-    METHOD_PROJECT_TRUST, METHOD_RUN_LIST, METHOD_SETTINGS_GET, METHOD_TASK_CREATE,
-    METHOD_TASK_DELETE, METHOD_TASK_GET, METHOD_TASK_LIST, METHOD_TASK_PAUSE, METHOD_TASK_RESUME,
-    METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
+    DaemonDiagnosticsParams, DaemonDiagnosticsResult, DaemonHealthParams, DaemonHealthResult,
+    JsonRpcError, JsonRpcErrorCode, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ProjectTrustParams,
+    ProjectTrustResult, RpcActor, RunListParams, RunListResult, RunResult, SettingsGetParams,
+    SettingsGetResult, TaskCreateParams, TaskDeleteResult, TaskGetParams, TaskIdParams,
+    TaskListParams, TaskListResult, TaskResult, TaskUpdateParams, JSONRPC_VERSION,
+    METHOD_DAEMON_DIAGNOSTICS, METHOD_DAEMON_HEALTH, METHOD_PROJECT_TRUST, METHOD_RUN_LIST,
+    METHOD_SETTINGS_GET, METHOD_TASK_CREATE, METHOD_TASK_DELETE, METHOD_TASK_GET, METHOD_TASK_LIST,
+    METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
 };
 use scheduler_core::model::{
     ApprovalPolicy, AuditActorType, CleanupPolicy, MissedPolicy, OverlapPolicy, ProjectKind,
@@ -840,6 +840,24 @@ async fn doctor(paths: &AppPaths) -> Result<CommandOutput, CliError> {
             format!("reachable, version {}", health.version),
         )),
         Err(err) => checks.push(check_fail("daemonSocket", err.message)),
+    }
+
+    match client
+        .call::<DaemonDiagnosticsResult, _>(METHOD_DAEMON_DIAGNOSTICS, DaemonDiagnosticsParams {})
+        .await
+    {
+        Ok(diagnostics) => checks.push(json!({
+            "name": "daemonDiagnostics",
+            "status": "ok",
+            "message": format!(
+                "db={} bytes, logs={} bytes, schedulerEnabled={}",
+                diagnostics.db_size_bytes,
+                diagnostics.logs_size_bytes,
+                diagnostics.scheduler_enabled
+            ),
+            "details": diagnostics
+        })),
+        Err(err) => checks.push(check_fail("daemonDiagnostics", err.message)),
     }
 
     match ensure_data_dir_writable(paths) {

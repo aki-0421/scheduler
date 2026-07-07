@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -8,6 +10,7 @@ use crate::model::{
 pub const JSONRPC_VERSION: &str = "2.0";
 
 pub const METHOD_DAEMON_HEALTH: &str = "daemon.health";
+pub const METHOD_DAEMON_DIAGNOSTICS: &str = "daemon.diagnostics";
 pub const METHOD_TASK_LIST: &str = "task.list";
 pub const METHOD_TASK_GET: &str = "task.get";
 pub const METHOD_TASK_CREATE: &str = "task.create";
@@ -185,6 +188,36 @@ pub struct DaemonHealthResult {
     pub scheduler_enabled: bool,
     pub running_count: i64,
     pub queued_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonDiagnosticsParams {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexPathDiagnostics {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub exists: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonDiagnosticsResult {
+    pub version: String,
+    pub db_schema_version: i64,
+    pub data_dir: String,
+    pub socket_path: String,
+    pub db_size_bytes: u64,
+    pub logs_size_bytes: u64,
+    pub task_counts: BTreeMap<String, i64>,
+    pub run_counts: BTreeMap<String, i64>,
+    pub scheduler_enabled: bool,
+    pub codex_path: CodexPathDiagnostics,
+    pub tick_interval_sec: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_tick_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

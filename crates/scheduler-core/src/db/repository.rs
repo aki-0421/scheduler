@@ -9,6 +9,13 @@ use sqlx::{Executor, SqlitePool};
 
 use crate::db::migrations::{MIGRATOR, SCHEMA_VERSION};
 use crate::model::*;
+use crate::settings::{
+    RetentionSettings, DEFAULT_RETENTION_CAPABILITY_TOKEN_DELETE_AFTER_HOURS,
+    DEFAULT_RETENTION_FAILED_RUN_LOGS_DAYS, DEFAULT_RETENTION_RUN_HISTORY_DAYS,
+    DEFAULT_RETENTION_SUCCEEDED_RUN_LOGS_DAYS,
+    SETTING_RETENTION_CAPABILITY_TOKEN_DELETE_AFTER_HOURS, SETTING_RETENTION_FAILED_RUN_LOGS_DAYS,
+    SETTING_RETENTION_RUN_HISTORY_DAYS, SETTING_RETENTION_SUCCEEDED_RUN_LOGS_DAYS,
+};
 use crate::time::{now_rfc3339, validate_timezone};
 use crate::util::validate_slug;
 use crate::{Result, SchedulerError, ValidationError};
@@ -23,6 +30,14 @@ pub struct SchedulerDb {
 pub struct IdempotentInsert<T> {
     pub value: T,
     pub inserted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RunHistoryCleanupCounts {
+    pub task_run_references_cleared: u64,
+    pub run_events_deleted: u64,
+    pub run_artifacts_deleted: u64,
+    pub runs_deleted: u64,
 }
 
 impl SchedulerDb {
@@ -434,6 +449,97 @@ impl SchedulerDb {
             .await?)
     }
 
+    pub async fn list_runs_for_log_cleanup(
+        &self,
+        succeeded_cutoff: &str,
+        failed_cutoff: &str,
+    ) -> Result<Vec<Run>> {
+        Ok(sqlx::query_as::<_, Run>(&format!(
+            "{RUN_SELECT}
+             WHERE ended_at IS NOT NULL
+               AND (
+                 (status = 'succeeded' AND ended_at <= ?)
+                 OR (
+                   status IN ('failed', 'canceled', 'skipped', 'interrupted', 'timed_out')
+                   AND ended_at <= ?
+                 )
+               )
+             ORDER BY ended_at ASC, id ASC"
+        ))
+        .bind(succeeded_cutoff)
+        .bind(failed_cutoff)
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    pub async fn list_delete_after_days_worktree_runs(&self) -> Result<Vec<Run>> {
+        Ok(sqlx::query_as::<_, Run>(&format!(
+            "{RUN_SELECT_ALIASED}
+             JOIN tasks t ON t.id = r.task_id
+             WHERE t.cleanup_policy = 'delete_after_days'
+               AND r.worktree_path IS NOT NULL
+               AND r.ended_at IS NOT NULL
+               AND r.status IN (
+                 'succeeded', 'failed', 'canceled', 'skipped', 'interrupted', 'timed_out'
+               )
+             ORDER BY r.ended_at ASC, r.id ASC"
+        ))
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    pub async fn delete_terminal_runs_ended_before(
+        &self,
+        cutoff: &str,
+    ) -> Result<RunHistoryCleanupCounts> {
+        let mut tx = self.pool.begin().await?;
+
+        let task_run_references_cleared = sqlx::query(&format!(
+            "UPDATE tasks
+             SET created_by_run_id = NULL
+             WHERE created_by_run_id IN ({TERMINAL_RUN_HISTORY_SUBQUERY})"
+        ))
+        .bind(cutoff)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        let run_events_deleted = sqlx::query(&format!(
+            "DELETE FROM run_events
+             WHERE run_id IN ({TERMINAL_RUN_HISTORY_SUBQUERY})"
+        ))
+        .bind(cutoff)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        let run_artifacts_deleted = sqlx::query(&format!(
+            "DELETE FROM run_artifacts
+             WHERE run_id IN ({TERMINAL_RUN_HISTORY_SUBQUERY})"
+        ))
+        .bind(cutoff)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        let runs_deleted = sqlx::query(&format!(
+            "DELETE FROM runs
+             WHERE id IN ({TERMINAL_RUN_HISTORY_SUBQUERY})"
+        ))
+        .bind(cutoff)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        tx.commit().await?;
+        Ok(RunHistoryCleanupCounts {
+            task_run_references_cleared,
+            run_events_deleted,
+            run_artifacts_deleted,
+            runs_deleted,
+        })
+    }
+
     pub async fn create_run_event(&self, event: &RunEvent) -> Result<()> {
         sqlx::query(
             "INSERT INTO run_events (
@@ -754,6 +860,24 @@ impl SchedulerDb {
         Ok(result.rows_affected())
     }
 
+    pub async fn count_tasks_by_status(&self) -> Result<HashMap<String, i64>> {
+        let rows = sqlx::query_as::<_, (String, i64)>(
+            "SELECT status, COUNT(*) FROM tasks GROUP BY status ORDER BY status ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().collect())
+    }
+
+    pub async fn count_runs_by_status(&self) -> Result<HashMap<String, i64>> {
+        let rows = sqlx::query_as::<_, (String, i64)>(
+            "SELECT status, COUNT(*) FROM runs GROUP BY status ORDER BY status ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().collect())
+    }
+
     pub async fn get_setting_row(&self, key: &str) -> Result<Option<Setting>> {
         Ok(sqlx::query_as::<_, Setting>(
             "SELECT key, value_json, updated_at FROM settings WHERE key = ?",
@@ -779,6 +903,31 @@ impl SchedulerDb {
             return Ok(None);
         };
         Ok(Some(serde_json::from_str(&row.value_json)?))
+    }
+
+    pub async fn retention_settings(&self) -> Result<RetentionSettings> {
+        Ok(RetentionSettings {
+            run_history_days: non_negative_setting(
+                self.get_setting::<i64>(SETTING_RETENTION_RUN_HISTORY_DAYS)
+                    .await?,
+                DEFAULT_RETENTION_RUN_HISTORY_DAYS,
+            ),
+            succeeded_run_logs_days: non_negative_setting(
+                self.get_setting::<i64>(SETTING_RETENTION_SUCCEEDED_RUN_LOGS_DAYS)
+                    .await?,
+                DEFAULT_RETENTION_SUCCEEDED_RUN_LOGS_DAYS,
+            ),
+            failed_run_logs_days: non_negative_setting(
+                self.get_setting::<i64>(SETTING_RETENTION_FAILED_RUN_LOGS_DAYS)
+                    .await?,
+                DEFAULT_RETENTION_FAILED_RUN_LOGS_DAYS,
+            ),
+            capability_token_delete_after_hours: non_negative_setting(
+                self.get_setting::<i64>(SETTING_RETENTION_CAPABILITY_TOKEN_DELETE_AFTER_HOURS)
+                    .await?,
+                DEFAULT_RETENTION_CAPABILITY_TOKEN_DELETE_AFTER_HOURS,
+            ),
+        })
     }
 
     pub async fn set_setting<T>(&self, key: &str, value: &T) -> Result<()>
@@ -854,6 +1003,10 @@ impl SchedulerDb {
 
 fn empty_opt(value: Option<&str>) -> bool {
     value.map(str::trim).unwrap_or_default().is_empty()
+}
+
+fn non_negative_setting(value: Option<i64>, default: i64) -> i64 {
+    value.unwrap_or(default).max(0)
 }
 
 pub async fn backup_database(pool: &SqlitePool, path: &Path) -> Result<Option<PathBuf>> {
@@ -1026,6 +1179,29 @@ const RUN_SELECT_BY_TASK: &str = "SELECT id, task_id, trigger_type, scheduled_fo
     created_schedule_count, created_at, updated_at
     FROM runs WHERE task_id = ?
     ORDER BY started_at DESC, created_at DESC";
+
+const RUN_SELECT: &str = "SELECT id, task_id, trigger_type, scheduled_for, attempt, status,
+    status_reason, queued_at, started_at, ended_at, duration_ms, target_mode, workspace_path,
+    worktree_path, branch_name, base_ref, commit_before, commit_after, codex_command_json,
+    codex_session_id, pid, exit_code, signal, stdout_log_path, stderr_log_path, events_jsonl_path,
+    last_message_path, stdout_tail, stderr_tail, result_summary, findings_count,
+    created_schedule_count, created_at, updated_at
+    FROM runs";
+
+const RUN_SELECT_ALIASED: &str = "SELECT r.id, r.task_id, r.trigger_type, r.scheduled_for,
+    r.attempt, r.status, r.status_reason, r.queued_at, r.started_at, r.ended_at, r.duration_ms,
+    r.target_mode, r.workspace_path, r.worktree_path, r.branch_name, r.base_ref,
+    r.commit_before, r.commit_after, r.codex_command_json, r.codex_session_id, r.pid,
+    r.exit_code, r.signal, r.stdout_log_path, r.stderr_log_path, r.events_jsonl_path,
+    r.last_message_path, r.stdout_tail, r.stderr_tail, r.result_summary, r.findings_count,
+    r.created_schedule_count, r.created_at, r.updated_at
+    FROM runs r";
+
+const TERMINAL_RUN_HISTORY_SUBQUERY: &str = "SELECT id FROM runs
+    WHERE ended_at IS NOT NULL
+      AND ended_at <= ?
+      AND status IN ('succeeded', 'failed', 'canceled', 'skipped', 'interrupted', 'timed_out')
+      AND id NOT IN (SELECT run_id FROM schedule_capability_tokens)";
 
 const INSERT_RUN_SQL: &str = "INSERT INTO runs (
     id, task_id, trigger_type, scheduled_for, attempt, status, status_reason, queued_at,
