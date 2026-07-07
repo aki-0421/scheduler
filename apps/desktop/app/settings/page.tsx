@@ -220,7 +220,7 @@ export default function SettingsPage() {
               <div>
                 <Label htmlFor="notifications-enabled">Notifications enabled</Label>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Run started, succeeded, failed, and permission failure events.
+                  Notify when a run newly fails or times out.
                 </p>
               </div>
               <Switch

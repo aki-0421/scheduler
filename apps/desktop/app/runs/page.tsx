@@ -64,7 +64,11 @@ function RunsPageContent() {
       return run.status === "failed";
     }
     if (preset === "needs_attention") {
-      return ["failed", "timed_out", "interrupted"].includes(run.status);
+      return (
+        ["failed", "timed_out", "interrupted"].includes(run.status) ||
+        (run.findingsCount ?? 0) > 0 ||
+        (run.createdScheduleCount ?? 0) > 0
+      );
     }
     return true;
   });

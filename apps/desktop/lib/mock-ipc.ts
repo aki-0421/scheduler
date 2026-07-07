@@ -54,10 +54,6 @@ const settings = new Map<keyof SchedulerSettings, SettingDto>(
   ]),
 );
 
-const promptFileContents = new Map<string, string>([
-  ["/tmp/codex-scheduler-prompt.md", "Imported prompt from a mock file.\n"],
-]);
-
 let projects: ProjectDto[] = [
   {
     id: "proj_demo",
@@ -532,10 +528,8 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       return "/tmp/codex-scheduler-diagnostics.json";
     case "export_run_logs":
       return `/tmp/codex-scheduler-${input.runId as string}-logs.txt`;
-    case "prompt_pick_file":
-      return "/tmp/codex-scheduler-prompt.md";
-    case "read_prompt_file":
-      return promptFileContents.get(input.path as string) ?? "Imported prompt.\n";
+    case "prompt_import_file":
+      return "Imported prompt from a mock file.\n";
     case "task_list": {
       const status = input.status as TaskStatus | undefined;
       const filtered = tasks.filter(

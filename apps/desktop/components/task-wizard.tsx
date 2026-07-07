@@ -314,11 +314,10 @@ export function TaskWizard({
   async function importPromptFile() {
     setIsImportingPrompt(true);
     try {
-      const path = await ipcClient.promptPickFile();
-      if (!path) {
+      const contents = await ipcClient.promptImportFile();
+      if (!contents) {
         return;
       }
-      const contents = await ipcClient.readPromptFile(path);
       update("prompt", contents);
       toast.success("Prompt imported");
     } catch (error) {

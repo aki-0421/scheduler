@@ -73,8 +73,6 @@ const optionalPathSchema = z
   .union([z.string(), z.null(), z.undefined()])
   .transform((value): string | undefined => value ?? undefined);
 
-const stringSchema = z.string();
-
 const unitSchema = z
   .union([z.null(), z.undefined()])
   .transform((): void => undefined);
@@ -100,12 +98,8 @@ export const ipcClient = {
     return call("export_run_logs", { runId }, optionalPathSchema);
   },
 
-  promptPickFile() {
-    return call("prompt_pick_file", undefined, optionalPathSchema);
-  },
-
-  readPromptFile(path: string) {
-    return call("read_prompt_file", { path }, stringSchema);
+  promptImportFile() {
+    return call("prompt_import_file", undefined, optionalPathSchema);
   },
 
   async taskList(filter?: { status?: TaskStatus }) {

@@ -824,36 +824,17 @@ async fn export_run_logs(
 
     let stdout = read_run_log_tail(&app, &state, &run_id, "stdout").await?;
     let stderr = read_run_log_tail(&app, &state, &run_id, "stderr").await?;
+    let events = read_run_log_tail(&app, &state, &run_id, "events").await?;
     let contents = format!(
-        "Codex Scheduler run log export\nrunId: {run_id}\n\n== stdout tail ==\n{stdout}\n\n== stderr tail ==\n{stderr}\n"
+        "Codex Scheduler run log export\nrunId: {run_id}\n\n== stdout tail ==\n{stdout}\n\n== stderr tail ==\n{stderr}\n\n== events JSONL tail ==\n{events}\n"
     );
     std::fs::write(&path, contents)
         .map_err(|err| format!("failed to write run log export: {err}"))?;
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
-#[tauri::command]
-async fn prompt_pick_file(app: AppHandle) -> CommandResult<Option<String>> {
-    let picked = app
-        .dialog()
-        .file()
-        .set_title("Import prompt file")
-        .add_filter("Text", &["txt", "md", "markdown"])
-        .blocking_pick_file();
-    picked
-        .map(|path| {
-            path.into_path()
-                .map(|path| path.to_string_lossy().into_owned())
-                .map_err(|err| err.to_string())
-        })
-        .transpose()
-}
-
-#[tauri::command]
-async fn read_prompt_file(path: String) -> CommandResult<String> {
-    let path =
-        std::fs::canonicalize(&path).map_err(|err| format!("prompt file does not exist: {err}"))?;
-    let metadata = std::fs::metadata(&path)
+fn import_prompt_file_contents(path: &Path) -> CommandResult<String> {
+    let metadata = std::fs::metadata(path)
         .map_err(|err| format!("prompt file metadata is unavailable: {err}"))?;
     if !metadata.is_file() {
         return Err("prompt path is not a file".to_owned());
@@ -861,8 +842,28 @@ async fn read_prompt_file(path: String) -> CommandResult<String> {
     if metadata.len() > PROMPT_FILE_MAX_BYTES {
         return Err("prompt file is larger than 200KB".to_owned());
     }
-    std::fs::read_to_string(&path)
+    std::fs::read_to_string(path)
         .map_err(|err| format!("failed to read prompt file as UTF-8 text: {err}"))
+}
+
+#[tauri::command]
+async fn prompt_import_file(app: AppHandle) -> CommandResult<Option<String>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Import prompt file")
+        .add_filter("Text", &["txt", "md", "markdown"])
+        .blocking_pick_file();
+    let Some(path) = picked
+        .map(|path| {
+            path.into_path()
+                .map_err(|err| format!("invalid prompt file path: {err}"))
+        })
+        .transpose()?
+    else {
+        return Ok(None);
+    };
+    import_prompt_file_contents(&path).map(Some)
 }
 
 #[tauri::command]
@@ -1135,8 +1136,7 @@ pub fn run() {
             daemon_tick_now,
             diagnostics_export,
             export_run_logs,
-            prompt_pick_file,
-            read_prompt_file,
+            prompt_import_file,
             task_list,
             task_get,
             task_create,
