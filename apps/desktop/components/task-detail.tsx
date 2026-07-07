@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, FileText, History, KeyRound, Target } from "lucide-react";
+import { AlertTriangle, Clock, FileText, History, KeyRound, Target } from "lucide-react";
 
 import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
 import { TaskRowActions } from "@/components/task-actions";
@@ -21,13 +21,81 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime, formatDuration, formatTaskSchedule, formatTargetMode } from "@/lib/format";
-import type { RunDto, TaskDto } from "@/lib/types";
+import type { RunDto, TaskAuditEvent, TaskDto } from "@/lib/types";
 
 type TaskDetailProps = {
   task: TaskDto;
   runs: RunDto[];
   onEdit?: (task: TaskDto) => void;
 };
+
+function formatAuditJson(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+
+  return JSON.stringify(value, null, 2);
+}
+
+function AuditPayloadDetails({
+  label,
+  value,
+}: {
+  label: string;
+  value: unknown;
+}) {
+  const formatted = formatAuditJson(value);
+  if (!formatted) {
+    return null;
+  }
+
+  return (
+    <details className="rounded-md border bg-muted/30 p-3">
+      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+        {label}
+      </summary>
+      <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-3 text-xs">
+        {formatted}
+      </pre>
+    </details>
+  );
+}
+
+function AuditEventRow({ event }: { event: TaskAuditEvent }) {
+  return (
+    <div className="grid gap-3 rounded-md border p-3">
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{event.action}</Badge>
+            <Badge variant="muted">actor_type {event.actorType}</Badge>
+            {event.actorId ? <Badge variant="muted">{event.actorId}</Badge> : null}
+          </div>
+          {event.reason ? (
+            <p className="mt-2 text-sm text-muted-foreground text-pretty">
+              {event.reason}
+            </p>
+          ) : null}
+        </div>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {formatDateTime(event.createdAt)}
+        </span>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        <AuditPayloadDetails label="Before" value={event.beforeJson} />
+        <AuditPayloadDetails label="After" value={event.afterJson} />
+      </div>
+    </div>
+  );
+}
 
 export function TaskDetail({ task, runs, onEdit }: TaskDetailProps) {
   const recentRuns = runs
@@ -39,6 +107,8 @@ export function TaskDetail({ task, runs, onEdit }: TaskDetailProps) {
       ),
     )
     .slice(0, 6);
+  const auditEvents = task.auditEvents ?? [];
+  const isDangerFullAccess = task.codex.sandboxMode === "danger-full-access";
 
   return (
     <div className="grid gap-4">
@@ -48,6 +118,12 @@ export function TaskDetail({ task, runs, onEdit }: TaskDetailProps) {
             <div className="flex flex-wrap items-center gap-2">
               <CardTitle className="truncate">{task.name}</CardTitle>
               <TaskStatusBadge status={task.status} />
+              {isDangerFullAccess ? (
+                <Badge variant="warning" className="gap-1">
+                  <AlertTriangle className="size-3" aria-hidden="true" />
+                  danger-full-access
+                </Badge>
+              ) : null}
             </div>
             <CardDescription className="mt-2">
               {task.description || "No description"}
@@ -123,6 +199,12 @@ export function TaskDetail({ task, runs, onEdit }: TaskDetailProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Sandbox</span>
+              <Badge variant={isDangerFullAccess ? "warning" : "outline"}>
+                {task.codex.sandboxMode}
+              </Badge>
+            </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Schedule CLI</span>
               <Badge variant={task.policies.allowScheduleCli ? "success" : "muted"}>
@@ -202,9 +284,16 @@ export function TaskDetail({ task, runs, onEdit }: TaskDetailProps) {
             Audit trail
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-2 text-sm text-muted-foreground">
-          <p>task.create recorded when this task was saved.</p>
-          {recentRuns[0] ? <p>Latest run: {recentRuns[0].id}</p> : null}
+        <CardContent className="grid gap-3 text-sm">
+          {auditEvents.length ? (
+            auditEvents.map((event) => (
+              <AuditEventRow key={event.id} event={event} />
+            ))
+          ) : (
+            <p className="text-muted-foreground">
+              No audit events were returned by the current daemon task API.
+            </p>
+          )}
         </CardContent>
       </Card>
 

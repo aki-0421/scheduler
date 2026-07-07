@@ -1,14 +1,15 @@
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use scheduler_core::ipc::{
     JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ProjectListResult, JSONRPC_VERSION,
-    METHOD_DAEMON_HEALTH, METHOD_PROJECT_LIST, METHOD_PROJECT_TRUST, METHOD_RUN_CANCEL,
-    METHOD_RUN_GET, METHOD_RUN_LIST, METHOD_RUN_TAIL_LOG, METHOD_SETTINGS_GET, METHOD_SETTINGS_SET,
-    METHOD_TASK_CREATE, METHOD_TASK_DELETE, METHOD_TASK_GET, METHOD_TASK_LIST, METHOD_TASK_PAUSE,
-    METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
+    METHOD_DAEMON_DIAGNOSTICS, METHOD_DAEMON_HEALTH, METHOD_PROJECT_LIST, METHOD_PROJECT_TRUST,
+    METHOD_RUN_CANCEL, METHOD_RUN_GET, METHOD_RUN_LIST, METHOD_RUN_TAIL_LOG, METHOD_SETTINGS_GET,
+    METHOD_SETTINGS_SET, METHOD_TASK_CREATE, METHOD_TASK_DELETE, METHOD_TASK_GET, METHOD_TASK_LIST,
+    METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -21,6 +22,7 @@ use tokio::sync::Mutex;
 
 type CommandResult<T> = Result<T, String>;
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(35);
+const DAEMON_LOG_TAIL_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug)]
 struct AppState {
@@ -432,12 +434,173 @@ fn canonicalize_existing(path: impl AsRef<Path>) -> Option<PathBuf> {
     std::fs::canonicalize(path).ok()
 }
 
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
+}
+
+fn os_version() -> String {
+    if cfg!(target_os = "macos") {
+        if let Ok(output) = Command::new("sw_vers").arg("-productVersion").output() {
+            if output.status.success() {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                if !version.is_empty() {
+                    return format!("macOS {version}");
+                }
+            }
+        }
+    }
+
+    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn read_daemon_log_tail(data_dir: &Path) -> Value {
+    let path = data_dir.join("logs").join("daemon.log");
+    let mut file = match std::fs::File::open(&path) {
+        Ok(file) => file,
+        Err(err) => {
+            return json!({
+                "path": path.to_string_lossy(),
+                "available": false,
+                "error": err.to_string(),
+            });
+        }
+    };
+
+    let size_bytes = file.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+    let offset = size_bytes.saturating_sub(DAEMON_LOG_TAIL_BYTES);
+    if let Err(err) = file.seek(SeekFrom::Start(offset)) {
+        return json!({
+            "path": path.to_string_lossy(),
+            "available": false,
+            "sizeBytes": size_bytes,
+            "error": err.to_string(),
+        });
+    }
+
+    let mut bytes = Vec::new();
+    if let Err(err) = file.read_to_end(&mut bytes) {
+        return json!({
+            "path": path.to_string_lossy(),
+            "available": false,
+            "sizeBytes": size_bytes,
+            "error": err.to_string(),
+        });
+    }
+
+    let tail = String::from_utf8_lossy(&bytes);
+    json!({
+        "path": path.to_string_lossy(),
+        "available": true,
+        "sizeBytes": size_bytes,
+        "truncatedBytes": offset,
+        "tailBytesLimit": DAEMON_LOG_TAIL_BYTES,
+        "tail": redact_sensitive_log_lines(&tail),
+    })
+}
+
+fn redact_sensitive_log_lines(input: &str) -> String {
+    input
+        .lines()
+        .map(|line| {
+            let lower = line.to_ascii_lowercase();
+            if lower.contains("token")
+                || lower.contains("secret")
+                || lower.contains("api_key")
+                || lower.contains("apikey")
+                || lower.contains("authorization")
+                || lower.contains("bearer ")
+                || lower.contains("password")
+            {
+                "[redacted sensitive log line]"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[tauri::command]
 async fn daemon_health(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Value> {
     state
         .daemon
         .proxy(&app, METHOD_DAEMON_HEALTH, json!({}))
         .await
+}
+
+#[tauri::command]
+async fn diagnostics_export(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<String>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Export diagnostics")
+        .set_file_name("codex-scheduler-diagnostics.json")
+        .add_filter("JSON", &["json"])
+        .blocking_save_file();
+    let Some(path) = picked
+        .map(|path| {
+            path.into_path()
+                .map_err(|err| format!("invalid diagnostics export path: {err}"))
+        })
+        .transpose()?
+    else {
+        return Ok(None);
+    };
+
+    let health = state
+        .daemon
+        .proxy(&app, METHOD_DAEMON_HEALTH, json!({}))
+        .await?;
+    let diagnostics = match state
+        .daemon
+        .proxy(&app, METHOD_DAEMON_DIAGNOSTICS, json!({}))
+        .await
+    {
+        Ok(value) => json!({
+            "available": true,
+            "data": value,
+        }),
+        Err(err) => json!({
+            "available": false,
+            "error": err,
+            "todo": "daemon.diagnostics was unavailable; export contains daemon.health only.",
+        }),
+    };
+    let payload = json!({
+        "schemaVersion": 1,
+        "generatedAtUnixSec": now_unix_secs(),
+        "app": {
+            "name": app.package_info().name,
+            "version": app.package_info().version.to_string(),
+        },
+        "system": {
+            "osVersion": os_version(),
+        },
+        "daemon": {
+            "health": health,
+            "diagnostics": diagnostics,
+            "log": read_daemon_log_tail(&state.daemon.data_dir),
+        },
+        "redaction": {
+            "environmentCaptured": false,
+            "secretsCaptured": false,
+            "notes": [
+                "Environment variables are not collected.",
+                "Daemon log lines containing token, secret, api key, authorization, bearer, or password markers are redacted."
+            ],
+        },
+    });
+
+    let contents = serde_json::to_vec_pretty(&payload).map_err(|err| err.to_string())?;
+    std::fs::write(&path, contents)
+        .map_err(|err| format!("failed to write diagnostics export: {err}"))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
@@ -689,6 +852,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             daemon_health,
+            diagnostics_export,
             task_list,
             task_get,
             task_create,

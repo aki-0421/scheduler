@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ListTodo, Plus } from "lucide-react";
+import { AlertTriangle, ListTodo, Plus } from "lucide-react";
 import { Suspense, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
@@ -10,6 +10,7 @@ import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
 import { TaskDetail } from "@/components/task-detail";
 import { TaskRowActions } from "@/components/task-actions";
 import { TaskWizard } from "@/components/task-wizard";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -122,12 +123,20 @@ function TasksPageContent() {
                     return (
                       <TableRow key={task.id}>
                         <TableCell className="min-w-56">
-                          <Link
-                            href={`/tasks?task=${task.id}`}
-                            className="font-medium hover:underline"
-                          >
-                            {task.name}
-                          </Link>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              href={`/tasks?task=${task.id}`}
+                              className="font-medium hover:underline"
+                            >
+                              {task.name}
+                            </Link>
+                            {task.codex.sandboxMode === "danger-full-access" ? (
+                              <Badge variant="warning" className="gap-1">
+                                <AlertTriangle className="size-3" aria-hidden="true" />
+                                danger-full-access
+                              </Badge>
+                            ) : null}
+                          </div>
                           <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
                             {task.description || formatTargetMode(task.target.mode)}
                           </p>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Save } from "lucide-react";
+import { Download, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Field } from "@/components/field";
@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { ipcClient } from "@/lib/ipc";
 import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
 import {
   approvalPolicies,
@@ -36,6 +37,7 @@ export default function SettingsPage() {
   const health = useHealth();
   const setSetting = useSetSetting();
   const [form, setForm] = useState<SchedulerSettings>(settings.data);
+  const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
 
   useEffect(() => {
     setForm(settings.data);
@@ -61,6 +63,25 @@ export default function SettingsPage() {
         description:
           error instanceof Error ? error.message : "Settings command failed.",
       });
+    }
+  }
+
+  async function exportDiagnostics() {
+    setIsExportingDiagnostics(true);
+    try {
+      const path = await ipcClient.diagnosticsExport();
+      if (path) {
+        toast.success("Diagnostics exported", { description: path });
+      } else {
+        toast.info("Diagnostics export canceled");
+      }
+    } catch (error) {
+      toast.error("Could not export diagnostics", {
+        description:
+          error instanceof Error ? error.message : "Diagnostics command failed.",
+      });
+    } finally {
+      setIsExportingDiagnostics(false);
     }
   }
 
@@ -265,6 +286,23 @@ export default function SettingsPage() {
               <span className="tabular-nums">
                 {health.data?.dbSchemaVersion ?? "unknown"}
               </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+              <div>
+                <p className="font-medium">Diagnostics</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Export daemon health, diagnostics, and a redacted daemon log tail.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isExportingDiagnostics}
+                onClick={() => void exportDiagnostics()}
+              >
+                <Download className="size-4" aria-hidden="true" />
+                Export diagnostics
+              </Button>
             </div>
           </CardContent>
         </Card>

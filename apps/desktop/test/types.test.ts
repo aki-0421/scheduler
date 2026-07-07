@@ -4,6 +4,7 @@ import {
   projectDtoSchema,
   runDtoSchema,
   taskDtoSchema,
+  taskResultSchema,
 } from "@/lib/types";
 
 describe("DTO schemas", () => {
@@ -97,5 +98,57 @@ describe("DTO schemas", () => {
 
     expect(project.gitRoot).toBe("/tmp/repo");
     expect(project.defaultBranch).toBe("main");
+  });
+
+  it("normalizes task audit events from task.get results", () => {
+    const result = taskResultSchema.parse({
+      task: {
+        id: "task_1",
+        slug: "daily-review",
+        name: "Daily review",
+        status: "active",
+        kind: "cron",
+        cronExpr: "0 9 * * 1-5",
+        timezone: "Asia/Tokyo",
+        target: {
+          mode: "repo-worktree",
+          projectId: "proj_1",
+          repoPath: "/tmp/repo",
+          baseRef: "main",
+        },
+        codex: {
+          model: "gpt-5-codex",
+          reasoningEffort: "default",
+          sandboxMode: "workspace-write",
+          approvalPolicy: "never",
+        },
+        prompt: {
+          body: "Review changes.",
+          injectSchedulerInstructions: true,
+        },
+        policies: {
+          allowScheduleCli: true,
+          missedPolicy: "latest_within_window",
+          overlapPolicy: "skip",
+          maxRuntimeSec: 7200,
+        },
+      },
+      audit_events: [
+        {
+          id: "audit_1",
+          task_id: "task_1",
+          actor_type: "scheduled-run",
+          actor_id: "run_1",
+          action: "task.update",
+          before_json: "{\"status\":\"paused\"}",
+          after_json: { status: "active" },
+          reason: "update-current",
+          created_at: "2026-07-08T00:00:00Z",
+        },
+      ],
+    });
+
+    expect(result.task.auditEvents?.[0]?.actorType).toBe("scheduled-run");
+    expect(result.task.auditEvents?.[0]?.afterJson).toEqual({ status: "active" });
   });
 });

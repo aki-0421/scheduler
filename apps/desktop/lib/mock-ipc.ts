@@ -109,6 +109,36 @@ let tasks: TaskDto[] = [
       retryBackoffSec: 300,
       cleanupPolicy: "keep",
     },
+    auditEvents: [
+      {
+        id: "audit_daily_update",
+        taskId: "task_daily_review",
+        actorType: "user",
+        actorId: undefined,
+        action: "task.update",
+        beforeJson: {
+          status: "paused",
+          codex: { sandboxMode: "read-only" },
+        },
+        afterJson: {
+          status: "active",
+          codex: { sandboxMode: "workspace-write" },
+        },
+        reason: "Settings adjusted from desktop UI",
+        createdAt: minutesAgo(60),
+      },
+      {
+        id: "audit_daily_create",
+        taskId: "task_daily_review",
+        actorType: "user",
+        actorId: undefined,
+        action: "task.create",
+        beforeJson: undefined,
+        afterJson: { name: "Daily repository review" },
+        reason: undefined,
+        createdAt: createdAt,
+      },
+    ],
   },
   {
     id: "task_dependency_scan",
@@ -419,6 +449,8 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       };
       return clone(health);
     }
+    case "diagnostics_export":
+      return "/tmp/codex-scheduler-diagnostics.json";
     case "task_list": {
       const status = input.status as TaskStatus | undefined;
       const filtered = tasks.filter(

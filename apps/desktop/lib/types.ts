@@ -65,6 +65,39 @@ export const triggerTypeSchema = z.enum(triggerTypes);
 export const projectKindSchema = z.enum(projectKinds);
 export const logStreamSchema = z.enum(logStreams);
 
+const auditJsonPayloadSchema = z.unknown().transform((value) => value ?? undefined);
+
+export const taskAuditEventSchema = z
+  .object({
+    id: z.string(),
+    taskId: optionalString,
+    task_id: optionalString,
+    actorType: optionalString,
+    actor_type: optionalString,
+    actorId: optionalString,
+    actor_id: optionalString,
+    action: z.string(),
+    beforeJson: auditJsonPayloadSchema.optional(),
+    before_json: auditJsonPayloadSchema.optional(),
+    afterJson: auditJsonPayloadSchema.optional(),
+    after_json: auditJsonPayloadSchema.optional(),
+    reason: optionalString,
+    createdAt: optionalString,
+    created_at: optionalString,
+  })
+  .passthrough()
+  .transform((event) => ({
+    id: event.id,
+    taskId: event.taskId ?? event.task_id,
+    actorType: event.actorType ?? event.actor_type ?? "unknown",
+    actorId: event.actorId ?? event.actor_id,
+    action: event.action,
+    beforeJson: event.beforeJson ?? event.before_json,
+    afterJson: event.afterJson ?? event.after_json,
+    reason: event.reason,
+    createdAt: event.createdAt ?? event.created_at ?? "",
+  }));
+
 export const taskTargetDtoSchema = z.object({
   mode: targetModeSchema,
   projectId: optionalString,
@@ -97,22 +130,29 @@ export const taskPoliciesDtoSchema = z.object({
   cleanupAfterDays: optionalNumber,
 });
 
-export const taskDtoSchema = z.object({
-  id: z.string(),
-  slug: z.string(),
-  name: z.string(),
-  description: optionalString,
-  status: taskStatusSchema,
-  kind: taskKindSchema,
-  cronExpr: optionalString,
-  runAt: optionalString,
-  timezone: z.string(),
-  nextRunAt: optionalString,
-  target: taskTargetDtoSchema,
-  codex: taskCodexDtoSchema,
-  prompt: taskPromptDtoSchema,
-  policies: taskPoliciesDtoSchema,
-});
+export const taskDtoSchema = z
+  .object({
+    id: z.string(),
+    slug: z.string(),
+    name: z.string(),
+    description: optionalString,
+    status: taskStatusSchema,
+    kind: taskKindSchema,
+    cronExpr: optionalString,
+    runAt: optionalString,
+    timezone: z.string(),
+    nextRunAt: optionalString,
+    target: taskTargetDtoSchema,
+    codex: taskCodexDtoSchema,
+    prompt: taskPromptDtoSchema,
+    policies: taskPoliciesDtoSchema,
+    auditEvents: z.array(taskAuditEventSchema).optional(),
+    audit_events: z.array(taskAuditEventSchema).optional(),
+  })
+  .transform(({ audit_events, ...task }) => {
+    const auditEvents = task.auditEvents ?? audit_events;
+    return auditEvents ? { ...task, auditEvents } : task;
+  });
 
 export const runDtoSchema = z.object({
   id: z.string(),
@@ -185,7 +225,19 @@ export const runTailLogResultSchema = z.object({
 });
 
 export const taskListResultSchema = z.object({ tasks: z.array(taskDtoSchema) });
-export const taskResultSchema = z.object({ task: taskDtoSchema });
+export const taskResultSchema = z
+  .object({
+    task: taskDtoSchema,
+    auditEvents: z.array(taskAuditEventSchema).optional(),
+    audit_events: z.array(taskAuditEventSchema).optional(),
+  })
+  .transform((result) => {
+    const auditEvents =
+      result.auditEvents ?? result.audit_events ?? result.task.auditEvents;
+    return {
+      task: auditEvents ? { ...result.task, auditEvents } : result.task,
+    };
+  });
 export const taskDeleteResultSchema = z.object({ deleted: z.boolean() });
 export const runListResultSchema = z.object({ runs: z.array(runDtoSchema) });
 export const runResultSchema = z.object({ run: runDtoSchema });
@@ -210,6 +262,7 @@ export type CleanupPolicy = z.infer<typeof cleanupPolicySchema>;
 export type TriggerType = z.infer<typeof triggerTypeSchema>;
 export type ProjectKind = z.infer<typeof projectKindSchema>;
 export type LogStream = z.infer<typeof logStreamSchema>;
+export type TaskAuditEvent = z.infer<typeof taskAuditEventSchema>;
 export type TaskDto = z.infer<typeof taskDtoSchema>;
 export type RunDto = z.infer<typeof runDtoSchema>;
 export type ProjectDto = z.infer<typeof projectDtoSchema>;

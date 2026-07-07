@@ -76,6 +76,10 @@ export const ipcClient = {
     return call("daemon_health", undefined, healthDtoSchema);
   },
 
+  diagnosticsExport() {
+    return call("diagnostics_export", undefined, optionalPathSchema);
+  },
+
   async taskList(filter?: { status?: TaskStatus }) {
     const status = filter?.status ? taskStatusSchema.parse(filter.status) : undefined;
     const result = await call(

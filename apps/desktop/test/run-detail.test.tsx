@@ -46,6 +46,22 @@ describe("RunDetail", () => {
     });
   });
 
+  it("renders log URLs as escaped text instead of links", async () => {
+    vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
+      runId: params.runId,
+      stream: params.stream,
+      cursor: params.cursor ?? 0,
+      nextCursor: 24,
+      eof: true,
+      data: params.stream === "stdout" ? "see https://example.test/log\n" : "",
+    }));
+
+    renderWithClient(<RunDetail run={run} />);
+
+    expect(await screen.findByText(/https:\/\/example\.test\/log/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /example\.test/ })).not.toBeInTheDocument();
+  });
+
   it("resets rendered log state when switching runs", async () => {
     vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
       runId: params.runId,

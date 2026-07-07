@@ -43,4 +43,25 @@ describe("TaskWizard cron validation", () => {
     expect(preview).toHaveTextContent("Next 5 runs");
     expect(preview.querySelectorAll("span")).toHaveLength(5);
   });
+
+  it("shows hardening warnings on review", () => {
+    const draft = {
+      ...defaultTaskDraft(),
+      name: "Danger task",
+      prompt: "Run with broad permissions.",
+      targetMode: "repo-local" as const,
+      repoPath: "/tmp/repo",
+      sandboxMode: "danger-full-access" as const,
+      allowScheduleCli: true,
+      capabilities: ["schedule:create", "schedule:update-any"],
+    };
+
+    renderWithClient(<TaskWizard initialDraft={draft} initialStep={5} />);
+
+    expect(
+      screen.getByLabelText("I understand the danger-full-access risk"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("schedule:update-any")).toBeInTheDocument();
+    expect(screen.getByText("Untrusted repository")).toBeInTheDocument();
+  });
 });

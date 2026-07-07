@@ -184,6 +184,11 @@ export function TaskWizard({
   );
   const isRepoTarget = draft.targetMode !== "chat";
   const repoTrusted = !isRepoTarget || Boolean(matchedProject?.trustedAt);
+  const isDangerFullAccess = draft.sandboxMode === "danger-full-access";
+  const canUpdateAnySchedule =
+    draft.allowScheduleCli && draft.capabilities.includes("schedule:update-any");
+  const canModifyLocalChanges =
+    draft.targetMode === "repo-local" && draft.sandboxMode === "workspace-write";
 
   function update<K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -246,7 +251,7 @@ export function TaskWizard({
         reasoningEffort: 3,
         maxRuntimeSec: 3,
         maxRetries: 3,
-        dangerConfirmed: 3,
+        dangerConfirmed: 5,
       };
       setStep(stepByKey[firstKey] ?? 0);
       toast.error("Resolve validation errors before saving.");
@@ -653,7 +658,7 @@ export function TaskWizard({
                 onChange={(value) => update("cleanupPolicy", value)}
               />
             </div>
-            {draft.sandboxMode === "danger-full-access" ? (
+            {isDangerFullAccess ? (
               <Alert variant="warning">
                 <AlertTriangle className="size-4" aria-hidden="true" />
                 <AlertTitle>danger-full-access</AlertTitle>
@@ -775,18 +780,56 @@ export function TaskWizard({
                 </p>
               </div>
             </div>
-            {draft.sandboxMode === "danger-full-access" || !repoTrusted ? (
-              <Alert variant="warning">
-                <AlertTriangle className="size-4" aria-hidden="true" />
-                <AlertTitle>Safety warnings</AlertTitle>
-                <AlertDescription>
-                  {draft.sandboxMode === "danger-full-access"
-                    ? "danger-full-access bypasses normal sandbox protection. "
-                    : ""}
-                  {!repoTrusted ? "The repository path is not trusted yet." : ""}
-                </AlertDescription>
-              </Alert>
-            ) : null}
+            <div className="grid gap-3">
+              {isDangerFullAccess ? (
+                <Alert variant="warning">
+                  <AlertTriangle className="size-4" aria-hidden="true" />
+                  <AlertTitle>danger-full-access</AlertTitle>
+                  <AlertDescription>
+                    This task can run without filesystem sandbox protection and without approval prompts.
+                  </AlertDescription>
+                  <div className="mt-3">
+                    <CheckboxRow
+                      checked={draft.dangerConfirmed}
+                      label="I understand the danger-full-access risk"
+                      onChange={(checked) => update("dangerConfirmed", checked)}
+                    />
+                    {errors.dangerConfirmed ? (
+                      <p className="mt-2 text-xs text-destructive">
+                        {errors.dangerConfirmed}
+                      </p>
+                    ) : null}
+                  </div>
+                </Alert>
+              ) : null}
+              {canModifyLocalChanges ? (
+                <Alert variant="warning">
+                  <AlertTriangle className="size-4" aria-hidden="true" />
+                  <AlertTitle>Local uncommitted changes</AlertTitle>
+                  <AlertDescription>
+                    This repo-local task can write to the working tree, so uncommitted changes may be modified.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              {canUpdateAnySchedule ? (
+                <Alert variant="warning">
+                  <AlertTriangle className="size-4" aria-hidden="true" />
+                  <AlertTitle>schedule:update-any</AlertTitle>
+                  <AlertDescription>
+                    Scheduled Codex sessions from this task can update schedules beyond the current task.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              {!repoTrusted ? (
+                <Alert variant="warning">
+                  <AlertTriangle className="size-4" aria-hidden="true" />
+                  <AlertTitle>Untrusted repository</AlertTitle>
+                  <AlertDescription>
+                    The repository path is not trusted yet.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
       ) : null}
