@@ -160,6 +160,33 @@ async fn repo_mode_requires_trusted_roots() {
 }
 
 #[tokio::test]
+async fn worktree_mode_requires_trusted_roots() {
+    let temp = TempDir::new().unwrap();
+    let repo = temp.path().join("repo");
+    init_git_repo(&repo);
+
+    let mut request = base_request(fixture("dummy-codex-success.sh"), &temp);
+    request.target = RunTarget {
+        mode: RunTargetMode::RepoWorktree,
+        repo_path: Some(repo),
+        trusted_roots: Vec::new(),
+        base_ref: None,
+        default_branch: Some("HEAD".to_owned()),
+        fetch_before_worktree: false,
+        worktree_parent: Some(temp.path().join("worktrees")),
+        cleanup_policy: CleanupPolicy::Keep,
+        cleanup_after_days: None,
+    };
+
+    let err = CodexRunner::new()
+        .run(request, CancellationToken::new(), None)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, RunnerError::UntrustedPath { .. }));
+}
+
+#[tokio::test]
 async fn injected_event_is_persisted_to_events_jsonl_with_spec_shape() {
     let temp = TempDir::new().unwrap();
     let request = base_request(fixture("dummy-codex-success.sh"), &temp);
@@ -192,6 +219,32 @@ async fn injected_event_is_persisted_to_events_jsonl_with_spec_shape() {
             }
         })
     );
+}
+
+#[tokio::test]
+async fn non_json_stdout_lines_are_excluded_from_events_jsonl() {
+    let temp = TempDir::new().unwrap();
+    let mut request = base_request(fixture("dummy-codex-mixed-output.sh"), &temp);
+    request.codex.reasoning_effort = None;
+
+    let outcome = CodexRunner::new()
+        .run(request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    let stdout = fs::read_to_string(outcome.log_paths.stdout_log).unwrap();
+    assert!(stdout.contains("this is not json"));
+
+    let events = fs::read_to_string(outcome.log_paths.events_jsonl).unwrap();
+    assert!(!events.contains("this is not json"));
+    assert!(events.contains("sess_mixed_output"));
+    for line in events.lines() {
+        serde_json::from_str::<Value>(line).unwrap();
+    }
+    assert!(outcome
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "invalid_stdout_jsonl"));
 }
 
 #[tokio::test]
@@ -284,6 +337,44 @@ async fn worktree_run_creates_branch_and_cleans_up_on_success() {
         .output()
         .unwrap();
     assert!(branch.status.success());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn worktree_intermediate_task_dir_symlink_is_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let repo = temp.path().join("repo");
+    init_git_repo(&repo);
+
+    let worktree_root = temp.path().join("worktrees");
+    fs::create_dir_all(&worktree_root).unwrap();
+    let escape_target = temp.path().join("escape-target");
+    fs::create_dir_all(&escape_target).unwrap();
+    symlink(&escape_target, worktree_root.join("daily-review")).unwrap();
+
+    let mut request = base_request(fixture("dummy-codex-success.sh"), &temp);
+    request.run_id = "run_symlink".to_owned();
+    request.codex.reasoning_effort = None;
+    request.target = RunTarget {
+        mode: RunTargetMode::RepoWorktree,
+        repo_path: Some(repo),
+        trusted_roots: vec![temp.path().to_path_buf()],
+        base_ref: None,
+        default_branch: Some("HEAD".to_owned()),
+        fetch_before_worktree: false,
+        worktree_parent: Some(worktree_root),
+        cleanup_policy: CleanupPolicy::Keep,
+        cleanup_after_days: None,
+    };
+
+    let err = CodexRunner::new()
+        .run(request, CancellationToken::new(), None)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, RunnerError::UntrustedPath { .. }));
 }
 
 #[test]

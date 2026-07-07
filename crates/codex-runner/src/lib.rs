@@ -721,13 +721,11 @@ async fn prepare_repo_worktree_workspace(
         sanitize_branch_part(&request.task_slug),
         sanitize_branch_part(&request.run_id)
     );
-    let path_base = checked_child_path(
-        &canonical_worktree_root,
-        [
-            sanitize_path_part(&request.task_slug),
-            sanitize_path_part(&request.run_id),
-        ],
-    )?;
+    let task_dir_name = sanitize_path_part(&request.task_slug);
+    let canonical_task_dir =
+        ensure_safe_child_dir(&canonical_worktree_root, &task_dir_name).await?;
+    let run_dir_name = sanitize_path_part(&request.run_id);
+    let path_base = checked_child_path(&canonical_task_dir, [run_dir_name.clone()])?;
 
     let mut last_error = None;
     for attempt in 0..10 {
@@ -739,13 +737,7 @@ async fn prepare_repo_worktree_workspace(
         let worktree_path = if attempt == 0 {
             path_base.clone()
         } else {
-            checked_child_path(
-                &canonical_worktree_root,
-                [
-                    sanitize_path_part(&request.task_slug),
-                    format!("{}-{attempt}", sanitize_path_part(&request.run_id)),
-                ],
-            )?
+            checked_child_path(&canonical_task_dir, [format!("{run_dir_name}-{attempt}")])?
         };
         if worktree_path.exists() {
             continue;
@@ -766,6 +758,7 @@ async fn prepare_repo_worktree_workspace(
         {
             Ok(_) => {
                 let canonical_worktree = worktree_path.canonicalize()?;
+                ensure_child_under(&canonical_worktree_root, &canonical_worktree)?;
                 let head = git_output(&canonical_worktree, ["rev-parse", "HEAD"]).await?;
                 return Ok(WorkspacePrepared {
                     mode: RunTargetMode::RepoWorktree,
@@ -869,6 +862,33 @@ where
 async fn ensure_canonical_dir(path: &Path) -> Result<PathBuf> {
     fs::create_dir_all(path).await?;
     Ok(path.canonicalize()?)
+}
+
+async fn ensure_safe_child_dir(canonical_parent: &Path, segment: &str) -> Result<PathBuf> {
+    let child_dir = checked_child_path(canonical_parent, [segment])?;
+    match fs::symlink_metadata(&child_dir).await {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(RunnerError::UntrustedPath {
+                path: child_dir,
+                trusted_roots: vec![canonical_parent.to_path_buf()],
+            });
+        }
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => {
+            return Err(RunnerError::Io(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("{} exists but is not a directory", child_dir.display()),
+            )));
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir(&child_dir).await?;
+        }
+        Err(err) => return Err(RunnerError::Io(err)),
+    }
+
+    let canonical_child = child_dir.canonicalize()?;
+    ensure_child_under(canonical_parent, &canonical_child)?;
+    Ok(canonical_child)
 }
 
 fn checked_child_path<I, S>(canonical_parent: &Path, segments: I) -> Result<PathBuf>
