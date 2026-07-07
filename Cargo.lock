@@ -440,7 +440,14 @@ name = "codex-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "libc",
+ "scheduler-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -817,7 +824,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -980,7 +987,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
