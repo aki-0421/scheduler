@@ -1,0 +1,43 @@
+[package]
+name = "codex-scheduler-desktop"
+version = "0.1.0"
+description = "Codex Scheduler desktop shell"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[lib]
+name = "codex_scheduler_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "codex-scheduler-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "=2.6.3", features = [] }
+
+[dependencies]
+idna = "=1.0.3"
+idna_adapter = "=1.0.0"
+indexmap = "=2.11.4"
+hashbrown = "=0.15.2"
+plist = "=1.7.0"
+reqwest = { version = "=0.13.0", default-features = false }
+serde_spanned = "=1.0.3"
+serde.workspace = true
+serde_json.workspace = true
+serde_with = "=3.12.0"
+tauri = { version = "=2.11.5", features = [] }
+time = "=0.3.36"
+toml = { version = "=0.9.8", features = ["parse"] }
+toml_datetime = "=0.7.3"
+toml_parser = "=1.0.4"
+toml_writer = "=1.0.4"
+url = { version = "=2.5.4", features = ["serde"] }
+unicode-segmentation = "=1.12.0"
+uuid.workspace = true
+winnow = "=0.7.13"
