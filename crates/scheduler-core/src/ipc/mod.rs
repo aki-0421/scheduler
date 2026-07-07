@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::model::{
-    AuditActorType, ProjectDto, RunDto, RunStatus, SettingDto, TaskDto, TaskStatus,
+    AuditActorType, ProjectDto, RunDto, RunStatus, SettingDto, TaskAuditEvent, TaskDto, TaskStatus,
 };
 
 pub const JSONRPC_VERSION: &str = "2.0";
@@ -19,6 +19,7 @@ pub const METHOD_TASK_DELETE: &str = "task.delete";
 pub const METHOD_TASK_PAUSE: &str = "task.pause";
 pub const METHOD_TASK_RESUME: &str = "task.resume";
 pub const METHOD_TASK_RUN_NOW: &str = "task.runNow";
+pub const METHOD_TASK_AUDIT_LIST: &str = "task.auditList";
 pub const METHOD_RUN_LIST: &str = "run.list";
 pub const METHOD_RUN_GET: &str = "run.get";
 pub const METHOD_RUN_CANCEL: &str = "run.cancel";
@@ -273,6 +274,54 @@ pub struct TaskIdParams {
 #[serde(rename_all = "camelCase")]
 pub struct TaskDeleteResult {
     pub deleted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskAuditEventDto {
+    pub id: String,
+    pub task_id: String,
+    pub actor_type: AuditActorType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_id: Option<String>,
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_json: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_json: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub created_at: String,
+}
+
+impl From<&TaskAuditEvent> for TaskAuditEventDto {
+    fn from(event: &TaskAuditEvent) -> Self {
+        Self {
+            id: event.id.clone(),
+            task_id: event.task_id.clone().unwrap_or_default(),
+            actor_type: event.actor_type,
+            actor_id: event.actor_id.clone(),
+            action: event.action.clone(),
+            before_json: event.before_json.clone(),
+            after_json: event.after_json.clone(),
+            reason: event.reason.clone(),
+            created_at: event.created_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskAuditListParams {
+    pub task_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskAuditListResult {
+    pub audit_events: Vec<TaskAuditEventDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

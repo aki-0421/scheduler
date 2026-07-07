@@ -239,6 +239,9 @@ export const taskResultSchema = z
     };
   });
 export const taskDeleteResultSchema = z.object({ deleted: z.boolean() });
+export const taskAuditListResultSchema = z.object({
+  auditEvents: z.array(taskAuditEventSchema),
+});
 export const runListResultSchema = z.object({ runs: z.array(runDtoSchema) });
 export const runResultSchema = z.object({ run: runDtoSchema });
 export const projectListResultSchema = z.object({

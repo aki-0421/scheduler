@@ -722,6 +722,25 @@ impl SchedulerDb {
         .await?)
     }
 
+    pub async fn list_task_audit_events_limited(
+        &self,
+        task_id: &str,
+        limit: i64,
+    ) -> Result<Vec<TaskAuditEvent>> {
+        Ok(sqlx::query_as::<_, TaskAuditEvent>(
+            "SELECT id, task_id, actor_type, actor_id, action, before_json, after_json, reason,
+                    created_at
+             FROM task_audit_events
+             WHERE task_id = ?
+             ORDER BY created_at DESC, id DESC
+             LIMIT ?",
+        )
+        .bind(task_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
     pub async fn update_task_audit_event(&self, event: &TaskAuditEvent) -> Result<bool> {
         let result = sqlx::query(
             "UPDATE task_audit_events

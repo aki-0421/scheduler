@@ -1310,6 +1310,10 @@ async fn route_rpc(
             let params: TaskIdParams = parse_params(request.params)?;
             to_value(rpc_task_run_now(state, params, metadata).await?)
         }
+        METHOD_TASK_AUDIT_LIST => {
+            let params: TaskAuditListParams = parse_params(request.params)?;
+            to_value(rpc_task_audit_list(state, params).await?)
+        }
         METHOD_RUN_LIST => {
             let params: RunListParams = parse_params(request.params)?;
             to_value(rpc_run_list(state, params).await?)
@@ -1978,6 +1982,21 @@ async fn rpc_task_run_now(
     state.notify_tick.notify_waiters();
     Ok(RunResult {
         run: RunDto::from(&run),
+    })
+}
+
+async fn rpc_task_audit_list(
+    state: &Arc<DaemonState>,
+    params: TaskAuditListParams,
+) -> Result<TaskAuditListResult, JsonRpcError> {
+    let limit = params.limit.unwrap_or(50).clamp(1, 250);
+    let audit_events = state
+        .db
+        .list_task_audit_events_limited(&params.task_id, limit)
+        .await
+        .map_err(map_core_error)?;
+    Ok(TaskAuditListResult {
+        audit_events: audit_events.iter().map(TaskAuditEventDto::from).collect(),
     })
 }
 

@@ -8,8 +8,9 @@ use scheduler_core::ipc::{
     JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ProjectListResult, JSONRPC_VERSION,
     METHOD_DAEMON_DIAGNOSTICS, METHOD_DAEMON_HEALTH, METHOD_PROJECT_LIST, METHOD_PROJECT_TRUST,
     METHOD_RUN_CANCEL, METHOD_RUN_GET, METHOD_RUN_LIST, METHOD_RUN_TAIL_LOG, METHOD_SETTINGS_GET,
-    METHOD_SETTINGS_SET, METHOD_TASK_CREATE, METHOD_TASK_DELETE, METHOD_TASK_GET, METHOD_TASK_LIST,
-    METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
+    METHOD_SETTINGS_SET, METHOD_TASK_AUDIT_LIST, METHOD_TASK_CREATE, METHOD_TASK_DELETE,
+    METHOD_TASK_GET, METHOD_TASK_LIST, METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW,
+    METHOD_TASK_UPDATE,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -696,6 +697,23 @@ async fn task_run_now(
 }
 
 #[tauri::command]
+async fn task_audit_list(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+    limit: Option<i64>,
+) -> CommandResult<Value> {
+    state
+        .daemon
+        .proxy(
+            &app,
+            METHOD_TASK_AUDIT_LIST,
+            json!({ "taskId": task_id, "limit": limit }),
+        )
+        .await
+}
+
+#[tauri::command]
 async fn run_list(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -861,6 +879,7 @@ pub fn run() {
             task_pause,
             task_resume,
             task_run_now,
+            task_audit_list,
             run_list,
             run_get,
             run_cancel,

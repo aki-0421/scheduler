@@ -295,6 +295,45 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
 }
 
 #[tokio::test]
+async fn task_audit_list_returns_task_audit_events_over_uds() {
+    let (_temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+
+    let created: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams {
+            task: sample_task_dto("audited-task", TaskKind::Manual),
+            actor: None,
+        },
+    )
+    .await
+    .expect("create task");
+
+    let audits: TaskAuditListResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_AUDIT_LIST,
+        TaskAuditListParams {
+            task_id: created.task.id.clone(),
+            limit: Some(50),
+        },
+    )
+    .await
+    .expect("audit list");
+
+    assert_eq!(audits.audit_events.len(), 1);
+    let event = &audits.audit_events[0];
+    assert_eq!(event.task_id, created.task.id);
+    assert_eq!(event.actor_type, AuditActorType::User);
+    assert_eq!(event.action, "task.create");
+    assert!(event.before_json.is_none());
+    assert!(event.after_json.is_some());
+    assert!(!event.created_at.is_empty());
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn retention_cleanup_removes_expired_runs_logs_and_tokens() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;

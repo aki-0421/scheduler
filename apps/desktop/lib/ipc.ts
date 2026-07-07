@@ -12,6 +12,7 @@ import {
   runTailLogResultSchema,
   settingsGetResultSchema,
   settingsSetResultSchema,
+  taskAuditListResultSchema,
   taskDeleteResultSchema,
   taskDtoSchema,
   taskListResultSchema,
@@ -23,6 +24,7 @@ import {
   type RunTailLogResult,
   type SchedulerSettings,
   type SettingDto,
+  type TaskAuditEvent,
   type TaskDto,
   type TaskStatus,
 } from "@/lib/types";
@@ -131,6 +133,15 @@ export const ipcClient = {
   async taskRunNow(id: string) {
     const result = await call("task_run_now", { id }, runResultSchema);
     return result.run;
+  },
+
+  async taskAuditList(taskId: string, limit = 50): Promise<TaskAuditEvent[]> {
+    const result = await call(
+      "task_audit_list",
+      { taskId, limit },
+      taskAuditListResultSchema,
+    );
+    return result.auditEvents;
   },
 
   async runList(filter?: { taskId?: string; status?: RunStatus }) {

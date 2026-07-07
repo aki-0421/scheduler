@@ -26,6 +26,7 @@ import type { RunDto, TaskAuditEvent, TaskDto } from "@/lib/types";
 type TaskDetailProps = {
   task: TaskDto;
   runs: RunDto[];
+  auditEvents?: TaskAuditEvent[];
   onEdit?: (task: TaskDto) => void;
 };
 
@@ -97,7 +98,12 @@ function AuditEventRow({ event }: { event: TaskAuditEvent }) {
   );
 }
 
-export function TaskDetail({ task, runs, onEdit }: TaskDetailProps) {
+export function TaskDetail({
+  task,
+  runs,
+  auditEvents: loadedAuditEvents,
+  onEdit,
+}: TaskDetailProps) {
   const recentRuns = runs
     .filter((run) => run.taskId === task.id)
     .slice()
@@ -107,7 +113,7 @@ export function TaskDetail({ task, runs, onEdit }: TaskDetailProps) {
       ),
     )
     .slice(0, 6);
-  const auditEvents = task.auditEvents ?? [];
+  const auditEvents = loadedAuditEvents ?? task.auditEvents ?? [];
   const isDangerFullAccess = task.codex.sandboxMode === "danger-full-access";
 
   return (

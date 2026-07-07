@@ -27,6 +27,7 @@ export const queryKeys = {
   health: ["health"] as const,
   tasks: (status?: TaskStatus) => ["tasks", status ?? "all"] as const,
   task: (id?: string) => ["task", id ?? "none"] as const,
+  taskAudits: (id?: string) => ["taskAudits", id ?? "none"] as const,
   runs: (filter?: { taskId?: string; status?: RunStatus }) =>
     ["runs", filter?.taskId ?? "all", filter?.status ?? "all"] as const,
   run: (id?: string) => ["run", id ?? "none"] as const,
@@ -37,6 +38,7 @@ export const queryKeys = {
 function invalidateSchedulerData(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ["tasks"] });
   void queryClient.invalidateQueries({ queryKey: ["task"] });
+  void queryClient.invalidateQueries({ queryKey: ["taskAudits"] });
   void queryClient.invalidateQueries({ queryKey: ["runs"] });
   void queryClient.invalidateQueries({ queryKey: ["run"] });
   void queryClient.invalidateQueries({ queryKey: queryKeys.health });
@@ -61,6 +63,14 @@ export function useTask(id?: string) {
   return useQuery({
     queryKey: queryKeys.task(id),
     queryFn: () => ipcClient.taskGet(id ?? ""),
+    enabled: Boolean(id),
+  });
+}
+
+export function useTaskAudits(id?: string) {
+  return useQuery({
+    queryKey: queryKeys.taskAudits(id),
+    queryFn: () => ipcClient.taskAuditList(id ?? ""),
     enabled: Boolean(id),
   });
 }

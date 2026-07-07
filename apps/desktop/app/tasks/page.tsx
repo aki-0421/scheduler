@@ -46,7 +46,7 @@ import {
   formatTargetMode,
   taskLastRun,
 } from "@/lib/format";
-import { useRuns, useTask, useTasks } from "@/lib/queries";
+import { useRuns, useTask, useTaskAudits, useTasks } from "@/lib/queries";
 import { taskStatuses, type TaskDto, type TaskStatus } from "@/lib/types";
 
 function TasksPageContent() {
@@ -57,6 +57,7 @@ function TasksPageContent() {
   const tasks = useTasks(statusFilter === "all" ? undefined : statusFilter);
   const runs = useRuns();
   const selectedTask = useTask(selectedTaskId);
+  const selectedTaskAudits = useTaskAudits(selectedTaskId);
   const taskList = tasks.data ?? [];
   const runList = runs.data ?? [];
 
@@ -182,6 +183,7 @@ function TasksPageContent() {
             <TaskDetail
               task={selectedTask.data}
               runs={runList}
+              auditEvents={selectedTaskAudits.data}
               onEdit={setEditingTask}
             />
           ) : (

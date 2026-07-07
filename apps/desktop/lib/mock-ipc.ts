@@ -6,6 +6,7 @@ import type {
   RunStatus,
   SchedulerSettings,
   SettingDto,
+  TaskAuditEvent,
   TaskDto,
   TaskStatus,
 } from "@/lib/types";
@@ -214,6 +215,10 @@ let tasks: TaskDto[] = [
     },
   },
 ];
+
+function taskAuditEvents(taskId: string): TaskAuditEvent[] {
+  return clone(taskById(taskId).auditEvents ?? []);
+}
 
 let runs: RunDto[] = [
   {
@@ -460,6 +465,12 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
     }
     case "task_get":
       return { task: clone(taskById(input.id as string)) };
+    case "task_audit_list": {
+      const limit = Number(input.limit ?? 50);
+      return {
+        auditEvents: taskAuditEvents(input.taskId as string).slice(0, limit),
+      };
+    }
     case "task_create": {
       const task = clone(input.task as TaskDto);
       task.id = task.id || id("task");
