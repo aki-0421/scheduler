@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { z } from "zod";
 
-import { mockInvoke } from "@/lib/mock-ipc";
 import {
   healthDtoSchema,
   logStreamSchema,
@@ -30,7 +29,6 @@ import {
 
 declare global {
   interface Window {
-    __TAURI__?: unknown;
     __TAURI_INTERNALS__?: unknown;
   }
 }
@@ -38,8 +36,19 @@ declare global {
 function isTauriRuntime() {
   return (
     typeof window !== "undefined" &&
-    Boolean(window.__TAURI__ || window.__TAURI_INTERNALS__)
+    Boolean(window.__TAURI_INTERNALS__)
   );
+}
+
+async function fallbackInvoke(command: string, params?: unknown) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `Tauri runtime is unavailable for command ${command}. Mock IPC is disabled in production.`,
+    );
+  }
+
+  const { mockInvoke } = await import("@/lib/mock-ipc");
+  return mockInvoke(command, params);
 }
 
 async function call<T>(
@@ -49,7 +58,7 @@ async function call<T>(
 ): Promise<T> {
   const raw = isTauriRuntime()
     ? await invoke<unknown>(command, params)
-    : await mockInvoke(command, params);
+    : await fallbackInvoke(command, params);
 
   return schema.parse(raw);
 }

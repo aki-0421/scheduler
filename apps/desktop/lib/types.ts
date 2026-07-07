@@ -5,7 +5,7 @@ const optionalString = z
   .transform((value): string | undefined => value ?? undefined);
 
 const optionalNumber = z
-  .union([z.number(), z.null(), z.undefined()])
+  .union([z.number().int(), z.null(), z.undefined()])
   .transform((value): number | undefined => value ?? undefined);
 
 const defaultNumber = z
@@ -51,6 +51,11 @@ export const taskKindSchema = z.enum(taskKinds);
 export const taskStatusSchema = z.enum(taskStatuses);
 export const runStatusSchema = z.enum(runStatuses);
 export const targetModeSchema = z.enum(targetModes);
+const optionalTargetMode = z
+  .union([targetModeSchema, z.null(), z.undefined()])
+  .transform(
+    (value): z.infer<typeof targetModeSchema> | undefined => value ?? undefined,
+  );
 export const sandboxModeSchema = z.enum(sandboxModes);
 export const approvalPolicySchema = z.enum(approvalPolicies);
 export const missedPolicySchema = z.enum(missedPolicies);
@@ -114,19 +119,27 @@ export const runDtoSchema = z.object({
   taskId: z.string(),
   triggerType: triggerTypeSchema,
   scheduledFor: optionalString,
+  attempt: optionalNumber,
   status: runStatusSchema,
   statusReason: optionalString,
   queuedAt: optionalString,
   startedAt: optionalString,
   endedAt: optionalString,
   durationMs: optionalNumber,
-  targetMode: targetModeSchema.optional(),
+  targetMode: optionalTargetMode,
   workspacePath: optionalString,
   worktreePath: optionalString,
   branchName: optionalString,
   baseRef: optionalString,
+  commitBefore: optionalString,
+  commitAfter: optionalString,
   exitCode: optionalNumber,
   signal: optionalString,
+  codexSessionId: optionalString,
+  stdoutLogPath: optionalString,
+  stderrLogPath: optionalString,
+  eventsJsonlPath: optionalString,
+  lastMessagePath: optionalString,
   stdoutTail: optionalString,
   stderrTail: optionalString,
   resultSummary: optionalString,
@@ -134,27 +147,7 @@ export const runDtoSchema = z.object({
   createdScheduleCount: defaultNumber,
 });
 
-function normalizeProject(value: unknown) {
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const project = value as Record<string, unknown>;
-  return {
-    id: project.id,
-    name: project.name,
-    path: project.path,
-    kind: project.kind,
-    gitRoot: project.gitRoot ?? project.git_root,
-    gitRemoteUrl: project.gitRemoteUrl ?? project.git_remote_url,
-    defaultBranch: project.defaultBranch ?? project.default_branch,
-    trustedAt: project.trustedAt ?? project.trusted_at,
-    createdAt: project.createdAt ?? project.created_at,
-    updatedAt: project.updatedAt ?? project.updated_at,
-  };
-}
-
-const projectDtoObjectSchema = z.object({
+export const projectDtoSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string(),
@@ -167,34 +160,11 @@ const projectDtoObjectSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const projectDtoSchema = z.preprocess(
-  normalizeProject,
-  projectDtoObjectSchema,
-) as z.ZodType<z.infer<typeof projectDtoObjectSchema>, z.ZodTypeDef, unknown>;
-
-function normalizeSetting(value: unknown) {
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const setting = value as Record<string, unknown>;
-  return {
-    key: setting.key,
-    valueJson: setting.valueJson ?? setting.value_json,
-    updatedAt: setting.updatedAt ?? setting.updated_at,
-  };
-}
-
-const settingDtoObjectSchema = z.object({
+export const settingDtoSchema = z.object({
   key: z.string(),
   valueJson: z.string(),
   updatedAt: z.string(),
 });
-
-export const settingDtoSchema = z.preprocess(
-  normalizeSetting,
-  settingDtoObjectSchema,
-) as z.ZodType<z.infer<typeof settingDtoObjectSchema>, z.ZodTypeDef, unknown>;
 
 export const healthDtoSchema = z.object({
   ok: z.boolean(),
@@ -263,7 +233,7 @@ export const defaultSettings: SchedulerSettings = {
   "daemon.global_concurrency": 2,
   "runner.codex_path": "codex",
   "runner.default_model": "gpt-5-codex",
-  "runner.default_sandbox_mode": "workspace-write",
+  "runner.default_sandbox_mode": "read-only",
   "runner.default_approval_policy": "never",
   "notifications.enabled": true,
   "worktree.default_cleanup_policy": "keep",
