@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -27,6 +28,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  codexModelOptions,
+  reasoningEffortOptionsForModel,
+} from "@/lib/codex-options";
 import { getCronPreview } from "@/lib/cron";
 import { formatDateTime } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
@@ -375,11 +380,13 @@ function SelectField<T extends string>({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
+          <SelectGroup>
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
         </SelectContent>
       </Select>
     </Field>
@@ -533,6 +540,10 @@ export function TaskWizard({
   const canModifyLocalChanges =
     draft.targetMode === "repo-local" &&
     draft.sandboxMode === "workspace-write";
+  const modelReasoningEffortOptions = useMemo(
+    () => reasoningEffortOptionsForModel(draft.model),
+    [draft.model],
+  );
   const hasErrors = Object.keys(errors).length > 0;
   const errorSummary = getOrderedErrorEntries(errors);
 
@@ -553,6 +564,20 @@ export function TaskWizard({
   ) {
     setDraft((current) => ({ ...current, [key]: value }));
     clearErrors(String(key), ...extraErrorKeys);
+  }
+
+  function updateModel(value: TaskDraft["model"]) {
+    const allowedEfforts = reasoningEffortOptionsForModel(value).map(
+      (option) => option.value,
+    );
+    setDraft((current) => ({
+      ...current,
+      model: value,
+      reasoningEffort: allowedEfforts.includes(current.reasoningEffort)
+        ? current.reasoningEffort
+        : (allowedEfforts[0] ?? current.reasoningEffort),
+    }));
+    clearErrors("model", "reasoningEffort");
   }
 
   function updateTargetMode(value: TaskDraft["targetMode"]) {
@@ -1076,28 +1101,22 @@ export function TaskWizard({
               >
                 <Input value="全体の runner 設定" disabled />
               </Field>
-              <Field label="モデル" htmlFor="model" error={errors.model}>
-                <Input
-                  id="model"
-                  value={draft.model}
-                  onChange={(event) =>
-                    update("model", event.currentTarget.value)
-                  }
-                />
-              </Field>
-              <Field
+              <SelectField
+                id="model"
+                label="モデル"
+                value={draft.model}
+                options={codexModelOptions}
+                onChange={updateModel}
+                error={errors.model}
+              />
+              <SelectField
+                id="reasoning"
                 label="推論 effort"
-                htmlFor="reasoning"
+                value={draft.reasoningEffort}
+                options={modelReasoningEffortOptions}
+                onChange={(value) => update("reasoningEffort", value)}
                 error={errors.reasoningEffort}
-              >
-                <Input
-                  id="reasoning"
-                  value={draft.reasoningEffort}
-                  onChange={(event) =>
-                    update("reasoningEffort", event.currentTarget.value)
-                  }
-                />
-              </Field>
+              />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-3">

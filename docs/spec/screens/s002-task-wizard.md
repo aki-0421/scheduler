@@ -52,7 +52,7 @@ read_when:
 - base ref。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
 - once date and time、preset time、weekly day、custom 5-field cron、timezone、next-five-runs preview。
-- advanced settings: Codex path display、model、reasoning effort、sandbox、approval policy、max runtime、retries、overlap、missed runs、cleanup、schedule CLI switch、scheduler instruction switch、capability checkbox、max created schedules、start paused switch。通常は default のままでよいため `詳細` tab に置き、main flow から外す。
+- advanced settings: Codex path display、frontier model select、reasoning effort select、sandbox、approval policy、max runtime、retries、overlap、missed runs、cleanup、schedule CLI switch、scheduler instruction switch、capability checkbox、max created schedules、start paused switch。通常は default のままでよいため `詳細` tab に置き、main flow から外す。
 - full filesystem access confirmation checkbox は `danger-full-access` の場合にのみ表示される。
 - lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
 
@@ -60,8 +60,8 @@ read_when:
 
 - default cron expression は `0 9 * * 1-5` で、weekdays at 09:00 として推論される。
 - default timezone は browser-resolved timezone または `Asia/Tokyo`。
-- default model は `gpt-5-codex`。
-- default reasoning effort は `default`。
+- default model は `gpt-5.5`。
+- default reasoning effort は `medium`。
 - default sandbox は `read-only`。
 - default approval policy は `never`。
 - default max runtime は `7200` seconds。
@@ -73,7 +73,7 @@ read_when:
 
 バリデーションとエラー:
 
-- required: prompt、task name、timezone、model、reasoning effort。
+- required: prompt、task name、timezone、frontier model、reasoning effort。
 - repository target には registered project が必要。
 - once schedule には selected timezone に対して valid な date and time が必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。

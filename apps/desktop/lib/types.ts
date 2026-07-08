@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  defaultCodexModel,
+  normalizeCodexModel,
+  type CodexModel,
+} from "@/lib/codex-options";
+
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
   .transform((value): string | undefined => value ?? undefined);
@@ -345,7 +351,7 @@ export type SchedulerSettings = {
   "scheduler.enabled": boolean;
   "daemon.global_concurrency": number;
   "runner.codex_path": string;
-  "runner.default_model": string;
+  "runner.default_model": CodexModel;
   "runner.default_sandbox_mode": SandboxMode;
   "runner.default_approval_policy": ApprovalPolicy;
   "notifications.enabled": boolean;
@@ -356,7 +362,7 @@ export const defaultSettings: SchedulerSettings = {
   "scheduler.enabled": true,
   "daemon.global_concurrency": 2,
   "runner.codex_path": "codex",
-  "runner.default_model": "gpt-5-codex",
+  "runner.default_model": defaultCodexModel,
   "runner.default_sandbox_mode": "read-only",
   "runner.default_approval_policy": "never",
   "notifications.enabled": true,
@@ -370,9 +376,13 @@ export function settingsToRecord(settings: SettingDto[]): SchedulerSettings {
     }
 
     try {
+      const parsedValue = JSON.parse(setting.valueJson);
       return {
         ...accumulator,
-        [setting.key]: JSON.parse(setting.valueJson),
+        [setting.key]:
+          setting.key === "runner.default_model"
+            ? normalizeCodexModel(parsedValue)
+            : parsedValue,
       };
     } catch {
       return accumulator;

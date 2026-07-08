@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskWizard } from "@/components/task-wizard";
+import { defaultCodexModel, defaultReasoningEffort } from "@/lib/codex-options";
 import { ipcClient } from "@/lib/ipc";
 import { buildTaskDto, defaultTaskDraft, taskToDraft } from "@/lib/task-draft";
 import { renderWithClient } from "./test-utils";
@@ -65,9 +66,9 @@ describe("TaskWizard cron validation", () => {
     expect(draft.presetMode).toBe("weekdays");
     expect(draft.cronExpr).toBe("0 9 * * 1-5");
     expect(buildTaskDto(draft, false).cronExpr).toBe("0 9 * * 1-5");
-    expect(screen.getByRole("combobox", { name: "実行タイミング" })).toHaveTextContent(
-      "平日",
-    );
+    expect(
+      screen.getByRole("combobox", { name: "実行タイミング" }),
+    ).toHaveTextContent("平日");
     expect(screen.queryByLabelText("カスタム cron 式")).not.toBeInTheDocument();
     expect(screen.getByText("平日 09:00")).toBeInTheDocument();
   });
@@ -109,11 +110,54 @@ describe("TaskWizard cron validation", () => {
     await user.click(screen.getByRole("tab", { name: "詳細" }));
 
     expect(
-      screen.getByLabelText("ファイルシステムのフルアクセスのリスクを理解しています"),
+      screen.getByLabelText(
+        "ファイルシステムのフルアクセスのリスクを理解しています",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText("任意のスケジュールを更新できます")).toBeInTheDocument();
+    expect(
+      screen.getByText("任意のスケジュールを更新できます"),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "実行先" }));
-    expect(screen.getByRole("button", { name: "フォルダを選択" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "フォルダを選択" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses frontier model and effort selects in advanced settings", async () => {
+    const user = userEvent.setup();
+    const draft = {
+      ...defaultTaskDraft(),
+      name: "Frontier task",
+      prompt: "Use the default frontier Codex model.",
+    };
+
+    renderWithClient(<TaskWizard initialDraft={draft} />);
+
+    await user.click(screen.getByRole("tab", { name: "詳細" }));
+
+    expect(screen.getByRole("combobox", { name: "モデル" })).toHaveTextContent(
+      "GPT-5.5",
+    );
+    expect(
+      screen.getByRole("combobox", { name: "推論 effort" }),
+    ).toHaveTextContent("中");
+    expect(screen.queryByDisplayValue("gpt-5-codex")).not.toBeInTheDocument();
+  });
+
+  it("normalizes deprecated Codex model values when editing a task", () => {
+    const sourceDraft = {
+      ...defaultTaskDraft(),
+      name: "Legacy model",
+      prompt: "Normalize deprecated model values.",
+    };
+    const task = buildTaskDto(sourceDraft, false);
+    task.codex.model = "gpt-5-codex";
+    task.codex.reasoningEffort = "default";
+
+    const draft = taskToDraft(task);
+
+    expect(draft.model).toBe(defaultCodexModel);
+    expect(draft.reasoningEffort).toBe(defaultReasoningEffort);
   });
 
   it("shows inline required-field errors from the one-screen composer", async () => {
@@ -123,9 +167,13 @@ describe("TaskWizard cron validation", () => {
 
     await user.click(screen.getByRole("button", { name: "タスクを作成" }));
 
-    expect(await screen.findByText("確認が必要な項目があります")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "プロンプト: プロンプトは必須です。" }),
+      await screen.findByText("確認が必要な項目があります"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "プロンプト: プロンプトは必須です。",
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "タスク名: タスク名は必須です。" }),
@@ -133,10 +181,20 @@ describe("TaskWizard cron validation", () => {
     expect(
       await screen.findByText("タスク名は必須です。", { selector: "p" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("プロンプトは必須です。", { selector: "p" })).toBeInTheDocument();
-    expect(screen.getByLabelText("プロンプト")).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByLabelText("タスク名")).toHaveAttribute("aria-invalid", "true");
-    await waitFor(() => expect(screen.getByLabelText("プロンプト")).toHaveFocus());
+    expect(
+      screen.getByText("プロンプトは必須です。", { selector: "p" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("プロンプト")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByLabelText("タスク名")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("プロンプト")).toHaveFocus(),
+    );
   });
 
   it("submits the existing task DTO shape through the create mutation", async () => {

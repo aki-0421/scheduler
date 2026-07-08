@@ -11,10 +11,12 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { codexModelOptions } from "@/lib/codex-options";
 import { Switch } from "@/components/ui/switch";
 import { formatEnumLabel } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
@@ -213,16 +215,31 @@ export default function SettingsPage() {
         </SettingRow>
         <SettingRow
           label="既定モデル"
-          description="新規タスクへコピーされるモデル値です。"
+          description="新規タスクへコピーされる Codex フロンティアモデルです。"
           htmlFor="default-model"
         >
-          <Input
-            id="default-model"
+          <Select
             value={form["runner.default_model"]}
-            onChange={(event) =>
-              update("runner.default_model", event.currentTarget.value)
+            onValueChange={(value) =>
+              update(
+                "runner.default_model",
+                value as SchedulerSettings["runner.default_model"],
+              )
             }
-          />
+          >
+            <SelectTrigger id="default-model">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {codexModelOptions.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    {model.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </SettingRow>
       </SettingsSection>
 
@@ -245,11 +262,13 @@ export default function SettingsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {sandboxModes.map((mode) => (
-                <SelectItem key={mode} value={mode}>
-                  {formatEnumLabel(mode)}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {sandboxModes.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {formatEnumLabel(mode)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </SettingRow>
@@ -271,11 +290,13 @@ export default function SettingsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {approvalPolicies.map((policy) => (
-                <SelectItem key={policy} value={policy}>
-                  {formatEnumLabel(policy)}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {approvalPolicies.map((policy) => (
+                  <SelectItem key={policy} value={policy}>
+                    {formatEnumLabel(policy)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </SettingRow>
@@ -297,11 +318,13 @@ export default function SettingsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {cleanupPolicies.map((policy) => (
-                <SelectItem key={policy} value={policy}>
-                  {formatEnumLabel(policy)}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {cleanupPolicies.map((policy) => (
+                  <SelectItem key={policy} value={policy}>
+                    {formatEnumLabel(policy)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </SettingRow>

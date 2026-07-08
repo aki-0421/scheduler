@@ -89,8 +89,8 @@ let tasks: TaskDto[] = [
       baseRef: "main",
     },
     codex: {
-      model: "gpt-5-codex",
-      reasoningEffort: "default",
+      model: "gpt-5.5",
+      reasoningEffort: "medium",
       sandboxMode: "workspace-write",
       approvalPolicy: "never",
     },
@@ -164,7 +164,7 @@ let tasks: TaskDto[] = [
       baseRef: "main",
     },
     codex: {
-      model: "gpt-5-codex",
+      model: "gpt-5.4-mini",
       reasoningEffort: "low",
       sandboxMode: "read-only",
       approvalPolicy: "never",
@@ -200,7 +200,7 @@ let tasks: TaskDto[] = [
     nextRunAt: minutesFromNow(360),
     target: { mode: "chat", projectId: undefined, repoPath: undefined },
     codex: {
-      model: "gpt-5-codex",
+      model: "gpt-5.4",
       reasoningEffort: "medium",
       sandboxMode: "read-only",
       approvalPolicy: "never",

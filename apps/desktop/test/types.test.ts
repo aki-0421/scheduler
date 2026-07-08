@@ -26,8 +26,8 @@ describe("DTO schemas", () => {
         baseRef: "main",
       },
       codex: {
-        model: "gpt-5-codex",
-        reasoningEffort: "default",
+        model: "gpt-5.5",
+        reasoningEffort: "medium",
         sandboxMode: "workspace-write",
         approvalPolicy: "never",
       },
@@ -154,8 +154,8 @@ describe("DTO schemas", () => {
           baseRef: "main",
         },
         codex: {
-          model: "gpt-5-codex",
-          reasoningEffort: "default",
+          model: "gpt-5.5",
+          reasoningEffort: "medium",
           sandboxMode: "workspace-write",
           approvalPolicy: "never",
         },

@@ -17,8 +17,8 @@ const activeTask: TaskDto = {
   timezone: "UTC",
   target: { mode: "chat" },
   codex: {
-    model: "gpt-5-codex",
-    reasoningEffort: "default",
+    model: "gpt-5.5",
+    reasoningEffort: "medium",
     sandboxMode: "read-only",
     approvalPolicy: "never",
   },

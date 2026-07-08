@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+import {
+  codexModelValues,
+  defaultCodexModel,
+  defaultReasoningEffort,
+  normalizeCodexModel,
+  normalizeReasoningEffort,
+  reasoningEffortValues,
+  type CodexModel,
+  type ReasoningEffort,
+} from "@/lib/codex-options";
 import { getCronPreview } from "@/lib/cron";
 import { localDateTimeToUtcIso, utcIsoToLocalDateTime } from "@/lib/timezone";
 import {
@@ -37,8 +47,8 @@ export type TaskDraft = {
   presetTime: string;
   weeklyDay: string;
   cronExpr: string;
-  model: string;
-  reasoningEffort: string;
+  model: CodexModel;
+  reasoningEffort: ReasoningEffort;
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
   approvalPolicy: "never" | "on-request" | "untrusted";
   maxRuntimeSec: number;
@@ -54,7 +64,9 @@ export type TaskDraft = {
   locked: boolean;
 };
 
-export type StepErrors = Partial<Record<keyof TaskDraft | "cronPreview", string>>;
+export type StepErrors = Partial<
+  Record<keyof TaskDraft | "cronPreview", string>
+>;
 type PresetSchedule = Pick<
   TaskDraft,
   "scheduleMode" | "presetMode" | "presetTime" | "weeklyDay"
@@ -114,10 +126,8 @@ function parseCronNumber(value: string, min: number, max: number) {
 }
 
 function inferPresetFromCron(expression: string): PresetSchedule | undefined {
-  const [minuteValue, hourValue, dayOfMonth, month, dayOfWeek, ...extra] = expression
-    .trim()
-    .replace(/\s+/g, " ")
-    .split(" ");
+  const [minuteValue, hourValue, dayOfMonth, month, dayOfWeek, ...extra] =
+    expression.trim().replace(/\s+/g, " ").split(" ");
 
   if (
     extra.length > 0 ||
@@ -214,8 +224,8 @@ export function defaultTaskDraft(): TaskDraft {
     presetTime: presetSchedule?.presetTime ?? "09:00",
     weeklyDay: presetSchedule?.weeklyDay ?? "1",
     cronExpr: defaultCronExpr,
-    model: "gpt-5-codex",
-    reasoningEffort: "default",
+    model: defaultCodexModel,
+    reasoningEffort: defaultReasoningEffort,
     sandboxMode: "read-only",
     approvalPolicy: "never",
     maxRuntimeSec: 7200,
@@ -225,7 +235,11 @@ export function defaultTaskDraft(): TaskDraft {
     cleanupPolicy: "keep",
     allowScheduleCli: true,
     maxCreatedSchedulesPerRun: 5,
-    capabilities: ["schedule:create", "schedule:update-current", "schedule:list"],
+    capabilities: [
+      "schedule:create",
+      "schedule:update-current",
+      "schedule:list",
+    ],
     forcePaused: false,
     dangerConfirmed: false,
     locked: false,
@@ -236,7 +250,8 @@ export function taskToDraft(task: TaskDto): TaskDraft {
   const baseDraft = defaultTaskDraft();
   const once = splitTime(task.runAt, task.timezone);
   const cronExpr = task.cronExpr ?? defaultCronExpr;
-  const presetSchedule = task.kind === "cron" ? inferPresetFromCron(cronExpr) : undefined;
+  const presetSchedule =
+    task.kind === "cron" ? inferPresetFromCron(cronExpr) : undefined;
 
   return {
     ...baseDraft,
@@ -258,8 +273,8 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     presetTime: presetSchedule?.presetTime ?? baseDraft.presetTime,
     weeklyDay: presetSchedule?.weeklyDay ?? baseDraft.weeklyDay,
     cronExpr,
-    model: task.codex.model ?? "gpt-5-codex",
-    reasoningEffort: task.codex.reasoningEffort ?? "default",
+    model: normalizeCodexModel(task.codex.model),
+    reasoningEffort: normalizeReasoningEffort(task.codex.reasoningEffort),
     sandboxMode: task.codex.sandboxMode,
     approvalPolicy: task.codex.approvalPolicy,
     maxRuntimeSec: task.policies.maxRuntimeSec,
@@ -341,12 +356,22 @@ const scheduleSchema = z
 
 const codexSchema = z
   .object({
-    model: z.string().trim().min(1, "モデルは必須です。"),
-    reasoningEffort: z.string().trim().min(1, "推論 effort は必須です。"),
+    model: z.enum(codexModelValues, {
+      errorMap: () => ({ message: "フロンティアモデルを選択してください。" }),
+    }),
+    reasoningEffort: z.enum(reasoningEffortValues, {
+      errorMap: () => ({ message: "推論 effort を選択してください。" }),
+    }),
     sandboxMode: sandboxModeSchema,
     approvalPolicy: approvalPolicySchema,
-    maxRuntimeSec: z.coerce.number().int().min(60, "60秒以上を指定してください。"),
-    maxRetries: z.coerce.number().int().min(0, "再試行回数は 0 以上にしてください。"),
+    maxRuntimeSec: z.coerce
+      .number()
+      .int()
+      .min(60, "60秒以上を指定してください。"),
+    maxRetries: z.coerce
+      .number()
+      .int()
+      .min(0, "再試行回数は 0 以上にしてください。"),
     missedPolicy: missedPolicySchema,
     overlapPolicy: overlapPolicySchema,
     cleanupPolicy: cleanupPolicySchema,
@@ -370,7 +395,10 @@ const permissionsSchema = z.object({
     .max(100, "スケジュールは 100 件以下にしてください。"),
 });
 
-export function validateTaskDraftStep(draft: TaskDraft, step: number): StepErrors {
+export function validateTaskDraftStep(
+  draft: TaskDraft,
+  step: number,
+): StepErrors {
   const schemas = [
     basicsSchema,
     targetSchema,
@@ -404,7 +432,9 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
         : draft.scheduleMode;
   const cronExpr = getDraftCronExpression(draft);
   const preview =
-    kind === "cron" && cronExpr ? getCronPreview(cronExpr, draft.timezone) : undefined;
+    kind === "cron" && cronExpr
+      ? getCronPreview(cronExpr, draft.timezone)
+      : undefined;
   const runAt =
     kind === "once"
       ? localDateTimeToUtcIso(draft.onceDate, draft.onceTime, draft.timezone)

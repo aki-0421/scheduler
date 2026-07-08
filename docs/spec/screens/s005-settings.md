@@ -38,7 +38,7 @@ read_when:
 - Notifications switch は `notifications.enabled` を control する。
 - Global concurrency number input は `daemon.global_concurrency` を control する。
 - Codex path input は `runner.codex_path` を control する。
-- Default model input は `runner.default_model` を control する。
+- Default model select は `runner.default_model` を control し、Codex frontier model のみを選択肢として表示する。
 - Default sandbox select は `runner.default_sandbox_mode` を control する。
 - Default approval policy select は `runner.default_approval_policy` を control する。
 - Worktree cleanup select は `worktree.default_cleanup_policy` を control する。
