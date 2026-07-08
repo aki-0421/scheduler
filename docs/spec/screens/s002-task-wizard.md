@@ -16,8 +16,8 @@ read_when:
 
 出口:
 
-- create または follow-up 成功時は `/tasks/<newTaskId>` に redirect する。
-- duplicate 成功時は複製された task の `/tasks/<newTaskId>` に redirect する。
+- create または follow-up 成功時は `/tasks?task=<newTaskId>` に redirect する。
+- duplicate 成功時は複製された task の `/tasks?task=<newTaskId>` に redirect する。
 - edit 成功時は dialog を閉じ、task detail を refresh する。
 - cancel は `/tasks` または task detail に戻るか edit dialog を閉じる。
 
@@ -113,7 +113,7 @@ read_when:
 - locked task を edit しようとした場合、unlock なしでは save できない。
 - `danger-full-access` に confirmation がない場合、save は blocked される。
 - valid cron schedule の場合、preview は next five runs を list する。
-- create が成功した場合、user は `/tasks/<newTaskId>` に遷移する。
+- create が成功した場合、user は `/tasks?task=<newTaskId>` に遷移する。
 - duplicate が成功した場合、lock state は unlocked で作成される。
 - edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
 

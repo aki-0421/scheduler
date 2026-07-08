@@ -28,7 +28,7 @@ task creation、editing、duplication は wizard で扱う。field は prompt、
 
 危険な full-filesystem access は task wizard で明示的な confirmation を必要とし、task list では warning badge として表示される。
 
-task detail は `/tasks/<taskId>` で開き、session history、prompt、settings、audit log を tab で表示する。session row は `/runs/<runId>` に遷移し、run detail は chat UI で prompt、assistant output、tool usage、daemon event を表示する。
+task detail は `/tasks?task=<taskId>` で開き、session history、prompt、settings、audit log を tab で表示する。session row は `/runs?run=<runId>` に遷移し、run detail は chat UI で prompt、assistant output、tool usage、daemon event を表示する。
 
 ## Tauri Commands
 

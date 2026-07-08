@@ -69,7 +69,7 @@ function RunRow({
 
   return (
     <Link
-      href={`/runs?run=${run.id}`}
+      href={`/runs?run=${encodeURIComponent(run.id)}`}
       data-state={isSelected ? "selected" : undefined}
       className="grid gap-3 border-b p-4 transition-colors duration-150 last:border-b-0 hover:bg-muted/50 data-[state=selected]:bg-accent data-[state=selected]:text-accent-foreground"
     >

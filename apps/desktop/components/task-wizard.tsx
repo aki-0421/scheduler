@@ -8,7 +8,6 @@ import {
   ChevronDown,
   FileText,
   FolderOpen,
-  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -151,7 +150,7 @@ const cleanupPolicyOptions = [
 const japaneseErrorMessages: Record<string, string> = {
   name: "タスク名は必須です。",
   prompt: "プロンプトは必須です。",
-  repoPath: "リポジトリ実行先にはリポジトリパスが必要です。",
+  repoPath: "リポジトリ実行先にはプロジェクトを選択してください。",
   onceDate: "有効な日付と時刻を選択してください。",
   onceTime: "有効な日付と時刻を選択してください。",
   timezone: "タイムゾーンは必須です。",
@@ -196,7 +195,7 @@ const errorFieldOrder = [
 const errorLabelByKey: Record<string, string> = {
   prompt: "プロンプト",
   name: "タスク名",
-  repoPath: "リポジトリパス",
+  repoPath: "プロジェクト",
   onceDate: "日付",
   onceTime: "時刻",
   cronPreview: "カスタム cron 式",
@@ -504,7 +503,7 @@ export function TaskWizard({
   );
   const projectOptions = useMemo<SelectOption<string>[]>(
     () => [
-      { value: "custom", label: "カスタムパス" },
+      { value: "none", label: "選択してください" },
       ...(projects.data ?? []).map((project) => ({
         value: project.id,
         label: project.name || project.path,
@@ -519,7 +518,6 @@ export function TaskWizard({
       project.id === draft.projectId,
   );
   const isRepoTarget = draft.targetMode !== "chat";
-  const repoTrusted = !isRepoTarget || Boolean(matchedProject?.trustedAt);
   const isDangerFullAccess = draft.sandboxMode === "danger-full-access";
   const canUpdateAnySchedule =
     draft.allowScheduleCli && draft.capabilities.includes("schedule:update-any");
@@ -580,8 +578,9 @@ export function TaskWizard({
   }
 
   function selectProject(value: string) {
-    if (value === "custom") {
-      update("projectId", "");
+    if (value === "none") {
+      setDraft((current) => ({ ...current, projectId: "", repoPath: "" }));
+      clearErrors("projectId", "repoPath", "targetMode");
       return;
     }
 
@@ -675,10 +674,29 @@ export function TaskWizard({
     try {
       const path = await ipcClient.projectPickFolder();
       if (path) {
-        update("repoPath", path);
+        trustProject.mutate(path, {
+          onSuccess: (project) => {
+            setDraft((current) => ({
+              ...current,
+              projectId: project.id,
+              repoPath: project.gitRoot ?? project.path,
+              baseRef: project.defaultBranch ?? current.baseRef,
+              targetMode: current.targetMode === "chat" ? "repo-local" : current.targetMode,
+            }));
+            clearErrors("projectId", "repoPath", "targetMode");
+            toast.success("プロジェクトを追加しました");
+          },
+          onError: (error) =>
+            toast.error("プロジェクトを追加できませんでした", {
+              description:
+                error instanceof Error
+                  ? error.message
+                  : "プロジェクトコマンドに失敗しました。",
+            }),
+        });
       }
     } catch (error) {
-      toast.error("リポジトリフォルダを選択できませんでした", {
+      toast.error("プロジェクトフォルダを選択できませんでした", {
         description:
           error instanceof Error ? error.message : "ダイアログコマンドに失敗しました。",
       });
@@ -811,37 +829,35 @@ export function TaskWizard({
               <SelectField
                 id="project"
                 label="プロジェクト"
-                value={draft.projectId || "custom"}
+                value={draft.projectId || "none"}
                 options={projectOptions}
                 onChange={selectProject}
-                description="信頼済みプロジェクトを使うか、手動でパスを入力します。"
+                description="登録済みプロジェクトを選ぶか、フォルダを選択して追加します。"
               />
               {isRepoTarget ? (
                 <div className="grid gap-4">
                   <Field
-                    label="リポジトリパス"
+                    label="プロジェクトパス"
                     htmlFor="repo-path"
                     error={errors.repoPath}
-                    description="ローカルの絶対パスを指定します。"
+                    description="パスはプロジェクト選択またはフォルダ選択から設定します。"
                   >
                     <div className="flex gap-2">
                       <Input
                         id="repo-path"
                         className="min-w-0"
                         value={draft.repoPath}
-                        onChange={(event) =>
-                          update("repoPath", event.currentTarget.value)
-                        }
-                        placeholder="/Users/alice/src/my-app"
+                        readOnly
+                        placeholder="プロジェクトを選択してください"
                       />
                       <Button
                         type="button"
                         variant="outline"
-                        disabled={isPickingRepo}
+                        disabled={isPickingRepo || trustProject.isPending}
                         onClick={() => void pickRepositoryFolder()}
                       >
                         <FolderOpen className="size-4" aria-hidden="true" />
-                        参照
+                        フォルダを選択
                       </Button>
                     </div>
                   </Field>
@@ -852,44 +868,11 @@ export function TaskWizard({
                       onChange={(event) => update("baseRef", event.currentTarget.value)}
                     />
                   </Field>
-                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-                    <div className="grid gap-1">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="size-4" aria-hidden="true" />
-                        <span className="text-sm font-medium">プロジェクト信頼</span>
-                        <Badge variant={repoTrusted ? "success" : "warning"}>
-                          {repoTrusted ? "信頼済み" : "未信頼"}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground text-pretty">
-                        {repoTrusted
-                          ? (matchedProject?.path ?? draft.repoPath)
-                          : "リポジトリスケジュールを保存する前に、このパスを信頼してください。"}
-                      </p>
+                  {matchedProject ? (
+                    <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                      {matchedProject.path}
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={!draft.repoPath || trustProject.isPending}
-                      onClick={() =>
-                        trustProject.mutate(draft.repoPath, {
-                          onSuccess: (project) => {
-                            update("projectId", project.id);
-                            toast.success("プロジェクトを信頼済みにしました");
-                          },
-                          onError: (error) =>
-                            toast.error("プロジェクトを信頼済みにできませんでした", {
-                              description:
-                                error instanceof Error
-                                  ? error.message
-                                  : "プロジェクトコマンドに失敗しました。",
-                            }),
-                        })
-                      }
-                    >
-                      信頼
-                    </Button>
-                  </div>
+                  ) : null}
                 </div>
               ) : null}
               {canModifyLocalChanges ? (

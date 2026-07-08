@@ -107,7 +107,7 @@ describe("TaskWizard cron validation", () => {
       screen.getByLabelText("ファイルシステムのフルアクセスのリスクを理解しています"),
     ).toBeInTheDocument();
     expect(screen.getByText("任意のスケジュールを更新できます")).toBeInTheDocument();
-    expect(screen.getByText("未信頼")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "フォルダを選択" })).toBeInTheDocument();
   });
 
   it("shows inline required-field errors from the one-screen composer", async () => {

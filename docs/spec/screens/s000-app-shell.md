@@ -19,7 +19,7 @@ read_when:
 
 - `/` は専用 dashboard を表示せず、`/projects` へ redirect する。
 - sidebar の `プロジェクト` は `/projects` へ遷移する。
-- sidebar の task item は `/tasks/<taskId>` へ遷移する。
+- sidebar の task item は `/tasks?task=<taskId>` へ遷移する。
 - sidebar の `アーカイブ済み` は `/tasks?view=archived` へ遷移する。
 - bottom toolbox の settings icon は `/settings` へ遷移する。
 

@@ -8,7 +8,7 @@ read_when:
 
 # S001 Tasks
 
-ルート: `/tasks`、`/tasks/<taskId>`、`/tasks?view=archived`
+ルート: `/tasks`、`/tasks?task=<taskId>`、`/tasks?view=archived`
 
 目的: sidebar から選択された scheduled Codex task の履歴と操作を inspect できるようにし、active sidebar から外れた task を archive として確認できるようにする。
 
@@ -27,10 +27,10 @@ read_when:
 レイアウト領域:
 
 - `/tasks?view=archived`: archived task list。completed one-shot、paused / stopped、deleted task を execution newest-first で表示する。
-- `/tasks/<taskId>`: task detail page。left / main column に task run history と tabbed content、right column に actions を置く。
+- `/tasks?task=<taskId>`: task detail page。left / main column に task run history と tabbed content、right column に actions を置く。
 - detail header: task name、status、lock state、target、next run。
 - tabs: `実行履歴`、`プロンプト`、`設定`、`監査ログ`。タスクに対してできる操作は tab ではなく right column action として表示する。
-- run history row は status、trigger、scheduled/start time、duration、result summary を表示し、押すと `/runs/<runId>` へ遷移する。
+- run history row は status、trigger、scheduled/start time、duration、result summary を表示し、押すと `/runs?run=<runId>` へ遷移する。
 - edit / duplicate flow は right column action から開始する。
 
 フィールドとコントロール:
@@ -71,9 +71,9 @@ read_when:
 
 受け入れ条件:
 
-- sidebar task item を押すと `/tasks/<taskId>` が開き、その task の session history が表示される。
+- sidebar task item を押すと `/tasks?task=<taskId>` が開き、その task の session history が表示される。
 - recurring task の session history には複数の run が newest-first で表示される。
-- session history row を押すと `/runs/<runId>` が開く。
+- session history row を押すと `/runs?run=<runId>` が開く。
 - archived list は completed one-shot と paused / stopped task を実行の新しい順に表示する。
 - `Run now` が成功した場合、app は scheduler data を invalidate し、`Run queued` toast を表示する。
 - locked task の edit / delete action は disabled で、unlock action が visible である。

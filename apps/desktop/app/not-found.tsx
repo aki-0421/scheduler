@@ -13,7 +13,7 @@ export default function NotFound() {
         </p>
         <div className="mt-2 flex justify-center">
           <Button asChild>
-            <Link href="/">今日へ戻る</Link>
+            <Link href="/projects">プロジェクトへ戻る</Link>
           </Button>
         </div>
       </div>

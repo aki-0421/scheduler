@@ -29,41 +29,48 @@ function NewTaskPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const prefillFromTask = searchParams.get("prefillFromTask") ?? undefined;
+  const duplicateFromTask = searchParams.get("duplicateFromTask") ?? undefined;
   const sourceRun = searchParams.get("sourceRun") ?? undefined;
-  const sourceTask = useTask(prefillFromTask);
+  const sourceTask = useTask(prefillFromTask ?? duplicateFromTask);
   const initialDraft = useMemo(() => {
     if (!sourceTask.data) {
       return undefined;
     }
 
     const draft = taskToDraft(sourceTask.data);
+    const duplicate = Boolean(duplicateFromTask);
     return {
       ...draft,
       id: undefined,
       slug: undefined,
-      name: `フォローアップ: ${sourceTask.data.name}`,
-      description: sourceRun ? `実行 ${sourceRun} のフォローアップ` : draft.description,
-      scheduleMode: "manual" as const,
+      name: duplicate ? `${sourceTask.data.name} のコピー` : `フォローアップ: ${sourceTask.data.name}`,
+      description: duplicate
+        ? draft.description
+        : sourceRun
+          ? `実行 ${sourceRun} のフォローアップ`
+          : draft.description,
+      scheduleMode: duplicate ? draft.scheduleMode : ("manual" as const),
       forcePaused: false,
+      locked: false,
     };
-  }, [sourceRun, sourceTask.data]);
+  }, [duplicateFromTask, sourceRun, sourceTask.data]);
 
   function handleSaved(task: TaskDto) {
-    router.push(`/tasks?task=${task.id}`);
+    router.push(`/tasks?task=${encodeURIComponent(task.id)}`);
   }
 
-  if (prefillFromTask && sourceTask.isLoading) {
+  if ((prefillFromTask || duplicateFromTask) && sourceTask.isLoading) {
     return <NewTaskLoading />;
   }
 
   return (
     <div className="grid gap-5">
       <PageHeader
-        title={prefillFromTask ? "フォローアップタスク" : "新規タスク"}
+        title={duplicateFromTask ? "タスクを複製" : prefillFromTask ? "フォローアップタスク" : "新規タスク"}
         description="作業内容、Codex の実行場所、スケジュールを設定します。"
       />
       <TaskWizard
-        key={prefillFromTask ?? "blank"}
+        key={prefillFromTask ?? duplicateFromTask ?? "blank"}
         initialDraft={initialDraft}
         onSaved={handleSaved}
         cancelHref="/tasks"

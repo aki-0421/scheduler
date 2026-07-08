@@ -1,7 +1,7 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import { LockKeyhole, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -41,8 +41,8 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
   const pause = usePauseTask();
   const resume = useResumeTask();
   const deleteTask = useDeleteTask();
-  const canPause = task.status === "active";
-  const canResume = task.status === "paused" || task.status === "completed";
+  const canPause = task.status === "active" && !task.locked;
+  const canResume = (task.status === "paused" || task.status === "completed") && !task.locked;
 
   function withToast<T>(promise: Promise<T>, success: string, failure: string) {
     promise
@@ -105,11 +105,23 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
   }
 
   function editTask() {
+    if (task.locked) {
+      toast.info("ロック済みタスクです", {
+        description: "編集するにはタスク詳細でロックを解除してください。",
+      });
+      return;
+    }
     closeMenu();
     onEdit?.(task);
   }
 
   function requestDelete() {
+    if (task.locked) {
+      toast.info("ロック済みタスクです", {
+        description: "削除するにはタスク詳細でロックを解除してください。",
+      });
+      return;
+    }
     closeMenu();
     setDeleteDialogOpen(true);
   }
@@ -180,9 +192,13 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
               aria-label={`${task.name}を一時停止`}
               disabled={pause.isPending}
               onClick={pauseTask}
-            >
-              <Pause className="size-4" aria-hidden="true" />
-              一時停止
+          >
+              {task.locked ? (
+                <LockKeyhole className="size-4" aria-hidden="true" />
+              ) : (
+                <Pause className="size-4" aria-hidden="true" />
+              )}
+              {task.locked ? "ロック済み" : "一時停止"}
             </Button>
           ) : (
             <Button
@@ -195,8 +211,12 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
               disabled={!canResume || resume.isPending}
               onClick={resumeTask}
             >
-              <RotateCcw className="size-4" aria-hidden="true" />
-              再開
+              {task.locked ? (
+                <LockKeyhole className="size-4" aria-hidden="true" />
+              ) : (
+                <RotateCcw className="size-4" aria-hidden="true" />
+              )}
+              {task.locked ? "ロック済み" : "再開"}
             </Button>
           )}
           <Button
@@ -206,6 +226,7 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
             className="w-full justify-start"
             role="menuitem"
             aria-label={`${task.name}を編集`}
+            disabled={task.locked}
             onClick={editTask}
           >
             <Pencil className="size-4" aria-hidden="true" />
@@ -218,6 +239,7 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
             className="w-full justify-start text-destructive hover:text-destructive"
             role="menuitem"
             aria-label={`${task.name}を削除`}
+            disabled={task.locked}
             onClick={requestDelete}
           >
             <Trash2 className="size-4" aria-hidden="true" />

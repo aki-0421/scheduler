@@ -8,7 +8,7 @@ read_when:
 
 # S003 Task Sessions
 
-ルート: `/runs`、`/runs/<runId>`
+ルート: `/runs`、`/runs?run=<runId>`
 
 目的: 1 回の task execution を session として inspect し、その実行での Codex の挙動、利用された tool、stdout / stderr / event log、artifact を確認できるようにする。global history list は補助的な triage surface として残す。
 
@@ -30,7 +30,7 @@ read_when:
 
 - status filter と task filter を持つ header。
 - count、preset button、list row を持つ run history section。
-- `/runs/<runId>` は session detail page として開く。
+- `/runs?run=<runId>` は session detail page として開く。
 - session detail header は task name、run status、trigger、scheduled / started time、parent task link を持つ。
 - primary content は chat UI。system / user prompt、assistant output、tool call、tool result、daemon event を時系列 bubble として表示する。
 - right or top action area は workspace / follow-up / cancel / retry / export logs を持つ。
@@ -78,7 +78,7 @@ read_when:
 
 - preset `Failed` の場合、failed run だけが表示される。
 - preset `Review` の場合、failed、timed-out、interrupted、findings、created-schedule run が表示される。
-- task detail の session history row を押すと `/runs/<runId>` が開く。
+- task detail の session history row を押すと `/runs?run=<runId>` が開く。
 - session detail はチャット UI で prompt、assistant output、tool usage、daemon event を確認できる。
 - active run が selected の場合、run が active status を離れるまで log が poll される。
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。

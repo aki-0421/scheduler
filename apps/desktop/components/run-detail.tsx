@@ -426,6 +426,50 @@ export function RunDetail({ run, task }: RunDetailProps) {
       </section>
 
       <DetailSection
+        title="チャット"
+        description="この実行で Codex に渡した指示、実行イベント、最終メッセージを時系列で表示します。"
+        icon={MessageSquare}
+      >
+        <ol className="grid gap-3" role="log" aria-label="タスクセッションのチャットログ">
+          <li className="flex justify-end">
+            <div className="max-w-[min(42rem,90%)] rounded-lg bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground">
+              <div className="mb-1 text-xs font-medium opacity-75">ユーザー指示</div>
+              <div className="whitespace-pre-wrap break-words">
+                {promptText || "この実行ではプロンプト本文を利用できません。"}
+              </div>
+            </div>
+          </li>
+          {eventLines.map((event) => (
+            <li key={event.id} className="flex justify-start">
+              <div className="max-w-[min(42rem,90%)] rounded-lg border bg-background px-4 py-3 text-sm leading-6">
+                <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+                  <Badge variant="outline">{formatReadableEnum(event.eventType)}</Badge>
+                  <span className="text-muted-foreground">tool / event</span>
+                </div>
+                <div className="whitespace-pre-wrap break-words">{event.message}</div>
+                <details className="mt-2 text-xs">
+                  <summary className="cursor-pointer text-muted-foreground">生イベント</summary>
+                  <pre className="mt-2 whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono leading-5">
+                    {event.raw}
+                  </pre>
+                </details>
+              </div>
+            </li>
+          ))}
+          <li className="flex justify-start">
+            <div className="max-w-[min(42rem,90%)] rounded-lg bg-muted px-4 py-3 text-sm leading-6">
+              <div className="mb-1 text-xs font-medium text-muted-foreground">
+                アシスタント
+              </div>
+              <div className="whitespace-pre-wrap break-words">
+                {outputText || "最終メッセージはまだ記録されていません。"}
+              </div>
+            </div>
+          </li>
+        </ol>
+      </DetailSection>
+
+      <DetailSection
         title="プロンプト"
         description="この実行がキューに入ったときにタスクで使われた指示です。"
         icon={FileText}
