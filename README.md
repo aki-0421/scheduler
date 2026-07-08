@@ -1,45 +1,46 @@
 # Codex Scheduler
 
-Codex Scheduler is a macOS-first desktop scaffold for scheduling local Codex CLI runs. The project follows the MVP plan in `spec/10-implementation-plan.md` and uses a Tauri v2 shell, a Next.js static frontend, and Rust crates for the scheduler daemon, session CLI, shared core, and Codex runner.
+Codex Scheduler は、ローカル Codex CLI 実行をスケジュールする macOS ファーストのデスクトップ scaffold です。このプロジェクトは `docs/spec/` の仕様に沿っており、Tauri v2 shell、Next.js static frontend、scheduler daemon、session CLI、共有 core、Codex runner の各 Rust crate で構成されています。
 
-## Specs
+## 仕様
 
-- `spec/00-overview.md` - product scope and MVP goals.
-- `spec/02-architecture.md` - Tauri, Next.js, daemon, CLI, IPC, and storage architecture.
-- `spec/10-implementation-plan.md` - milestone plan and recommended packages.
+- `docs/spec/index.md` - 現在の実装ベース仕様セットの入口。
+- `docs/spec/product-scope.md` - プロダクトの目的、ユーザー価値、MVP 境界。
+- `docs/spec/architecture.md` - Tauri、Next.js、daemon、CLI、IPC、永続化のアーキテクチャ。
+- `docs/spec/scheduling-and-execution.md` - スケジュール計算、daemon tick、runner 挙動、ログ、retry、cleanup。
 
-## Development
+## 開発
 
-Install JavaScript dependencies:
+JavaScript 依存関係をインストールします。
 
 ```bash
 pnpm install
 ```
 
-Run the desktop app during development:
+開発中にデスクトップアプリを起動します。
 
 ```bash
 pnpm --filter desktop tauri dev
 ```
 
-The desktop frontend uses `127.0.0.1:4317` in development so Tauri does not attach to an unrelated Next.js server on the default port.
+デスクトップ frontend は開発時に `127.0.0.1:4317` を使います。これにより、Tauri が既定ポート上の無関係な Next.js server に接続することを避けます。
 
-The Tauri config bundles `codex-schedulerd` and `codex-schedule` as sidecars. `pnpm --filter desktop tauri dev` and Tauri builds run `pnpm sidecars:prepare` first, which builds those Rust binaries and copies them into `apps/desktop/src-tauri/binaries/` with Tauri's target-triple suffix.
+Tauri config は `codex-schedulerd` と `codex-schedule` を sidecar として bundle します。`pnpm --filter desktop tauri dev` と Tauri build は先に `pnpm sidecars:prepare` を実行し、これらの Rust binary を build して Tauri の target-triple suffix 付きで `apps/desktop/src-tauri/binaries/` にコピーします。
 
-Run Rust tests:
+Rust test を実行します。
 
 ```bash
 cargo test --workspace
 ```
 
-Run workspace lint and package tests:
+workspace lint と package test を実行します。
 
 ```bash
 pnpm lint
 pnpm test
 ```
 
-Build the static frontend:
+static frontend を build します。
 
 ```bash
 pnpm --filter desktop build

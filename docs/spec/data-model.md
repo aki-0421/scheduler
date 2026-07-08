@@ -1,73 +1,73 @@
 ---
-title: Data Model
-description: Defines the current SQLite entities, DTO contracts, enums, settings, and retention records for Codex Scheduler.
+title: データモデル
+description: Codex Scheduler の現在の SQLite entity、DTO contract、enum、setting、retention record を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing migrations, scheduler-core models, IPC DTOs, frontend schemas, settings, or retention behavior.
-  - Debugging persisted task, run, project, audit, or token state.
+  - migration、scheduler-core model、IPC DTO、frontend schema、setting、retention behavior を変更するとき。
+  - 永続化された task、run、project、audit、token state を debug するとき。
 ---
 
-# Data Model
+# データモデル
 
-The schema version is `1`. SQLite stores textual enum values with database constraints, and Rust/TypeScript expose the same values through strongly validated DTOs and Zod schemas.
+schema version は `1` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
 
-## Primary Entities
+## 主要エンティティ
 
-`projects` records local folders or Git repositories that the scheduler may use. A project includes a stable ID, display name, canonical path, `git` or `folder` kind, optional Git root, optional remote URL, optional default branch, trust timestamp, and timestamps.
+`projects` は scheduler が使える local folder または Git repository を記録する。project は stable ID、display name、canonical path、`git` または `folder` kind、任意の Git root、任意の remote URL、任意の default branch、trust timestamp、timestamp を含む。
 
-`tasks` records scheduled work. A task stores identity, schedule kind and state, prompt, target, Codex configuration, scheduler CLI permissions, missed/overlap/retry/runtime/cleanup policies, creator metadata, and soft-delete metadata.
+`tasks` は scheduled work を記録する。task は identity、schedule kind and state、prompt、target、Codex configuration、scheduler CLI permission、missed / overlap / retry / runtime / cleanup policy、creator metadata、soft-delete metadata を保存する。
 
-`runs` records one execution attempt. A run stores task ID, trigger type, scheduled time, attempt number, status, queue/start/end timestamps, duration, target mode, workspace/worktree/branch/base information, Git snapshots, command metadata, process metadata, log paths, output tails, summary, findings count, created schedule count, and timestamps.
+`runs` は 1 回の execution attempt を記録する。run は task ID、trigger type、scheduled time、attempt number、status、queue / start / end timestamp、duration、target mode、workspace / worktree / branch / base information、Git snapshot、command metadata、process metadata、log path、output tail、summary、findings count、created schedule count、timestamp を保存する。
 
-`run_events` records structured progress events from the daemon, Codex JSONL stdout, stdout, and stderr. Each event is ordered by `event_index` within a run.
+`run_events` は daemon、Codex JSONL stdout、stdout、stderr から得た structured progress event を記録する。各 event は run 内の `event_index` で順序付けられる。
 
-`run_artifacts` records files, diffs, patches, logs, last messages, and worktrees produced or referenced by a run.
+`run_artifacts` は run が生成または参照した file、diff、patch、log、last message、worktree を記録する。
 
-`task_audit_events` records task and project mutations with actor type, action, optional before/after JSON, reason, and timestamp.
+`task_audit_events` は actor type、action、任意の before / after JSON、reason、timestamp とともに task / project mutation を記録する。
 
-`schedule_capability_tokens` records hashed run-scoped tokens that allow scheduled Codex sessions to create or update schedules within a bounded capability set and create count.
+`schedule_capability_tokens` は、scheduled Codex session が bounded capability set と create count の範囲内で schedule を作成または更新できるようにする hashed run-scoped token を記録する。
 
-`settings` stores JSON values by key.
+`settings` は key ごとに JSON value を保存する。
 
-## Task Contract
+## Task contract
 
-Task DTOs use camelCase fields:
+Task DTO は camelCase field を使う。
 
 - `id`, `slug`, `name`, `description`, `status`
-- `kind`: `manual`, `once`, or `cron`
+- `kind`: `manual`, `once`, `cron`
 - `cronExpr`, `runAt`, `timezone`, `nextRunAt`
-- `target`: target mode, project ID, repository path, and base ref
-- `codex`: model, reasoning effort, sandbox mode, approval policy
-- `prompt`: prompt body and scheduler-instruction injection flag
-- `policies`: schedule CLI access, missed-run policy, overlap policy, runtime limit, create limit, capability list, retry settings, and cleanup settings
+- `target`: target mode、project ID、repository path、base ref
+- `codex`: model、reasoning effort、sandbox mode、approval policy
+- `prompt`: prompt body、scheduler-instruction injection flag
+- `policies`: schedule CLI access、missed-run policy、overlap policy、runtime limit、create limit、capability list、retry setting、cleanup setting
 
-When a DTO becomes a stored task, empty IDs are replaced with generated task IDs, prompt hashes are computed from the prompt body, and omitted policy fields receive implementation defaults:
+DTO が stored task になるとき、空の ID は generated task ID に置き換えられ、prompt hash は prompt body から計算され、省略された policy field は implementation default を受け取る。
 
 - schedule capabilities: `schedule:create`, `schedule:update-current`, `schedule:list`
-- max created schedules per run: `5`, clamped to `1..=100`
+- max created schedules per run: `5`、`1..=100` に clamp
 - missed window: `7` days
 - retries: `0`
 - retry backoff: `300` seconds
 - cleanup policy: `keep`
 
-## Run Contract
+## Run contract
 
-Run DTOs expose the run lifecycle and inspection data used by the UI:
+Run DTO は UI が使う run lifecycle と inspection data を公開する。
 
-- trigger, schedule, attempt, status, status reason
-- queue/start/end timestamps and duration
-- target/workspace/worktree/branch/base data
-- process exit code, signal, and Codex session ID
-- stdout/stderr/events/last-message paths
-- stdout/stderr tails and result summary
-- findings and created-schedule counters
-- artifact list when loading a single run
+- trigger、schedule、attempt、status、status reason
+- queue / start / end timestamp と duration
+- target / workspace / worktree / branch / base data
+- process exit code、signal、Codex session ID
+- stdout / stderr / events / last-message path
+- stdout / stderr tail と result summary
+- findings と created-schedule counter
+- single run を load するときの artifact list
 
-Run history is sortable by start, schedule, or queue timestamps. Active statuses are `queued`, `starting`, and `running`; terminal statuses include `succeeded`, `failed`, `canceled`, `skipped`, `interrupted`, and `timed_out`.
+Run history は start、schedule、queue timestamp で sort できる。active status は `queued`、`starting`、`running` であり、terminal status には `succeeded`、`failed`、`canceled`、`skipped`、`interrupted`、`timed_out` が含まれる。
 
-## Enums
+## Enum
 
-The shared enum vocabulary is:
+共有 enum vocabulary は次のとおり。
 
 - Task kinds: `manual`, `once`, `cron`
 - Task statuses: `active`, `paused`, `completed`, `deleted`
@@ -87,7 +87,7 @@ The shared enum vocabulary is:
 
 ## Settings
 
-The Rust settings module defines these persisted keys:
+Rust settings module は次の persisted key を定義する。
 
 - `scheduler.enabled`
 - `runner.codex_path`
@@ -96,15 +96,14 @@ The Rust settings module defines these persisted keys:
 - `retention.failed_run_logs_days`
 - `retention.capability_token_delete_after_hours`
 
-The migration seeds retention settings and `worktree.default_cleanup_policy`. The frontend also understands defaults for `daemon.global_concurrency`, `runner.default_model`, `runner.default_sandbox_mode`, `runner.default_approval_policy`, `notifications.enabled`, and `worktree.default_cleanup_policy`.
+migration は retention setting と `worktree.default_cleanup_policy` を seed する。frontend はさらに `daemon.global_concurrency`、`runner.default_model`、`runner.default_sandbox_mode`、`runner.default_approval_policy`、`notifications.enabled`、`worktree.default_cleanup_policy` の default を理解する。
 
-## Retention Defaults
+## Retention default
 
-The implemented retention defaults are:
+実装済みの retention default は次のとおり。
 
-- Run history: `90` days.
-- Succeeded run logs: `30` days.
-- Failed run logs: `180` days.
-- Expired capability token deletion: `24` hours.
-- Worktree cleanup default: `keep`.
-
+- Run history: `90` days。
+- Succeeded run logs: `30` days。
+- Failed run logs: `180` days。
+- Expired capability token deletion: `24` hours。
+- Worktree cleanup default: `keep`。

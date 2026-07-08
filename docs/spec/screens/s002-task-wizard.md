@@ -1,113 +1,112 @@
 ---
-title: S002 Task Wizard Screen
-description: Defines the task creation, follow-up, and edit wizard for prompt, target, schedule, execution, safety, and scheduler permissions.
+title: S002 Task Wizard
+description: Task Wizard の create、follow-up、edit flow、field、validation、safety requirement を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing task creation, task editing, follow-up task prefill, wizard validation, cron preview, target trust, or advanced task policies.
-  - Verifying task wizard fields, defaults, safety confirmations, or save behavior.
+  - task creation、task editing、follow-up task prefill、schedule control、target selection、advanced policy、wizard validation を変更するとき。
 ---
 
 # S002 Task Wizard
 
-Routes and surfaces: `/tasks/new`, `/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`, and edit dialog on `/tasks`.
+ルートと surface: `/tasks/new`、`/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`、`/tasks` 上の edit dialog。
 
-Purpose: Creates, follows up on, or edits scheduled Codex work with explicit prompt, target, schedule, execution, permission, retry, and cleanup controls.
+目的: 明示的な prompt、target、schedule、execution、permission、retry、cleanup control を持つ scheduled Codex work を作成、follow up、または編集する。
 
-Entry points: `New task`, follow-up action from run detail, and task edit action.
+入口: `New task`、run detail からの follow-up action、task edit action。
 
-Exit points:
+出口:
 
-- Successful create or follow-up redirects to `/tasks?task=<newTaskId>`.
-- Successful edit closes the dialog.
-- Cancel returns to `/tasks` or closes the edit dialog.
+- create または follow-up 成功時は `/tasks?task=<newTaskId>` に redirect する。
+- edit 成功時は dialog を閉じる。
+- cancel は `/tasks` に戻るか edit dialog を閉じる。
 
-Data dependencies:
+データ依存:
 
-- `useTask(prefillFromTask)` for follow-up prefill.
-- `useProjects()` for trusted project selection.
-- `useTrustProject()` for inline project trust.
-- `useCreateTask()` and `useUpdateTask()` for save.
-- `ipcClient.projectPickFolder()` for folder picker.
-- `ipcClient.promptImportFile()` for prompt import.
-- `getCronPreview()` and timezone helpers for schedule preview and validation.
+- follow-up prefill には `useTask(prefillFromTask)` を使う。
+- trusted project selection には `useProjects()` を使う。
+- inline project trust には `useTrustProject()` を使う。
+- save には `useCreateTask()` と `useUpdateTask()` を使う。
+- folder picker には `ipcClient.projectPickFolder()` を使う。
+- prompt import には `ipcClient.promptImportFile()` を使う。
+- schedule preview と validation には `getCronPreview()` と timezone helper を使う。
 
-Layout regions:
+レイアウト領域:
 
-- Page or dialog header.
-- Card header with wizard purpose copy.
-- Error summary alert when validation fails.
-- Main prompt and identity column.
-- Target and schedule side column.
-- Advanced settings details panel.
-- Footer actions for cancel, save paused, and save active.
+- page または dialog header。
+- wizard purpose copy を持つ card header。
+- validation failure 時の error summary alert。
+- main prompt and identity column。
+- target and schedule side column。
+- advanced settings details panel。
+- cancel、save paused、save active の footer action。
 
-Fields and controls:
+フィールドとコントロール:
 
-- Prompt textarea, import prompt button, task name, optional description.
-- Target mode: chat workspace, existing repository, or fresh worktree.
-- Project selector: trusted project or custom path.
-- Repository path, browse button, base ref, and inline trust button for repository targets.
-- Schedule selector: manual, once, hourly, daily, weekdays, weekly, or custom cron.
-- Once date and time, preset time, weekly day, custom 5-field cron, timezone, and next-five-runs preview.
-- Advanced settings: Codex path display, model, reasoning effort, sandbox, approval policy, max runtime, retries, overlap, missed runs, cleanup, schedule CLI switch, scheduler instruction switch, capability checkboxes, max created schedules, and start paused switch.
-- Full filesystem access confirmation checkbox appears only for `danger-full-access`.
+- prompt textarea、import prompt button、task name、任意の description。
+- target mode: chat workspace、existing repository、fresh worktree。
+- project selector: trusted project または custom path。
+- repository path、browse button、base ref、repository target 向け inline trust button。
+- schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
+- once date and time、preset time、weekly day、custom 5-field cron、timezone、next-five-runs preview。
+- advanced settings: Codex path display、model、reasoning effort、sandbox、approval policy、max runtime、retries、overlap、missed runs、cleanup、schedule CLI switch、scheduler instruction switch、capability checkbox、max created schedules、start paused switch。
+- full filesystem access confirmation checkbox は `danger-full-access` の場合にのみ表示される。
 
-Defaults:
+既定値:
 
-- Default cron expression is `0 9 * * 1-5`, inferred as weekdays at 09:00.
-- Default timezone is the browser-resolved timezone or `Asia/Tokyo`.
-- Default model is `gpt-5-codex`.
-- Default reasoning effort is `default`.
-- Default sandbox is `read-only`.
-- Default approval policy is `never`.
-- Default max runtime is `7200` seconds.
-- Default missed policy is `latest_within_window`.
-- Default overlap policy is `skip`.
-- Default cleanup is `keep`.
-- Schedule CLI is allowed by default with create, update-current, and list capabilities.
+- default cron expression は `0 9 * * 1-5` で、weekdays at 09:00 として推論される。
+- default timezone は browser-resolved timezone または `Asia/Tokyo`。
+- default model は `gpt-5-codex`。
+- default reasoning effort は `default`。
+- default sandbox は `read-only`。
+- default approval policy は `never`。
+- default max runtime は `7200` seconds。
+- default missed policy は `latest_within_window`。
+- default overlap policy は `skip`。
+- default cleanup は `keep`。
+- Schedule CLI は create、update-current、list capability 付きで default allowed。
 
-Validation and errors:
+バリデーションとエラー:
 
-- Required: prompt, task name, timezone, model, reasoning effort.
-- Repository path is required for repository targets.
-- Once schedules require valid date and time for the selected timezone.
-- Custom cron must be a valid 5-field expression; seconds are rejected.
-- Max runtime must be at least 60 seconds.
-- Retries cannot be negative.
-- Max created schedules must be 1 through 100.
-- Full filesystem access requires explicit confirmation.
-- Validation failure shows a destructive summary with clickable field links and focuses the first error.
+- required: prompt、task name、timezone、model、reasoning effort。
+- repository target には repository path が必要。
+- once schedule には selected timezone に対して valid な date and time が必要。
+- custom cron は valid な 5-field expression である必要がある。seconds は rejected。
+- max runtime は少なくとも 60 seconds。
+- retries は negative にできない。
+- max created schedules は 1 through 100。
+- full filesystem access には explicit confirmation が必要。
+- validation failure は clickable field link を含む destructive summary を表示し、first error に focus する。
 
-States:
+状態:
 
-- Follow-up prefill loading shows skeleton content.
-- Repository trust state shows `Trusted` or `Not trusted`.
-- Existing repository plus workspace-write shows a warning that local changes can be modified.
-- Cron preview shows next five runs when valid, once preview for once schedules, manual guidance for manual tasks, or fix-schedule guidance when invalid.
-- Advanced panel opens automatically when validation errors belong to advanced fields.
+- follow-up prefill loading は skeleton content を表示する。
+- repository trust state は `Trusted` または `Not trusted` を表示する。
+- existing repository かつ workspace-write の場合、local change が変更され得る warning を表示する。
+- cron preview は valid な場合に next five runs、once schedule の場合に once preview、manual task の場合に manual guidance、invalid な場合に fix-schedule guidance を表示する。
+- advanced field に validation error がある場合、advanced panel は自動で開く。
 
-Accessibility:
+アクセシビリティ:
 
-- Field errors are associated through field components or `aria-invalid`.
-- Error summary buttons scroll and focus target fields.
-- Switches and checkboxes include labels and descriptions.
-- Dangerous access confirmation includes an inline field-level error.
+- field error は field component または `aria-invalid` で関連付けられる。
+- error summary button は target field へ scroll and focus する。
+- switch と checkbox は label と description を含む。
+- dangerous access confirmation は inline field-level error を含む。
 
-Security and safety:
+セキュリティと安全性:
 
-- Repository tasks surface trust before save.
-- `danger-full-access` is not just a dropdown value; it opens a warning and required confirmation.
-- Schedule CLI capabilities are explicit and capped by `maxCreatedSchedulesPerRun`.
+- repository task は save 前に trust を surface する。
+- `danger-full-access` は単なる dropdown value ではない。warning と required confirmation を開く。
+- Schedule CLI capability は explicit であり、`maxCreatedSchedulesPerRun` によって capped される。
 
-Acceptance criteria:
+受け入れ条件:
 
-- Given an empty prompt or name, saving shows an error summary and focuses the first invalid field.
-- Given a repository target without a path, saving is blocked.
-- Given `danger-full-access` without confirmation, saving is blocked.
-- Given a valid cron schedule, the preview lists the next five runs.
-- Given successful create, the user lands on the created task detail.
-- Given successful edit, the edit dialog closes and task detail data refreshes.
+- prompt または name が empty の場合、save は error summary を表示し、最初の invalid field に focus する。
+- repository target に path がない場合、save は blocked される。
+- `danger-full-access` に confirmation がない場合、save は blocked される。
+- valid cron schedule の場合、preview は next five runs を list する。
+- create が成功した場合、user は作成された task detail に遷移する。
+- edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
 
-Known gaps:
+既知の gap:
 
-- The UI uses explicit schedule controls and cron; natural-language schedule parsing is not implemented.
+- UI は explicit schedule control と cron を使う。natural-language schedule parsing は実装されていない。

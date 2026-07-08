@@ -1,21 +1,21 @@
 ---
-title: Interfaces
-description: Defines the implemented desktop UI, Tauri command, daemon JSON-RPC, and codex-schedule CLI interfaces.
+title: インターフェース
+description: 実装済み desktop UI、Tauri command、daemon JSON-RPC、codex-schedule CLI interface を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing UI pages, IPC schemas, Tauri commands, daemon RPC methods, or codex-schedule behavior.
-  - Writing automation that talks to Codex Scheduler.
+  - UI page、IPC schema、Tauri command、daemon RPC method、codex-schedule behavior を変更するとき。
+  - Codex Scheduler と通信する automation を書くとき。
 ---
 
-# Interfaces
+# インターフェース
 
-Codex Scheduler has three public interface layers: the desktop UI, the local daemon JSON-RPC API, and the `codex-schedule` CLI. The Tauri command layer connects the UI to daemon RPC.
+Codex Scheduler には 3 つの public interface layer がある。desktop UI、local daemon JSON-RPC API、`codex-schedule` CLI である。Tauri command layer は UI を daemon RPC に接続する。
 
 ## Desktop UI
 
-The frontend uses typed IPC helpers and Zod schemas before accepting daemon data.
+frontend は daemon data を受け入れる前に typed IPC helper と Zod schema を使う。
 
-Implemented navigation:
+実装済み navigation:
 
 - `Today`
 - `Tasks`
@@ -23,13 +23,13 @@ Implemented navigation:
 - `Projects`
 - `Settings`
 
-Task creation and editing are handled by a wizard with fields for prompt, name, description, schedule, target, repository path, base ref, model, reasoning effort, sandbox, approval policy, schedule CLI permissions, max runtime, retry count, missed-run policy, overlap policy, and cleanup policy. Cron previews are computed in the frontend for immediate user feedback.
+task creation と editing は wizard で扱う。field は prompt、name、description、schedule、target、repository path、base ref、model、reasoning effort、sandbox、approval policy、schedule CLI permission、max runtime、retry count、missed-run policy、overlap policy、cleanup policy を含む。cron preview は immediate user feedback のため frontend で計算される。
 
-Dangerous full-filesystem access requires explicit confirmation in the task wizard and is shown as a warning badge in task lists.
+危険な full-filesystem access は task wizard で明示的な confirmation を必要とし、task list では warning badge として表示される。
 
 ## Tauri Commands
 
-The desktop backend exposes these commands to the frontend:
+desktop backend は次の command を frontend に公開する。
 
 - Daemon: `daemon_health`, `daemon_diagnostics`, `daemon_tick_now`, `diagnostics_export`
 - Tasks: `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`, `task_pause`, `task_resume`, `task_run_now`, `task_audit_list`
@@ -38,13 +38,13 @@ The desktop backend exposes these commands to the frontend:
 - Settings: `settings_get`, `settings_set`
 - Utilities: `prompt_import_file`, `open_path`
 
-Most commands proxy to daemon JSON-RPC. File import/export and path opening are implemented in the Tauri backend because they require desktop APIs or local path policy.
+ほとんどの command は daemon JSON-RPC に proxy する。file import / export と path opening は desktop API または local path policy を必要とするため、Tauri backend で実装される。
 
 ## Daemon JSON-RPC
 
-The daemon accepts newline-delimited JSON-RPC 2.0 over a Unix domain socket.
+daemon は Unix domain socket 上で newline-delimited JSON-RPC 2.0 を受け入れる。
 
-Implemented method names:
+実装済み method name:
 
 - `daemon.health`
 - `daemon.diagnostics`
@@ -68,13 +68,13 @@ Implemented method names:
 - `settings.get`
 - `settings.set`
 
-RPC error codes use standard JSON-RPC parse/request/method/params/internal values plus scheduler-specific codes for task not found, run not found, validation failure, permission denial, conflict, unavailable, and canceled.
+RPC error code は standard JSON-RPC parse / request / method / params / internal value と、task not found、run not found、validation failure、permission denial、conflict、unavailable、canceled の scheduler-specific code を使う。
 
 ## CLI
 
-`codex-schedule` is a non-interactive CLI for terminal users and scheduled Codex sessions.
+`codex-schedule` は terminal user と scheduled Codex session のための non-interactive CLI である。
 
-Implemented subcommands:
+実装済み subcommand:
 
 - `create`
 - `update`
@@ -90,9 +90,9 @@ Implemented subcommands:
 - `validate-cron`
 - `doctor`
 
-Global options include `--json`, `--data-dir`, `--db`, `--socket`, and `--allow-direct-db`.
+global option には `--json`、`--data-dir`、`--db`、`--socket`、`--allow-direct-db` が含まれる。
 
-Task field flags include:
+task field flag には次が含まれる。
 
 - Identity and prompt: `--name`, `--description`, `--prompt`, `--prompt-file`
 - Schedule: `--at`, `--cron`, `--timezone`, `--manual`
@@ -101,17 +101,17 @@ Task field flags include:
 - Scheduler permissions and policy: `--allow-schedule-cli`, `--paused`, `--max-runtime-sec`, `--max-created-schedules`, `--missed-policy`, `--overlap-policy`
 - Update clears: `--clear-run-at`, `--clear-cron`, `--clear-description`, `--clear-base-ref`, `--clear-model`, `--clear-reasoning-effort`
 
-`--json` returns machine-readable command results. Human output remains concise and terminal-oriented.
+`--json` は machine-readable command result を返す。human output は concise で terminal-oriented のままにする。
 
 ## CLI Direct-Database Fallback
 
-Read-style CLI actions can fall back to SQLite when the daemon is unavailable. Writes require the daemon unless the user explicitly opts into direct DB access through `--allow-direct-db` or the direct DB environment flag.
+read-style CLI action は daemon が unavailable のとき SQLite に fallback できる。write は、ユーザーが `--allow-direct-db` または direct DB environment flag で明示的に direct DB access に opt in しない限り daemon を必要とする。
 
-Scheduled-run writes cannot use direct DB fallback. A scheduled Codex session must have a token and reach the daemon so capability checks and audit behavior remain centralized.
+scheduled-run write は direct DB fallback を使えない。scheduled Codex session は token を持ち、daemon に到達する必要がある。これにより capability check と audit behavior を centralized に保つ。
 
 ## Scheduled-Run CLI Authorization
 
-Scheduled Codex sessions use:
+scheduled Codex session は次を使う。
 
 - `CODEX_SCHEDULER=1`
 - `CODEX_SCHEDULER_CURRENT_TASK_ID`
@@ -119,5 +119,4 @@ Scheduled Codex sessions use:
 - `CODEX_SCHEDULER_RUN_TOKEN`
 - `CODEX_SCHEDULER_SOCKET`
 
-Token-backed sessions can only perform actions allowed by their capability list and create-count limit. Project trust changes and settings writes are denied for scheduled sessions.
-
+token-backed session は capability list と create-count limit で許可された action だけを実行できる。project trust change と settings write は scheduled session では denied される。

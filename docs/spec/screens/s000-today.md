@@ -1,66 +1,65 @@
 ---
-title: S000 Today Screen
-description: Defines the Today dashboard screen for scheduler health, upcoming work, recent activity, and scheduler operations.
+title: S000 Today
+description: Today screen の health summary、upcoming run、recent activity、scheduler operation requirement を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing the Today dashboard, scheduler health summary, upcoming runs, recent activity, or Today operations.
-  - Verifying dashboard behavior for scheduler status, Codex CLI readiness, failures, or review counts.
+  - Today page、scheduler health summary、upcoming run、recent activity、global pause、diagnostics entry を変更するとき。
 ---
 
 # S000 Today
 
-Route: `/`
+ルート: `/`
 
-Purpose: Gives users a compact operating view of scheduler health, queued work, recent failures, review load, Codex CLI readiness, and maintenance actions.
+目的: scheduler health、queued work、recent failure、review load、Codex CLI readiness、maintenance action を compact な operation view としてユーザーに提供する。
 
-Entry points: default app route and `Today` navigation item.
+入口: default app route と `Today` navigation item。
 
-Exit points: `View tasks`, upcoming run rows, `View runs`, recent activity rows, `Open diagnostics`, and operation buttons.
+出口: `View tasks`、upcoming run row、`View runs`、recent activity row、`Open diagnostics`、operation button。
 
-Data dependencies:
+データ依存:
 
-- `useTasks()` for active task queue, next run sorting, and task names.
-- `useRuns()` for running count, failed-last-day count, needs-review count, and recent activity.
-- `useHealth()` every 5 seconds for daemon version, scheduler enabled state, and schema health.
-- `useDaemonDiagnostics()` every 15 seconds for Codex CLI readiness.
-- `useSettings()` for scheduler enabled and Codex path fallback.
-- `useDaemonTickNow()` and `useSetSetting()` for operations.
+- active task queue、next run sorting、task name には `useTasks()` を使う。
+- running count、failed-last-day count、needs-review count、recent activity には `useRuns()` を使う。
+- daemon version、scheduler enabled state、schema health には 5 秒ごとの `useHealth()` を使う。
+- Codex CLI readiness には 15 秒ごとの `useDaemonDiagnostics()` を使う。
+- scheduler enabled と Codex path fallback には `useSettings()` を使う。
+- operation には `useDaemonTickNow()` と `useSetSetting()` を使う。
 
-Layout regions:
+レイアウト領域:
 
-- Page header with title `Today` and next-run-oriented description.
-- Summary chips for scheduler, running now, failed today, needs review, and Codex CLI.
-- Upcoming runs list ordered by `nextRunAt`.
-- Recent activity list ordered by start or scheduled time.
-- Scheduler operations section with due-run check, pause schedules, and diagnostics entry.
+- title `Today` と next-run-oriented description を持つ page header。
+- scheduler、running now、failed today、needs review、Codex CLI の summary chip。
+- `nextRunAt` 順の upcoming runs list。
+- start time または scheduled time 順の recent activity list。
+- due-run check、pause schedules、diagnostics entry を持つ scheduler operations section。
 
-Fields and controls:
+フィールドとコントロール:
 
-- `Check due runs` calls the daemon tick command and shows success or error toast.
-- `Pause schedules` sets `scheduler.enabled` to `false` and shows success or error toast.
-- `Open diagnostics` currently links to `/runs`.
+- `Check due runs` は daemon tick command を呼び出し、success または error toast を表示する。
+- `Pause schedules` は `scheduler.enabled` を `false` に設定し、success または error toast を表示する。
+- `Open diagnostics` は現在 `/runs` に link する。
 
-States:
+状態:
 
-- Empty tasks: show `No tasks yet` with create-first-task action.
-- Tasks without next run: show `No upcoming runs` with open-tasks action.
-- Empty runs: show `No runs yet` with open-tasks action.
-- Codex CLI status is `Ready`, `Missing`, `Not checked`, or `Unavailable`.
-- Scheduler status is `On` or `Paused`.
+- Empty tasks: `No tasks yet` と create-first-task action を表示する。
+- Tasks without next run: `No upcoming runs` と open-tasks action を表示する。
+- Empty runs: `No runs yet` と open-tasks action を表示する。
+- Codex CLI status は `Ready`、`Missing`、`Not checked`、`Unavailable`。
+- Scheduler status は `On` または `Paused`。
 
-Security and safety:
+セキュリティと安全性:
 
-- Global pause is visible as an operation, not hidden in settings.
-- Failed and review counts must not rely on color alone; labels and numeric values are always visible.
+- global pause は settings に隠さず operation として visible にする。
+- failed count と review count は color だけに依存してはならない。label と numeric value を常に visible にする。
 
-Acceptance criteria:
+受け入れ条件:
 
-- Given at least one active task with `nextRunAt`, the earliest task appears first in Upcoming runs.
-- Given a failed or timed-out run within the last 24 hours, Failed today increments.
-- Given a run with failure, timeout, findings, or created schedules, Needs review increments.
-- Given the daemon tick command fails, the user sees a failure toast with available error detail.
+- `nextRunAt` を持つ active task が 1 つ以上ある場合、earliest task が Upcoming runs の先頭に表示される。
+- 過去 24 時間以内に failed または timed-out run がある場合、Failed today が増える。
+- failure、timeout、finding、created schedule を持つ run がある場合、Needs review が増える。
+- daemon tick command が失敗した場合、利用可能な error detail を含む failure toast が表示される。
 
-Known gaps:
+既知の gap:
 
-- `Open diagnostics` routes to Runs rather than a dedicated diagnostics screen.
-- Pause schedules has no matching resume action on Today.
+- `Open diagnostics` は専用 diagnostics screen ではなく Runs に route する。
+- Today の Pause schedules には対応する resume action がない。

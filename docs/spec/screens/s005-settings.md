@@ -1,87 +1,86 @@
 ---
-title: S005 Settings Screen
-description: Defines the Settings screen for scheduler switches, execution defaults, permission defaults, diagnostics, local paths, and schema visibility.
+title: S005 Settings
+description: Settings screen の global scheduler、notification、execution default、permission default、diagnostics control を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing settings fields, default execution configuration, permission defaults, diagnostics export, or settings save behavior.
-  - Verifying scheduler settings, diagnostics export, schema display, or settings error handling.
+  - Settings page、settings key、scheduler default、notification default、diagnostics export、schema display を変更するとき。
 ---
 
 # S005 Settings
 
-Route: `/settings`
+ルート: `/settings`
 
-Purpose: Configures global scheduler behavior, desktop notifications, Codex execution defaults, permission defaults, local diagnostics, and schema visibility.
+目的: global scheduler behavior、desktop notification、Codex execution default、permission default、local diagnostics、schema visibility を設定する。
 
-Entry points: `Settings` navigation item.
+入口: `Settings` navigation item。
 
-Exit points: save settings action and diagnostics export.
+出口: save settings action と diagnostics export。
 
-Data dependencies:
+データ依存:
 
-- `useSettings()` with frontend defaults for the settings form.
-- `useHealth()` for schema version.
-- `useSetSetting()` for saving each setting.
-- `ipcClient.diagnosticsExport()` for support bundle export.
+- settings form には frontend default 付きの `useSettings()` を使う。
+- schema version には `useHealth()` を使う。
+- 各 setting の保存には `useSetSetting()` を使う。
+- support bundle export には `ipcClient.diagnosticsExport()` を使う。
 
-Layout regions:
+レイアウト領域:
 
-- Header with settings purpose.
-- General section.
-- Execution section.
-- Permissions section.
-- Diagnostics section.
-- Sticky save bar at the bottom.
+- settings purpose を持つ header。
+- General section。
+- Execution section。
+- Permissions section。
+- Diagnostics section。
+- bottom の sticky save bar。
 
-Fields and controls:
+フィールドとコントロール:
 
-- Scheduler switch controls `scheduler.enabled`.
-- Notifications switch controls `notifications.enabled`.
-- Global concurrency number input controls `daemon.global_concurrency`.
-- Codex path input controls `runner.codex_path`.
-- Default model input controls `runner.default_model`.
-- Default sandbox select controls `runner.default_sandbox_mode`.
-- Default approval policy select controls `runner.default_approval_policy`.
-- Worktree cleanup select controls `worktree.default_cleanup_policy`.
-- Read-only socket path and database path.
-- Schema version display.
-- Export diagnostics button.
-- Save settings button.
+- Scheduler switch は `scheduler.enabled` を control する。
+- Notifications switch は `notifications.enabled` を control する。
+- Global concurrency number input は `daemon.global_concurrency` を control する。
+- Codex path input は `runner.codex_path` を control する。
+- Default model input は `runner.default_model` を control する。
+- Default sandbox select は `runner.default_sandbox_mode` を control する。
+- Default approval policy select は `runner.default_approval_policy` を control する。
+- Worktree cleanup select は `worktree.default_cleanup_policy` を control する。
+- read-only socket path と database path。
+- schema version display。
+- export diagnostics button。
+- save settings button。
 
-States:
+状態:
 
-- Form initializes from settings query data and resets when query data changes.
-- Save button is disabled while settings mutation is pending.
-- Export diagnostics button is disabled while export is pending.
-- Diagnostics export canceled shows info toast; success shows exported path.
-- Unknown schema version displays `Unknown`.
+- form は settings query data から initialize され、query data が変わると reset される。
+- settings mutation pending 中は save button が disabled になる。
+- export pending 中は export diagnostics button が disabled になる。
+- diagnostics export canceled は info toast を表示し、success は exported path を表示する。
+- unknown schema version は `Unknown` を表示する。
 
-Validation and errors:
+バリデーションとエラー:
 
-- Global concurrency has input minimum `1`.
-- Save sends all known settings keys and shows one success toast when all mutations finish.
-- Save failure shows settings error toast and query rollback uses previous settings data.
-- Diagnostics failure shows diagnostics error toast.
+- global concurrency は input minimum `1` を持つ。
+- save は既知の settings key をすべて送信し、すべての mutation 完了時に 1 つの success toast を表示する。
+- save failure は settings error toast を表示し、query rollback は previous settings data を使う。
+- diagnostics failure は diagnostics error toast を表示する。
 
-Accessibility:
+アクセシビリティ:
 
-- Each editable setting has a label and description.
-- Read-only local paths are displayed in truncated monospace code blocks.
-- Sticky save action remains reachable at the bottom of long settings pages.
+- 各 editable setting は label と description を持つ。
+- read-only local path は truncated monospace code block で表示される。
+- sticky save action は長い settings page の bottom で reachable なままにする。
 
-Security and safety:
+セキュリティと安全性:
 
-- Permission defaults are grouped separately from general settings.
-- Diagnostic export is user-initiated and writes to a local file.
-- Socket and database paths are read-only display values.
+- permission default は general setting とは別に group 化される。
+- diagnostic export は user-initiated であり、local file に書き込む。
+- socket path と database path は read-only display value である。
 
-Acceptance criteria:
+受け入れ条件:
 
-- Given a setting changes and Save settings succeeds, the user sees `Settings saved`.
-- Given any setting save fails, the user sees an error toast and previous cached settings are restored.
-- Given diagnostics export returns a path, the path appears in the success toast.
-- Given diagnostics export is canceled, the user sees a cancellation info toast.
+- setting が変更され、Save settings が成功した場合、user は `Settings saved` を見る。
+- setting save のいずれかが失敗した場合、user は error toast を見て、previous cached settings が restored される。
+- diagnostics export が path を返した場合、その path は success toast に表示される。
+- diagnostics export が canceled の場合、user は cancellation info toast を見る。
 
-Known gaps:
+既知の gap:
 
-- Some settings shown by the frontend are defaults even when not seeded by the initial migration.
+- frontend が表示する一部の setting は、initial migration で seed されていない場合も default である。

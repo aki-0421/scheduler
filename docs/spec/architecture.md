@@ -1,77 +1,76 @@
 ---
-title: Architecture
-description: Describes the implemented Codex Scheduler process layout, crates, app shell, sidecars, storage, and runtime paths.
+title: アーキテクチャ
+description: 実装済み Codex Scheduler の process layout、crate、app shell、sidecar、storage、runtime path を説明する。
 updated: 2026-07-08
 read_when:
-  - Changing the desktop shell, daemon process, sidecar packaging, Rust workspace, IPC, or persistent runtime paths.
-  - Debugging how the UI, daemon, CLI, runner, and SQLite database connect.
+  - desktop shell、daemon process、sidecar packaging、Rust workspace、IPC、persistent runtime path を変更するとき。
+  - UI、daemon、CLI、runner、SQLite database がどう接続されるか debug するとき。
 ---
 
-# Architecture
+# アーキテクチャ
 
-Codex Scheduler is a Tauri v2 desktop app with a Next.js static frontend and Rust sidecars. The app process owns the window and proxies user actions. The daemon owns scheduling, persistence, and run execution. The session CLI is a separate binary that talks to the daemon and can be placed on `PATH` for scheduled Codex runs.
+Codex Scheduler は、Next.js static frontend と Rust sidecar を持つ Tauri v2 desktop app である。app process は window を所有し、user action を proxy する。daemon は scheduling、persistence、run execution を所有する。session CLI は daemon と通信する独立 binary であり、scheduled Codex run のために `PATH` に置くことができる。
 
-## Workspace Layout
+## ワークスペース構成
 
-The repository is a pnpm and Cargo workspace:
+repository は pnpm と Cargo の workspace である。
 
-- `apps/desktop`: Tauri v2 app, Next.js App Router frontend, shadcn-style UI primitives, Tailwind CSS, TypeScript IPC schemas, and Vitest tests.
-- `crates/scheduler-core`: shared Rust data model, SQLite repository layer, migrations, JSON-RPC contracts, settings, IDs, time utilities, and schedule engine.
-- `crates/schedulerd`: scheduler daemon, Unix-domain-socket JSON-RPC server, run queue, retention cleanup, task audit handling, and Codex executor bridge.
-- `crates/codex-runner`: Codex CLI detection and invocation, prompt composition, workspace preparation, worktree handling, log capture, JSONL event extraction, environment redaction, timeout/cancel behavior, and result normalization.
-- `crates/schedule-cli`: `codex-schedule` command line interface for humans and scheduled Codex sessions.
+- `apps/desktop`: Tauri v2 app、Next.js App Router frontend、shadcn-style UI primitive、Tailwind CSS、TypeScript IPC schema、Vitest test。
+- `crates/scheduler-core`: 共有 Rust data model、SQLite repository layer、migration、JSON-RPC contract、settings、ID、time utility、schedule engine。
+- `crates/schedulerd`: scheduler daemon、Unix-domain-socket JSON-RPC server、run queue、retention cleanup、task audit handling、Codex executor bridge。
+- `crates/codex-runner`: Codex CLI detection and invocation、prompt composition、workspace preparation、worktree handling、log capture、JSONL event extraction、environment redaction、timeout/cancel behavior、result normalization。
+- `crates/schedule-cli`: human と scheduled Codex session 向けの `codex-schedule` command line interface。
 
-## Desktop App
+## デスクトップアプリ
 
-The desktop frontend is a static Next.js app served inside Tauri. During development it runs on `127.0.0.1:4317`, avoiding accidental attachment to unrelated default-port Next servers. The frontend calls Tauri commands through `@tauri-apps/api/core`; when not running inside Tauri during development and tests, it falls back to mock IPC.
+desktop frontend は Tauri 内で提供される static Next.js app である。開発中は `127.0.0.1:4317` で動作し、default port の無関係な Next server に誤って接続することを避ける。frontend は `@tauri-apps/api/core` 経由で Tauri command を呼び出す。開発や test で Tauri 内で動いていない場合は mock IPC に fallback する。
 
-The Tauri backend manages the daemon sidecar:
+Tauri backend は daemon sidecar を管理する。
 
-- It locates `codex-schedulerd` from an override env var, bundled sidecar paths, development build paths, or `PATH`.
-- It starts the daemon with `--data-dir` and `--socket-path`.
-- It treats transport failures as a signal to respawn the daemon and retry the command once.
-- It terminates the daemon process group on app shutdown.
-- It exposes Tauri commands that mostly proxy to daemon JSON-RPC methods.
+- override env var、bundled sidecar path、development build path、または `PATH` から `codex-schedulerd` を探す。
+- `--data-dir` と `--socket-path` を指定して daemon を起動する。
+- transport failure を daemon respawn と command retry 1 回の signal として扱う。
+- app shutdown 時に daemon process group を終了する。
+- 主に daemon JSON-RPC method へ proxy する Tauri command を公開する。
 
 ## Daemon
 
-`codex-schedulerd` is a same-user local service. It binds a Unix domain socket under the app data directory, runs migrations, recovers interrupted runs, starts the scheduler loop, starts a retention cleanup loop, and accepts newline-delimited JSON-RPC requests.
+`codex-schedulerd` は same-user local service である。app data directory 配下の Unix domain socket に bind し、migration を実行し、interrupted run を recover し、scheduler loop と retention cleanup loop を開始し、newline-delimited JSON-RPC request を受け付ける。
 
-The daemon's socket is a local control surface. Same-UID callers are treated as local users unless they present scheduled-run metadata and a run-scoped token. Restrictions for scheduled Codex sessions are enforced by capability checks, task configuration, and the runner sandbox.
+daemon socket は local control surface である。same-UID caller は、scheduled-run metadata と run-scoped token を提示しない限り local user として扱われる。scheduled Codex session の restriction は、capability check、task configuration、runner sandbox によって enforcement される。
 
-## Runtime Paths
+## 実行時パス
 
-The default app data directory is:
+default app data directory は次である。
 
 ```text
 ~/Library/Application Support/Codex Scheduler
 ```
 
-Important files and directories under that root:
+その root 配下の重要な file と directory:
 
-- `scheduler.sqlite3`: SQLite database.
-- `scheduler.sock`: daemon Unix socket.
-- `logs/`: per-run log directories.
-- `worktrees/`: isolated Git worktrees.
-- `chat-workspaces/`: temporary chat-only workspaces.
+- `scheduler.sqlite3`: SQLite database。
+- `scheduler.sock`: daemon Unix socket。
+- `logs/`: run ごとの log directory。
+- `worktrees/`: isolated Git worktree。
+- `chat-workspaces/`: temporary chat-only workspace。
 
-The desktop backend only opens paths that are under logs, worktrees, chat workspaces, or trusted project roots.
+desktop backend は logs、worktrees、chat workspaces、trusted project roots 配下の path だけを open する。
 
-## Sidecar Packaging
+## Sidecar の packaging
 
-The Tauri config bundles two Rust sidecars:
+Tauri config は 2 つの Rust sidecar を bundle する。
 
 - `codex-schedulerd`
 - `codex-schedule`
 
-`pnpm sidecars:prepare` builds these binaries and copies target-triple-suffixed executables into the Tauri `binaries/` directory. Tauri dev and build flows run this preparation step before launching or packaging.
+`pnpm sidecars:prepare` はこれらの binary を build し、target-triple suffix 付き executable を Tauri の `binaries/` directory にコピーする。Tauri dev と build flow は、launch または packaging の前にこの準備 step を実行する。
 
-## Persistence
+## 永続化
 
-SQLite is the source of truth for tasks, runs, projects, audit records, capability tokens, settings, and run metadata. The repository layer uses `sqlx`, WAL mode for file-backed databases, foreign keys, and a 5-second busy timeout. Before applying pending migrations to an existing file, the repository creates a database backup.
+SQLite は task、run、project、audit record、capability token、setting、run metadata の source of truth である。repository layer は `sqlx`、file-backed database の WAL mode、foreign key、5 秒の busy timeout を使う。既存 file に pending migration を適用する前に、repository は database backup を作成する。
 
-Run body data is split between database metadata and files:
+Run body data は database metadata と file に分かれる。
 
-- DB rows store statuses, timestamps, command metadata, tails, summaries, artifact references, and counters.
-- Files store full stdout, stderr, Codex JSONL events, last message, command JSON, and redacted environment JSON.
-
+- DB row は status、timestamp、command metadata、tail、summary、artifact reference、counter を保存する。
+- File は full stdout、stderr、Codex JSONL event、last message、command JSON、redacted environment JSON を保存する。

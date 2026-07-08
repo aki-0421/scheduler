@@ -1,77 +1,76 @@
 ---
-title: S001 Tasks Screen
-description: Defines the Tasks screen for task listing, filtering, row actions, selected task detail, and task audit inspection.
+title: S001 Tasks
+description: Tasks screen の list、filter、detail、row action、audit requirement を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing task list behavior, task filters, selected task detail, task row actions, or task audit display.
-  - Verifying task operations such as run now, pause, resume, edit, or delete.
+  - Tasks page、task list、task detail、task action、edit dialog、audit display を変更するとき。
 ---
 
 # S001 Tasks
 
-Route: `/tasks`
+ルート: `/tasks`
 
-Purpose: Lets users scan, filter, inspect, and operate on scheduled Codex tasks, including prompt, policy, recent runs, and audit context.
+目的: scheduled Codex task を scan、filter、inspect、operate できるようにする。prompt、policy、recent run、audit context を含む。
 
-Entry points: `Tasks` navigation item, `View tasks` links, Today upcoming rows with `?task=<taskId>`, and post-save redirect from the task wizard.
+入口: `Tasks` navigation item、`View tasks` link、`?task=<taskId>` を持つ Today upcoming row、task wizard からの post-save redirect。
 
-Exit points: `New task`, row action menu, selected run references, edit dialog, and delete confirmation.
+出口: `New task`、row action menu、selected run reference、edit dialog、delete confirmation。
 
-Data dependencies:
+データ依存:
 
-- `useTasks(status?)` for the list filtered by status.
-- `useRuns()` for last-run summaries.
-- `useTask(taskId)` for selected detail.
-- `useTaskAudits(taskId)` for audit log.
-- Task row actions call `task_run_now`, `task_pause`, `task_resume`, and `task_delete`.
+- status で filter された list には `useTasks(status?)` を使う。
+- last-run summary には `useRuns()` を使う。
+- selected detail には `useTask(taskId)` を使う。
+- audit log には `useTaskAudits(taskId)` を使う。
+- task row action は `task_run_now`、`task_pause`、`task_resume`、`task_delete` を呼び出す。
 
-Layout regions:
+レイアウト領域:
 
-- Header with status filter and `New task` action.
-- Task list section with count summary.
-- Rows with task name, target badge, full-access warning, description or target detail, schedule, status, next run, and last run.
-- Selected task detail below the list when `task` query parameter is present.
-- Edit task dialog containing the task wizard.
+- status filter と `New task` action を持つ header。
+- count summary を持つ task list section。
+- task name、target badge、full-access warning、description または target detail、schedule、status、next run、last run を持つ row。
+- `task` query parameter がある場合、list の下に selected task detail を表示する。
+- task wizard を含む edit task dialog。
 
-Fields and controls:
+フィールドとコントロール:
 
-- Status filter: `All statuses`, `Active`, `Paused`, `Completed`, and `Deleted`.
-- Row primary action: `Run now`.
-- Row menu actions: pause or resume, edit, delete.
-- Delete confirmation: preserves run history and removes task from active schedules.
-- Task detail actions mirror row actions and expose copy buttons for prompt and paths.
+- Status filter: `All statuses`、`Active`、`Paused`、`Completed`、`Deleted`。
+- Row primary action: `Run now`。
+- Row menu actions: pause または resume、edit、delete。
+- Delete confirmation: run history を保持し、active schedule から task を削除する。
+- Task detail action は row action と同等で、prompt と path の copy button を公開する。
 
-States:
+状態:
 
-- Loading route fallback: `Loading tasks...`.
-- Empty list: `No tasks yet` with `New task`.
-- Selected task loading: inline loading panel.
-- Selected task populated: summary, prompt, schedule and target, execution and safety, recent runs, audit log.
-- Full filesystem access: warning badge appears in rows and detail.
+- Loading route fallback: `Loading tasks...`。
+- Empty list: `No tasks yet` と `New task`。
+- Selected task loading: inline loading panel。
+- Selected task populated: summary、prompt、schedule and target、execution and safety、recent runs、audit log。
+- Full filesystem access: row と detail に warning badge が表示される。
 
-Validation and errors:
+バリデーションとエラー:
 
-- Mutations use toast feedback for success and failure.
-- Delete is guarded by confirmation dialog.
+- mutation は success / failure の toast feedback を使う。
+- delete は confirmation dialog で guard される。
 
-Accessibility:
+アクセシビリティ:
 
-- Row menu uses `role="menu"` and focuses the first enabled menu item when opened.
-- Menu trigger has `aria-haspopup`, `aria-expanded`, and task-specific label.
-- Delete confirmation has explicit cancel and destructive action labels.
+- row menu は `role="menu"` を使い、open 時に最初の enabled menu item に focus する。
+- menu trigger は `aria-haspopup`、`aria-expanded`、task-specific label を持つ。
+- delete confirmation は明確な cancel label と destructive action label を持つ。
 
-Security and safety:
+セキュリティと安全性:
 
-- `danger-full-access` tasks must show a `Full access` warning badge.
-- Audit events show actor, action, timestamp, and optional before/after JSON details.
+- `danger-full-access` task は `Full access` warning badge を表示する必要がある。
+- audit event は actor、action、timestamp、任意の before / after JSON detail を表示する。
 
-Acceptance criteria:
+受け入れ条件:
 
-- Given a status filter, only tasks matching that status are requested from the IPC layer.
-- Given `?task=<id>`, the selected row is visually marked and the detail section loads that task.
-- Given `Run now` succeeds, the app invalidates scheduler data and shows a `Run queued` toast.
-- Given delete is confirmed, run history remains discoverable through Runs.
+- status filter がある場合、その status と一致する task だけが IPC layer から request される。
+- `?task=<id>` がある場合、selected row が視覚的に mark され、detail section がその task を load する。
+- `Run now` が成功した場合、app は scheduler data を invalidate し、`Run queued` toast を表示する。
+- delete が confirmed された場合、run history は Runs から引き続き discoverable である。
 
-Known gaps:
+既知の gap:
 
-- Task detail recent runs table is informational and does not link each run row to `/runs?run=<runId>`.
+- Task detail recent runs table は informational であり、各 run row は `/runs?run=<runId>` に link しない。

@@ -1,74 +1,73 @@
 ---
-title: S004 Projects Screen
-description: Defines the Projects screen for trusting and untrusting local folders or Git repositories used by scheduled Codex runs.
+title: S004 Projects
+description: Projects screen の trust path entry、trusted project list、untrust confirmation、active task impact requirement を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing project trust management, trusted path display, untrust confirmation, or repository path safety behavior.
-  - Verifying local project trust and active task impact behavior.
+  - Projects page、project trust、project untrust、trusted path display、active task impact messaging を変更するとき。
 ---
 
 # S004 Projects
 
-Route: `/projects`
+ルート: `/projects`
 
-Purpose: Lets users explicitly trust and untrust local folders or Git repositories before repository-backed scheduled runs can execute.
+目的: repository-backed scheduled run を実行できるようにする前に、local folder または Git repository を明示的に trust / untrust できるようにする。
 
-Entry points: `Projects` navigation item and task wizard trust guidance.
+入口: `Projects` navigation item と task wizard trust guidance。
 
-Exit points: trusted path list, inline empty-state focus action, and untrust confirmation.
+出口: trusted path list、inline empty-state focus action、untrust confirmation。
 
-Data dependencies:
+データ依存:
 
-- `useProjects()` for trusted path records.
-- `useTasks()` for active task counts affected by trust changes.
-- `useTrustProject()` and `useUntrustProject()` for mutations.
+- trusted path record には `useProjects()` を使う。
+- trust change で影響を受ける active task count には `useTasks()` を使う。
+- mutation には `useTrustProject()` と `useUntrustProject()` を使う。
 
-Layout regions:
+レイアウト領域:
 
-- Header with page purpose.
-- Trust project path form.
-- Trusted paths table or empty state.
-- Remove-trust confirmation dialog.
+- page purpose を持つ header。
+- trust project path form。
+- trusted paths table または empty state。
+- remove-trust confirmation dialog。
 
-Fields and controls:
+フィールドとコントロール:
 
-- Project path input with placeholder `/Users/alice/src/my-app`.
-- `Trust path` submit button.
-- Table columns: project, path, trust, active tasks, default branch, actions.
-- `Remove trust` action is disabled when the project is already untrusted or mutation is pending.
+- placeholder `/Users/alice/src/my-app` を持つ project path input。
+- `Trust path` submit button。
+- table columns: project、path、trust、active tasks、default branch、actions。
+- `Remove trust` action は project がすでに untrusted の場合、または mutation pending の場合 disabled になる。
 
-States:
+状態:
 
-- Empty input submit shows `Enter a project path.` toast and focuses the path input.
-- Empty project list shows `No trusted projects` and focuses the path input when action is used.
-- Trusted and untrusted badges show trust status and timestamp or `Not trusted`.
-- Remove-trust success toast includes affected active task count.
+- empty input submit は `Enter a project path.` toast を表示し、path input に focus する。
+- empty project list は `No trusted projects` を表示し、action 使用時に path input に focus する。
+- trusted / untrusted badge は trust status と timestamp、または `Not trusted` を表示する。
+- remove-trust success toast は affected active task count を含む。
 
-Validation and errors:
+バリデーションとエラー:
 
-- Path must be non-empty after trimming before trust mutation.
-- Trust and untrust failures show error toasts with available details.
-- Untrust requires confirmation and explains active tasks may fail until trust is restored or tasks move.
+- path は trust mutation 前に trim 後 non-empty でなければならない。
+- trust / untrust failure は利用可能な detail を含む error toast を表示する。
+- untrust は confirmation を必要とし、trust が restored されるか task が移動されるまで active task が fail し得ることを説明する。
 
-Accessibility:
+アクセシビリティ:
 
-- Path input has `aria-label="Project path"`.
-- Remove-trust buttons include project-specific `aria-label`.
-- Confirmation dialog has clear cancel and destructive actions.
+- path input は `aria-label="Project path"` を持つ。
+- remove-trust button は project-specific `aria-label` を含む。
+- confirmation dialog は clear cancel action と destructive action を持つ。
 
-Security and safety:
+セキュリティと安全性:
 
-- Trust is explicit and local-path based.
-- Removing trust does not delete local files or run history.
-- Active task impact is calculated and shown before untrust.
+- trust は explicit かつ local-path based である。
+- trust 削除は local file や run history を削除しない。
+- active task impact は untrust 前に計算・表示される。
 
-Acceptance criteria:
+受け入れ条件:
 
-- Given a blank path, the trust mutation is not sent and focus returns to the input.
-- Given a successful trust, the input clears and project list refreshes.
-- Given untrust is confirmed, affected active task count appears in the success toast.
-- Given a project has active tasks, the confirmation describes the failure risk.
+- blank path の場合、trust mutation は送信されず、focus は input に戻る。
+- trust が成功した場合、input は clear され、project list は refresh する。
+- untrust が confirmed された場合、affected active task count が success toast に表示される。
+- project に active task がある場合、confirmation は failure risk を説明する。
 
-Known gaps:
+既知の gap:
 
-- The Projects page accepts typed paths; folder picking is only exposed in the task wizard.
+- Projects page は typed path を受け付ける。folder picking は task wizard でのみ exposed される。

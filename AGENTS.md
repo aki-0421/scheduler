@@ -1,20 +1,21 @@
 # AGENTS.md
 
-## Language
+## 言語
 
-* The default language for everything must be English.
+* ドキュメント、GitHub の PR 本文、`README.md` は日本語を既定にする。
+* コード内コメントは英語にする。
 
-## Documentation
+## ドキュメント
 
-Read the product policy in [PRODUCT.md](PRODUCT.md).
-Navigate the repository documentation starting from [docs/](docs/).
+[PRODUCT.md](PRODUCT.md) のプロダクトポリシーを読む。
+[docs/](docs/) からリポジトリドキュメントをたどる。
 
-Find repository management documentation with `agent-docs list docs`, and review the necessary documents with `agent-docs read <file>`.
-Use `agent-docs read <file> --body` only when the document body is needed.
+`agent-docs list docs` でリポジトリ管理ドキュメントを探し、必要なドキュメントを `agent-docs read <file>` で確認する。
+本文が必要な場合にだけ `agent-docs read <file> --body` を使う。
 
-Before starting implementation, document the specification in writing.
+実装を始める前に、仕様を書面で記録する。
 
-## Work Products
+## 作業成果物
 
-Use `agent-browser` for UI and behavior verification.
-Save verification screenshots created with `agent-browser` in `/tmp` or in an ignored `tmp/` directory within the repository, and do not include them in commits.
+UI と挙動の検証には `agent-browser` を使う。
+`agent-browser` で作成した検証スクリーンショットは `/tmp`、またはリポジトリ内の ignore 済み `tmp/` ディレクトリに保存し、コミットに含めない。

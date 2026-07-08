@@ -1,41 +1,41 @@
-# Product
+# プロダクト
 
-## Register
+## 登録名
 
 product
 
-## Users
+## ユーザー
 
-Codex Scheduler is for Mac users who run local Codex CLI work repeatedly: engineers, solo builders, and automation-heavy operators who need scheduled coding, review, triage, and maintenance tasks to run with local project context.
+Codex Scheduler は、ローカルの Codex CLI 作業を繰り返し実行する Mac ユーザー向けの製品である。対象は、ローカルプロジェクトの文脈を保ったまま、スケジュールされたコーディング、レビュー、トリアージ、メンテナンスタスクを実行したいエンジニア、個人開発者、自動化を多用するオペレーターである。
 
-Users are usually in a focused desktop workflow. They need to understand scheduler health, upcoming work, failed runs, task configuration, and local execution risk without digging through logs first.
+ユーザーは多くの場合、集中したデスクトップワークフローの中にいる。最初にログを掘らなくても、スケジューラーの健全性、今後の作業、失敗した実行、タスク設定、ローカル実行リスクを理解できる必要がある。
 
-## Product Purpose
+## プロダクトの目的
 
-Codex Scheduler schedules local Codex CLI runs from a macOS desktop app. It lets users create tasks with prompts, target folders, execution policies, recurrence, and permissions, then inspect run history and outputs.
+Codex Scheduler は、macOS デスクトップアプリからローカル Codex CLI 実行をスケジュールする。ユーザーは、プロンプト、対象フォルダー、実行ポリシー、繰り返し、権限を持つタスクを作成し、実行履歴と出力を確認できる。
 
-Success means the product feels trustworthy enough to leave local AI work running unattended: users can see what will run, what is running, what failed, and what changed.
+成功とは、ローカル AI 作業を無人で任せられるほど信頼できることを意味する。ユーザーは、何が実行予定か、何が実行中か、何が失敗したか、何が変更されたかを確認できる。
 
-## Brand Personality
+## ブランドパーソナリティ
 
-Calm, technical, precise.
+落ち着いていて、技術的で、正確。
 
-The product should feel closer to Codex, ChatGPT, Claude, Linear, and Raycast than to a generic admin console: restrained, dense, polished, and task-first.
+製品の印象は、汎用的な管理コンソールではなく、Codex、ChatGPT、Claude、Linear、Raycast に近いものにする。抑制され、密度があり、磨かれていて、タスクを中心に据える。
 
-## Anti-references
+## アンチリファレンス
 
-Avoid marketing-page decoration, colorful SaaS dashboards, heavy shadows, gradient hero styling, oversized rounded cards, and generic shadcn scaffolding with no product language.
+マーケティングページ風の装飾、カラフルな SaaS ダッシュボード、重いシャドウ、グラデーションヒーロー、過度に丸い大型カード、プロダクト言語のない汎用 shadcn scaffold は避ける。
 
-Avoid exposing raw internal enums as primary UI copy when a clear human label is possible. Raw values can remain in secondary monospace detail where useful.
+明確な人間向けラベルにできる場合は、生の内部 enum を主要な UI コピーとして露出しない。生値は、役に立つ場合に限り、補助的な monospace 詳細として残してよい。
 
-## Design Principles
+## デザイン原則
 
-1. Make local automation legible before it is powerful.
-2. Treat dangerous execution settings as explicit product states, not hidden form trivia.
-3. Prefer dense, quiet surfaces that help users scan and decide quickly.
-4. Use one consistent component vocabulary across pages.
-5. Keep AI-workflow context visible: prompt, target, schedule, status, output, and next action.
+1. ローカル自動化は、強力さの前に読み取れることを重視する。
+2. 危険な実行設定は、フォームの細部に隠さず、明示的なプロダクト状態として扱う。
+3. スキャンと判断を助ける、密度が高く静かな画面を優先する。
+4. ページ全体で一貫したコンポーネント語彙を使う。
+5. AI ワークフローの文脈を見える状態に保つ。プロンプト、対象、スケジュール、ステータス、出力、次のアクションを含める。
 
-## Accessibility & Inclusion
+## アクセシビリティとインクルージョン
 
-Target WCAG AA contrast for text and controls. Keyboard focus must be visible and consistent. Motion should be subtle, state-driven, and respect reduced-motion preferences. Status must not rely on color alone.
+テキストとコントロールは WCAG AA のコントラストを目標にする。キーボードフォーカスは見える状態で一貫させる。モーションは控えめで状態に基づくものにし、`prefers-reduced-motion` を尊重する。ステータスは色だけに依存させない。

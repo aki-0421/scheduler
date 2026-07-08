@@ -1,26 +1,26 @@
 ---
-title: Codex Scheduler Specification Index
-description: Entry point for implementation-based Codex Scheduler specifications.
+title: Codex Scheduler 仕様インデックス
+description: 実装ベースの Codex Scheduler 仕様への入口。
 updated: 2026-07-08
 read_when:
-  - Looking for the current implementation-based specification set.
-  - Deciding which Codex Scheduler spec document to read next.
+  - 現在の実装ベース仕様セットを探すとき。
+  - 次に読むべき Codex Scheduler 仕様ドキュメントを判断するとき。
 ---
 
-# Codex Scheduler Specification Index
+# Codex Scheduler 仕様インデックス
 
-These documents describe the current branch implementation of Codex Scheduler. They are rewritten from code, tests, and product policy rather than copied from the legacy `spec/` directory.
+これらのドキュメントは、現在の branch における Codex Scheduler の実装を説明する。legacy の `spec/` directory からコピーしたものではなく、code、test、product policy から書き直している。
 
-## Documents
+## ドキュメント
 
-- [Product Scope](product-scope.md): product intent, user value, MVP boundary, and current gaps.
-- [Architecture](architecture.md): process layout, crates, desktop shell, sidecars, persistence, and runtime paths.
-- [Data Model](data-model.md): persisted entities, DTOs, enums, settings, and retention records.
-- [Scheduling And Execution](scheduling-and-execution.md): schedule calculation, daemon ticks, run lifecycle, Codex runner behavior, logs, retry, and cleanup.
-- [Interfaces](interfaces.md): desktop UI, Tauri commands, daemon JSON-RPC, and `codex-schedule` CLI surface.
-- [Screen Specifications](screens.md): desktop screen IDs, screen-level requirements, states, controls, validation, accessibility, and acceptance criteria.
-- [Security And Operations](security-and-operations.md): local trust boundaries, project trust, capability tokens, sandbox policy, diagnostics, release artifacts, and verification.
+- [プロダクトスコープ](product-scope.md): product intent、user value、MVP 境界、現在の gap。
+- [アーキテクチャ](architecture.md): process layout、crate、desktop shell、sidecar、persistence、runtime path。
+- [データモデル](data-model.md): 永続化 entity、DTO、enum、settings、retention record。
+- [スケジューリングと実行](scheduling-and-execution.md): schedule calculation、daemon tick、run lifecycle、Codex runner behavior、log、retry、cleanup。
+- [インターフェース](interfaces.md): desktop UI、Tauri command、daemon JSON-RPC、`codex-schedule` CLI surface。
+- [画面仕様](screens.md): desktop screen ID、screen-level requirement、state、control、validation、accessibility、acceptance criteria。
+- [セキュリティと運用](security-and-operations.md): local trust boundary、project trust、capability token、sandbox policy、diagnostics、release artifact、verification。
 
-## Reading Order
+## 読む順序
 
-Start with [Product Scope](product-scope.md) when changing user-facing behavior. Use [Screen Specifications](screens.md) before changing desktop screens, dialogs, form behavior, loading states, or screen copy. Use [Architecture](architecture.md) and [Data Model](data-model.md) before changing Rust or IPC contracts. Use [Scheduling And Execution](scheduling-and-execution.md) before changing scheduler, daemon, or runner behavior. Use [Interfaces](interfaces.md) before changing the desktop app, CLI, or RPC methods. Use [Security And Operations](security-and-operations.md) before changing permissions, path access, token handling, diagnostics, sidecar packaging, or cleanup.
+user-facing behavior を変更するときは [プロダクトスコープ](product-scope.md) から始める。desktop screen、dialog、form behavior、loading state、screen copy を変更する前には [画面仕様](screens.md) を使う。Rust または IPC contract を変更する前には [アーキテクチャ](architecture.md) と [データモデル](data-model.md) を使う。scheduler、daemon、runner behavior を変更する前には [スケジューリングと実行](scheduling-and-execution.md) を使う。desktop app、CLI、RPC method を変更する前には [インターフェース](interfaces.md) を使う。permission、path access、token handling、diagnostics、sidecar packaging、cleanup を変更する前には [セキュリティと運用](security-and-operations.md) を使う。
