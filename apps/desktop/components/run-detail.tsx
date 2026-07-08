@@ -16,7 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatDateTime, formatDuration, isRunActive } from "@/lib/format";
+import { formatDateTime, formatDuration, formatEnumLabel, isRunActive } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
 import { useCancelRun, useRunTaskNow } from "@/lib/queries";
 import type { LogStream, RunDto, TaskDto } from "@/lib/types";
@@ -120,7 +120,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
             ...current,
             [stream]:
               current[stream] ||
-              "ログ末尾はまだ取得できません。バックエンドがログファイルを作成していない可能性があります。",
+              "Log tail is not available yet. The backend may not have created the log file.",
           }));
         }
       }
@@ -148,11 +148,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
   function cancel() {
     cancelRun
       .mutateAsync(run.id)
-      .then(() => toast.success("run をキャンセルしました"))
+      .then(() => toast.success("Run canceled"))
       .catch((error) =>
-        toast.error("run をキャンセルできませんでした", {
+        toast.error("Could not cancel run", {
           description:
-            error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
+            error instanceof Error ? error.message : "Scheduler command failed.",
         }),
       );
   }
@@ -160,11 +160,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
   function rerun() {
     runTaskNow
       .mutateAsync(run.taskId)
-      .then(() => toast.success("再実行をキューに入れました"))
+      .then(() => toast.success("Retry queued"))
       .catch((error) =>
-        toast.error("再実行をキューに入れられませんでした", {
+        toast.error("Could not queue retry", {
           description:
-            error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
+            error instanceof Error ? error.message : "Scheduler command failed.",
         }),
       );
   }
@@ -172,11 +172,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
   function openPath(path: string, label: string) {
     ipcClient
       .openPath(path)
-      .then(() => toast.success(`${label}を Finder で開きました`))
+      .then(() => toast.success(`Opened ${label} in Finder`))
       .catch((error) =>
-        toast.error(`${label}を開けませんでした`, {
+        toast.error(`Could not open ${label}`, {
           description:
-            error instanceof Error ? error.message : "パスを開くコマンドに失敗しました。",
+            error instanceof Error ? error.message : "Open path command failed.",
         }),
       );
   }
@@ -186,12 +186,12 @@ export function RunDetail({ run, task }: RunDetailProps) {
     try {
       const path = await ipcClient.exportRunLogs(run.id);
       if (path) {
-        toast.success("ログを書き出しました", { description: path });
+        toast.success("Logs exported", { description: path });
       }
     } catch (error) {
-      toast.error("ログを書き出せませんでした", {
+      toast.error("Could not export logs", {
         description:
-          error instanceof Error ? error.message : "書き出しコマンドに失敗しました。",
+          error instanceof Error ? error.message : "Export command failed.",
       });
     } finally {
       setIsExportingLogs(false);
@@ -208,7 +208,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
               <RunStatusBadge status={run.status} />
             </div>
             <CardDescription className="mt-2">
-              {task?.name ?? run.taskId} · {run.triggerType}
+              {task?.name ?? run.taskId} · {formatEnumLabel(run.triggerType)}
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -216,10 +216,10 @@ export function RunDetail({ run, task }: RunDetailProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => openPath(workspaceToOpen, "ワークスペース")}
+                onClick={() => openPath(workspaceToOpen, "workspace")}
               >
                 <FolderOpen className="size-4" aria-hidden="true" />
-                ワークスペースを開く
+                Open workspace
               </Button>
             ) : null}
             <Button variant="outline" asChild>
@@ -227,18 +227,18 @@ export function RunDetail({ run, task }: RunDetailProps) {
                 href={`/tasks/new?prefillFromTask=${encodeURIComponent(run.taskId)}&sourceRun=${encodeURIComponent(run.id)}`}
               >
                 <PlusCircle className="size-4" aria-hidden="true" />
-                フォローアップタスクを作成
+                Create follow-up task
               </Link>
             </Button>
             {active ? (
               <Button variant="outline" disabled={cancelRun.isPending} onClick={cancel}>
                 <Square className="size-4" aria-hidden="true" />
-                キャンセル
+                Cancel
               </Button>
             ) : null}
             <Button variant="outline" disabled={runTaskNow.isPending} onClick={rerun}>
               <RotateCcw className="size-4" aria-hidden="true" />
-              再実行
+              Retry
             </Button>
           </div>
         </CardHeader>
@@ -247,27 +247,27 @@ export function RunDetail({ run, task }: RunDetailProps) {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>メタデータ</CardTitle>
+            <CardTitle>Metadata</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">予定時刻</span>
+              <span className="text-muted-foreground">Scheduled</span>
               <span className="tabular-nums">{formatDateTime(run.scheduledFor)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">開始</span>
+              <span className="text-muted-foreground">Started</span>
               <span className="tabular-nums">{formatDateTime(run.startedAt)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">所要時間</span>
+              <span className="text-muted-foreground">Duration</span>
               <span>{formatDuration(run)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">終了コード</span>
+              <span className="text-muted-foreground">Exit code</span>
               <span>{run.exitCode ?? "—"}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">ワークスペース</span>
+              <span className="text-muted-foreground">Workspace</span>
               <span className="max-w-96 truncate font-mono text-xs">
                 {run.workspacePath ?? "—"}
               </span>
@@ -279,7 +279,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">ブランチ</span>
+              <span className="text-muted-foreground">Branch</span>
               <span className="max-w-96 truncate font-mono text-xs">
                 {run.branchName ?? "—"}
               </span>
@@ -289,11 +289,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
               <span className="font-mono text-xs">{run.baseRef ?? "—"}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">変更前 commit</span>
+              <span className="text-muted-foreground">Commit before</span>
               <span className="font-mono text-xs">{shortValue(run.commitBefore)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">変更後 commit</span>
+              <span className="text-muted-foreground">Commit after</span>
               <span className="font-mono text-xs">{shortValue(run.commitAfter)}</span>
             </div>
             {/* TODO: Show codexCommandJson here when RunDto exposes it. */}
@@ -302,16 +302,16 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>最終メッセージ</CardTitle>
+            <CardTitle>Final message</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 text-sm">
             <p className="text-pretty">
-              {run.resultSummary || "最終メッセージはまだ記録されていません。"}
+              {run.resultSummary || "No final message has been recorded yet."}
             </p>
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">findings {run.findingsCount ?? 0}</Badge>
               <Badge variant="outline">
-                作成 schedule {run.createdScheduleCount ?? 0}
+                Created schedules {run.createdScheduleCount ?? 0}
               </Badge>
             </div>
             {run.statusReason ? (
@@ -326,9 +326,9 @@ export function RunDetail({ run, task }: RunDetailProps) {
       <Card>
         <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
           <div>
-            <CardTitle>ログ</CardTitle>
+            <CardTitle>Logs</CardTitle>
             <CardDescription>
-              run が active の間、stdout/stderr/events の末尾を cursor でポーリングします。
+              While a run is active, stdout, stderr, and events are tailed by cursor.
             </CardDescription>
           </div>
           <Button
@@ -338,7 +338,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
             onClick={() => void exportLogs()}
           >
             <Download className="size-4" aria-hidden="true" />
-            ログを書き出す
+            Export logs
           </Button>
         </CardHeader>
         <CardContent>
@@ -350,12 +350,12 @@ export function RunDetail({ run, task }: RunDetailProps) {
             </TabsList>
             <TabsContent value="stdout">
               <pre className="min-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
-                {logs.stdout || run.stdoutTail || "stdout はまだありません。"}
+                {logs.stdout || run.stdoutTail || "No stdout yet."}
               </pre>
             </TabsContent>
             <TabsContent value="stderr">
               <pre className="min-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
-                {logs.stderr || run.stderrTail || "stderr はまだありません。"}
+                {logs.stderr || run.stderrTail || "No stderr yet."}
               </pre>
             </TabsContent>
             <TabsContent value="events">
@@ -365,12 +365,12 @@ export function RunDetail({ run, task }: RunDetailProps) {
                     {eventLines.map((event) => (
                       <div key={event.id} className="rounded-md border bg-background p-3">
                         <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <Badge variant="outline">{event.eventType}</Badge>
+                          <Badge variant="outline">{formatEnumLabel(event.eventType)}</Badge>
                           <span className="text-pretty">{event.message}</span>
                         </div>
                         <details className="mt-2 text-xs">
                           <summary className="cursor-pointer text-muted-foreground">
-                            未加工 JSON
+                            Raw JSON
                           </summary>
                           <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 font-mono">
                             {event.raw}
@@ -380,7 +380,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">events はまだありません。</p>
+                  <p className="text-xs text-muted-foreground">No events yet.</p>
                 )}
               </div>
             </TabsContent>
@@ -390,8 +390,8 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>成果物</CardTitle>
-          <CardDescription>完了した run が記録したファイルです。</CardDescription>
+          <CardTitle>Artifacts</CardTitle>
+          <CardDescription>Files recorded by the completed run.</CardDescription>
         </CardHeader>
         <CardContent>
           {artifacts.length ? (
@@ -403,7 +403,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline">{artifact.kind}</Badge>
+                      <Badge variant="outline">{formatEnumLabel(artifact.kind)}</Badge>
                       <span className="font-medium">
                         {artifact.title ?? artifact.path}
                       </span>
@@ -419,17 +419,17 @@ export function RunDetail({ run, task }: RunDetailProps) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => openPath(artifact.path, "成果物")}
+                    onClick={() => openPath(artifact.path, "artifact")}
                   >
                     <FolderOpen className="size-4" aria-hidden="true" />
-                    Finder で表示
+                    Show in Finder
                   </Button>
                 </div>
               ))}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              この run に記録された成果物はありません。
+              No artifacts were recorded for this run.
             </p>
           )}
         </CardContent>

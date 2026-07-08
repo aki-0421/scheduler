@@ -48,7 +48,7 @@ export function TaskRowActions({ task, onEdit }: TaskRowActionsProps) {
   }
 
   return (
-    <div className="flex items-center justify-end gap-1">
+    <div className="flex min-w-28 items-center justify-end gap-1">
       <Button
         variant="ghost"
         size="icon"

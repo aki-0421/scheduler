@@ -70,8 +70,8 @@ function TasksPageContent() {
   return (
     <div className="grid gap-5">
       <PageHeader
-        title="タスク"
-        description="Codex のスケジュール、実行先、安全ポリシーを管理します。"
+        title="Tasks"
+        description="Manage Codex schedules, execution targets, and safety policies."
         actions={
           <>
             <Select
@@ -82,7 +82,7 @@ function TasksPageContent() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">すべての状態</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
                 {taskStatuses.map((status) => (
                   <SelectItem key={status} value={status}>
                     {formatTaskStatus(status)}
@@ -93,33 +93,33 @@ function TasksPageContent() {
             <Button asChild>
               <Link href="/tasks/new">
                 <Plus className="size-4" aria-hidden="true" />
-                新規タスク
+                New task
               </Link>
             </Button>
           </>
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.2fr)_minmax(400px,0.8fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>タスク一覧</CardTitle>
+            <CardTitle>Task list</CardTitle>
             <CardDescription>
-              {taskList.length.toLocaleString("ja-JP")} 件のタスク
+              {taskList.length.toLocaleString("ja-JP")} tasks
             </CardDescription>
           </CardHeader>
           <CardContent>
             {taskList.length ? (
-              <Table>
+              <Table className="min-w-[960px] table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>名前</TableHead>
-                    <TableHead>種別</TableHead>
-                    <TableHead>スケジュール</TableHead>
-                    <TableHead>次回実行</TableHead>
-                    <TableHead>直近結果</TableHead>
-                    <TableHead>状態</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
+                    <TableHead className="w-[250px]">Name</TableHead>
+                    <TableHead className="w-[88px]">Kind</TableHead>
+                    <TableHead className="w-[150px]">Schedule</TableHead>
+                    <TableHead className="w-[140px]">Next run</TableHead>
+                    <TableHead className="w-[116px]">Last result</TableHead>
+                    <TableHead className="w-[104px]">Status</TableHead>
+                    <TableHead className="w-[112px] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -130,18 +130,18 @@ function TasksPageContent() {
                         key={task.id}
                         data-state={selectedTaskId === task.id ? "selected" : undefined}
                       >
-                        <TableCell className="min-w-56">
-                          <div className="flex flex-wrap items-center gap-2">
+                        <TableCell className="w-[250px]">
+                          <div className="flex min-w-0 items-center gap-2">
                             <Link
                               href={`/tasks?task=${task.id}`}
-                              className="font-medium hover:underline"
+                              className="truncate font-medium hover:underline"
                             >
                               {task.name}
                             </Link>
                             {task.codex.sandboxMode === "danger-full-access" ? (
-                              <Badge variant="warning" className="gap-1">
+                              <Badge variant="warning">
                                 <AlertTriangle className="size-3" aria-hidden="true" />
-                                danger-full-access
+                                Full access
                               </Badge>
                             ) : null}
                           </div>
@@ -149,24 +149,24 @@ function TasksPageContent() {
                             {task.description || formatTargetMode(task.target.mode)}
                           </p>
                         </TableCell>
-                        <TableCell>{formatTaskKind(task.kind)}</TableCell>
-                        <TableCell className="max-w-56 truncate">
+                        <TableCell className="w-[88px]">{formatTaskKind(task.kind)}</TableCell>
+                        <TableCell className="w-[150px] truncate">
                           {formatTaskSchedule(task)}
                         </TableCell>
-                        <TableCell className="tabular-nums">
+                        <TableCell className="w-[140px] tabular-nums">
                           {formatDateTime(task.nextRunAt)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="w-[116px]">
                           {lastRun ? (
                             <RunStatusBadge status={lastRun.status} />
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="w-[104px]">
                           <TaskStatusBadge status={task.status} />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="w-[112px] text-right">
                           <TaskRowActions task={task} onEdit={setEditingTask} />
                         </TableCell>
                       </TableRow>
@@ -177,9 +177,9 @@ function TasksPageContent() {
             ) : (
               <EmptyState
                 icon={ListTodo}
-                title="まだタスクがありません"
-                description="Codex に定期的に任せたい作業を作成しましょう。"
-                action={{ label: "新規タスク", href: "/tasks/new" }}
+                title="No tasks yet"
+                description="Create the recurring or manual Codex work you want to schedule."
+                action={{ label: "New task", href: "/tasks/new" }}
               />
             )}
           </CardContent>
@@ -196,16 +196,16 @@ function TasksPageContent() {
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>タスク詳細</CardTitle>
-                <CardDescription>選択したタスクを読み込んでいます。</CardDescription>
+                <CardTitle>Task detail</CardTitle>
+                <CardDescription>Loading the selected task.</CardDescription>
               </CardHeader>
             </Card>
           )
         ) : (
           <EmptyState
             icon={ListTodo}
-            title="タスクを選択"
-            description="テーブルからタスクを選択すると、prompt、ポリシー、run、監査イベントを確認できます。"
+            title="Select a task"
+            description="Select a task to inspect its prompt, policies, runs, and audit events."
           />
         )}
       </div>
@@ -213,7 +213,7 @@ function TasksPageContent() {
       <Dialog open={Boolean(editingTask)} onOpenChange={(open) => !open && setEditingTask(undefined)}>
         <DialogContent className="max-h-[90dvh] overflow-auto">
           <DialogHeader>
-            <DialogTitle>タスクを編集</DialogTitle>
+            <DialogTitle>Edit task</DialogTitle>
           </DialogHeader>
           {editingTask ? (
             <TaskWizard
@@ -230,7 +230,7 @@ function TasksPageContent() {
 
 export default function TasksPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>}>
+    <Suspense fallback={<div className="text-sm text-muted-foreground">Loading tasks...</div>}>
       <TasksPageContent />
     </Suspense>
   );

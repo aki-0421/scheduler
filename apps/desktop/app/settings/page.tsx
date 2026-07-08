@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { formatEnumLabel } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
 import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
 import {
@@ -177,7 +178,7 @@ export default function SettingsPage() {
                   <SelectContent>
                     {sandboxModes.map((mode) => (
                       <SelectItem key={mode} value={mode}>
-                        {mode}
+                        {formatEnumLabel(mode)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -199,7 +200,7 @@ export default function SettingsPage() {
                   <SelectContent>
                     {approvalPolicies.map((policy) => (
                       <SelectItem key={policy} value={policy}>
-                        {policy}
+                        {formatEnumLabel(policy)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -253,7 +254,7 @@ export default function SettingsPage() {
                 <SelectContent>
                   {cleanupPolicies.map((policy) => (
                     <SelectItem key={policy} value={policy}>
-                      {policy}
+                      {formatEnumLabel(policy)}
                     </SelectItem>
                   ))}
                 </SelectContent>

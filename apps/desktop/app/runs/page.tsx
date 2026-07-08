@@ -84,8 +84,8 @@ function RunsPageContent() {
   return (
     <div className="grid gap-5">
       <PageHeader
-        title="実行履歴"
-        description="実行履歴、失敗の triage、ログ末尾を確認します。"
+        title="Runs"
+        description="Review run history, failure triage, and log tails."
         actions={
           <>
             <Button
@@ -93,21 +93,21 @@ function RunsPageContent() {
               variant={preset === "failed" ? "default" : "outline"}
               onClick={() => applyPreset("failed")}
             >
-              失敗
+              Failed
             </Button>
             <Button
               type="button"
               variant={preset === "needs_attention" ? "default" : "outline"}
               onClick={() => applyPreset("needs_attention")}
             >
-              要確認
+              Needs attention
             </Button>
             <Button
               type="button"
               variant={preset === "recent" ? "default" : "outline"}
               onClick={() => applyPreset("recent")}
             >
-              最近
+              Recent
             </Button>
             <Select
               value={statusFilter}
@@ -120,7 +120,7 @@ function RunsPageContent() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">すべての状態</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
                 {runStatuses.map((status) => (
                   <SelectItem key={status} value={status}>
                     {formatRunStatus(status)}
@@ -133,7 +133,7 @@ function RunsPageContent() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">すべてのタスク</SelectItem>
+                <SelectItem value="all">All tasks</SelectItem>
                 {taskList.map((task) => (
                   <SelectItem key={task.id} value={task.id}>
                     {task.name}
@@ -145,25 +145,25 @@ function RunsPageContent() {
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.9fr)]">
+      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>実行履歴</CardTitle>
+            <CardTitle>Run history</CardTitle>
             <CardDescription>
-              {displayedRunList.length.toLocaleString("ja-JP")} 件の実行
+              {displayedRunList.length.toLocaleString("ja-JP")} runs
             </CardDescription>
           </CardHeader>
           <CardContent>
             {displayedRunList.length ? (
-              <Table>
+              <Table className="min-w-[880px] table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>タスク</TableHead>
-                    <TableHead>状態</TableHead>
-                    <TableHead>予定時刻</TableHead>
-                    <TableHead>開始</TableHead>
-                    <TableHead>所要時間</TableHead>
-                    <TableHead>終了コード</TableHead>
+                    <TableHead className="w-[260px]">Task</TableHead>
+                    <TableHead className="w-[120px]">Status</TableHead>
+                    <TableHead className="w-[150px]">Scheduled</TableHead>
+                    <TableHead className="w-[150px]">Started</TableHead>
+                    <TableHead className="w-[110px]">Duration</TableHead>
+                    <TableHead className="w-[90px]">Exit</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -172,10 +172,10 @@ function RunsPageContent() {
                       key={run.id}
                       data-state={selectedRunId === run.id ? "selected" : undefined}
                     >
-                      <TableCell>
+                      <TableCell className="w-[260px]">
                         <Link
                           href={`/runs?run=${run.id}`}
-                          className="font-medium hover:underline"
+                          className="line-clamp-2 font-medium hover:underline"
                         >
                           {taskById.get(run.taskId)?.name ?? run.taskId}
                         </Link>
@@ -183,17 +183,17 @@ function RunsPageContent() {
                           {run.id}
                         </p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="w-[120px]">
                         <RunStatusBadge status={run.status} />
                       </TableCell>
-                      <TableCell className="tabular-nums">
+                      <TableCell className="w-[150px] tabular-nums">
                         {formatDateTime(run.scheduledFor)}
                       </TableCell>
-                      <TableCell className="tabular-nums">
+                      <TableCell className="w-[150px] tabular-nums">
                         {formatDateTime(run.startedAt)}
                       </TableCell>
-                      <TableCell>{formatDuration(run)}</TableCell>
-                      <TableCell>{run.exitCode ?? "—"}</TableCell>
+                      <TableCell className="w-[110px]">{formatDuration(run)}</TableCell>
+                      <TableCell className="w-[90px]">{run.exitCode ?? "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -201,9 +201,9 @@ function RunsPageContent() {
             ) : (
               <EmptyState
                 icon={Activity}
-                title="条件に一致する run はありません"
-                description="フィルターを解除するか、タスクを手動実行すると履歴に表示されます。"
-                action={{ label: "タスクを開く", href: "/tasks" }}
+                title="No matching runs"
+                description="Clear filters or run a task manually to populate history."
+                action={{ label: "Open tasks", href: "/tasks" }}
               />
             )}
             {/* TODO: Add mark reviewed/archive actions when the DB schema supports triage state. */}
@@ -219,16 +219,16 @@ function RunsPageContent() {
           ) : (
             <Card>
               <CardHeader>
-              <CardTitle>実行詳細</CardTitle>
-              <CardDescription>選択した実行を読み込んでいます。</CardDescription>
+                <CardTitle>Run detail</CardTitle>
+                <CardDescription>Loading the selected run.</CardDescription>
               </CardHeader>
             </Card>
           )
         ) : (
           <EmptyState
             icon={Activity}
-            title="実行を選択"
-            description="実行を選択すると、メタデータ、ログ、最終メッセージ、再実行操作を確認できます。"
+            title="Select a run"
+            description="Select a run to inspect metadata, logs, final output, and retry actions."
           />
         )}
       </div>
@@ -238,7 +238,7 @@ function RunsPageContent() {
 
 export default function RunsPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">実行を読み込んでいます...</div>}>
+    <Suspense fallback={<div className="text-sm text-muted-foreground">Loading runs...</div>}>
       <RunsPageContent />
     </Suspense>
   );

@@ -37,7 +37,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { getCronPreview } from "@/lib/cron";
-import { formatDateTime, formatTargetMode } from "@/lib/format";
+import { formatDateTime, formatEnumLabel, formatTargetMode } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
 import {
   buildTaskDto,
@@ -120,7 +120,7 @@ function SelectField<T extends string>({
         <SelectContent>
           {values.map((item) => (
             <SelectItem key={item} value={item}>
-              {item}
+              {formatEnumLabel(item)}
             </SelectItem>
           ))}
         </SelectContent>
