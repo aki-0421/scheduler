@@ -165,4 +165,26 @@ describe("TaskWizard cron validation", () => {
     await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
     expect(createSpy).toHaveBeenCalledWith(expectedDto);
   });
+
+  it("notifies the parent with the created task after create succeeds", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    const draft = {
+      ...defaultTaskDraft(),
+      name: "Create callback",
+      prompt: "Create a task and return it to the route.",
+    };
+    const expectedDto = buildTaskDto(draft, false);
+    const createdTask = {
+      ...expectedDto,
+      id: "task_created",
+    };
+    vi.spyOn(ipcClient, "taskCreate").mockResolvedValue(createdTask);
+
+    renderWithClient(<TaskWizard initialDraft={draft} onSaved={onSaved} />);
+
+    await user.click(screen.getByRole("button", { name: "タスクを作成" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(createdTask));
+  });
 });

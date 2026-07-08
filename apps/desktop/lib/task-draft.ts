@@ -68,15 +68,6 @@ function dateInputValue(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-}
-
 function splitTime(value: string | undefined, timeZone: string) {
   if (!value) {
     return { date: dateInputValue(tomorrow), time: "09:00" };
@@ -421,7 +412,7 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
 
   return {
     id: draft.id ?? "",
-    slug: draft.slug ?? slugify(draft.name),
+    slug: draft.slug ?? "",
     name: draft.name.trim(),
     description: draft.description.trim() || undefined,
     status: paused || draft.forcePaused ? "paused" : "active",

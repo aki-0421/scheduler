@@ -26,7 +26,7 @@ use scheduler_core::schedule::{
 };
 use scheduler_core::settings::{SETTING_RUNNER_CODEX_PATH, SETTING_SCHEDULER_ENABLED};
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
-use scheduler_core::util::sha256_hex;
+use scheduler_core::util::{sha256_hex, unique_slug};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
@@ -1818,6 +1818,12 @@ async fn rpc_task_create(
     let authorization = authorize_task_create(state, params.actor, &metadata).await?;
     let actor = authorization.actor.clone();
     let mut task = Task::try_from(params.task).map_err(map_core_error)?;
+    let existing_tasks = state.db.list_tasks().await.map_err(map_core_error)?;
+    task.slug = unique_slug(
+        &task.name,
+        existing_tasks.iter().map(|existing| existing.slug.as_str()),
+    )
+    .map_err(map_core_error)?;
     let trust = apply_repo_path_trust_policy(&state.db, &mut task, actor.actor_type).await?;
     prepare_task_schedule(&mut task);
     if let Some(token) = &authorization.token {

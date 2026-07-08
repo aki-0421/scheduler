@@ -305,6 +305,38 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
 }
 
 #[tokio::test]
+async fn task_create_generates_unique_slug_for_duplicate_names() {
+    let (_temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+
+    let first: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams {
+            task: sample_task_dto("daily-review", TaskKind::Manual),
+            actor: None,
+        },
+    )
+    .await
+    .expect("create first task");
+    let second: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams {
+            task: sample_task_dto("daily-review", TaskKind::Manual),
+            actor: None,
+        },
+    )
+    .await
+    .expect("create duplicate task");
+
+    assert_eq!(first.task.slug, "daily-review");
+    assert_eq!(second.task.slug, "daily-review-2");
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn daemon_tick_now_triggers_scheduler_tick_over_uds() {
     let (_temp, handle, executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
