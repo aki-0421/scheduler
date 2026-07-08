@@ -6,11 +6,15 @@ import { cn } from "@/lib/utils";
 const alertVariants = cva("relative w-full rounded-lg border p-4 text-sm", {
   variants: {
     variant: {
-      default: "bg-background text-foreground",
+      default: "bg-card text-foreground",
       destructive:
-        "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+        "border-status-error-border bg-status-error-muted text-status-error-muted-foreground [&>svg]:text-status-error",
       warning:
-        "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200",
+        "border-status-warning-border bg-status-warning-muted text-status-warning-muted-foreground [&>svg]:text-status-warning",
+      info:
+        "border-status-info-border bg-status-info-muted text-status-info-muted-foreground [&>svg]:text-status-info",
+      success:
+        "border-status-success-border bg-status-success-muted text-status-success-muted-foreground [&>svg]:text-status-success",
     },
   },
   defaultVariants: {
