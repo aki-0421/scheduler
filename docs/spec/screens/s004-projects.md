@@ -19,7 +19,7 @@ read_when:
 データ依存:
 
 - project record には `useProjects()` を使う。
-- project add は desktop folder picker command を呼び出し、選択された directory を project として登録する。
+- project add は desktop folder picker command を呼び出し、選択された directory を project として登録する。Git project の default branch が未設定の場合、daemon は origin の default branch を検出して保存する。
 - project update は display name と project metadata を保存する。
 - project remove で影響を受ける active task count には `useTasks()` を使う。
 

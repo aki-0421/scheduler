@@ -251,6 +251,43 @@ fn run_git(cwd: &Path, args: &[&str]) {
     );
 }
 
+fn init_repo_with_origin_main(temp: &TempDir) -> PathBuf {
+    let origin = temp.path().join("origin.git");
+    let repo = temp.path().join("repo");
+    std::fs::create_dir_all(&repo).expect("create repo");
+
+    run_git(temp.path(), &["init", "--bare", "origin.git"]);
+    run_git(
+        temp.path(),
+        &[
+            "--git-dir",
+            origin.to_str().expect("origin path"),
+            "symbolic-ref",
+            "HEAD",
+            "refs/heads/main",
+        ],
+    );
+    run_git(&repo, &["init"]);
+    run_git(&repo, &["config", "user.email", "scheduler@example.com"]);
+    run_git(&repo, &["config", "user.name", "Scheduler Test"]);
+    run_git(&repo, &["checkout", "-b", "main"]);
+    std::fs::write(repo.join("README.md"), "hello\n").expect("write readme");
+    run_git(&repo, &["add", "README.md"]);
+    run_git(&repo, &["commit", "-m", "initial"]);
+    run_git(
+        &repo,
+        &[
+            "remote",
+            "add",
+            "origin",
+            origin.to_str().expect("origin path"),
+        ],
+    );
+    run_git(&repo, &["push", "-u", "origin", "main"]);
+    run_git(&repo, &["checkout", "-b", "feature"]);
+    repo
+}
+
 #[tokio::test]
 async fn daemon_health_returns_shape_over_uds() {
     let (_temp, handle, _executor) =
@@ -416,6 +453,79 @@ async fn task_audit_list_returns_task_audit_events_over_uds() {
     assert!(event.before_json.is_none());
     assert!(event.after_json.is_some());
     assert!(!event.created_at.is_empty());
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn project_trust_sets_default_branch_from_origin_head() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo = init_repo_with_origin_main(&temp);
+
+    let trusted: ProjectTrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: repo.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("trust project");
+
+    assert_eq!(trusted.project.kind, ProjectKind::Git);
+    assert_eq!(trusted.project.default_branch.as_deref(), Some("main"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn project_list_fills_missing_default_branch_from_origin_head() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo = std::fs::canonicalize(init_repo_with_origin_main(&temp)).expect("canonical repo");
+
+    let now = now_rfc3339();
+    let project = Project {
+        id: new_project_id(),
+        name: "repo".to_owned(),
+        path: repo.to_string_lossy().into_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some(repo.to_string_lossy().into_owned()),
+        git_remote_url: None,
+        default_branch: None,
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    handle
+        .db()
+        .create_project(&project)
+        .await
+        .expect("create project");
+
+    let listed: ProjectListResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_LIST,
+        ProjectListParams {},
+    )
+    .await
+    .expect("list projects");
+
+    let listed_project = listed
+        .projects
+        .iter()
+        .find(|item| item.id == project.id)
+        .expect("listed project");
+    assert_eq!(listed_project.default_branch.as_deref(), Some("main"));
+    let stored = handle
+        .db()
+        .get_project(&project.id)
+        .await
+        .expect("get project")
+        .expect("stored project");
+    assert_eq!(stored.default_branch.as_deref(), Some("main"));
 
     handle.shutdown().await;
 }

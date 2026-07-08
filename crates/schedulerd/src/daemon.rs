@@ -1336,16 +1336,7 @@ async fn route_rpc(
             let params: RunTailLogParams = parse_params(request.params)?;
             to_value(rpc_run_tail_log(state, params).await?)
         }
-        METHOD_PROJECT_LIST => to_value(ProjectListResult {
-            projects: state
-                .db
-                .list_projects()
-                .await
-                .map_err(map_core_error)?
-                .iter()
-                .map(ProjectDto::from)
-                .collect(),
-        }),
+        METHOD_PROJECT_LIST => to_value(rpc_project_list(state).await?),
         METHOD_PROJECT_TRUST => {
             let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: ProjectTrustParams = parse_params(request.params)?;
@@ -1661,7 +1652,10 @@ fn ensure_task_unlocked_for_actor(
     if task.locked && actor_type != AuditActorType::User {
         return Err(JsonRpcError::new(
             JsonRpcErrorCode::PermissionDenied,
-            format!("{operation} is blocked because task `{}` is locked", task.id),
+            format!(
+                "{operation} is blocked because task `{}` is locked",
+                task.id
+            ),
         ));
     }
     Ok(())
@@ -1676,7 +1670,10 @@ fn ensure_lock_change_allowed(
     if before.locked != after.locked && actor_type != AuditActorType::User {
         return Err(JsonRpcError::new(
             JsonRpcErrorCode::PermissionDenied,
-            format!("{operation} cannot change lock state for task `{}`", before.id),
+            format!(
+                "{operation} cannot change lock state for task `{}`",
+                before.id
+            ),
         ));
     }
     Ok(())
@@ -2147,6 +2144,9 @@ async fn rpc_project_trust(
     })?;
     let path = path_to_string(&canonical);
     let git_root = detect_git_root(&canonical);
+    let origin_default_branch = git_root
+        .as_deref()
+        .and_then(|root| detect_origin_default_branch(Path::new(root)));
     let now = now_rfc3339();
     let mut existing = state
         .db
@@ -2163,6 +2163,11 @@ async fn rpc_project_trust(
             ProjectKind::Folder
         };
         project.git_root = git_root.clone();
+        project.default_branch = if git_root.is_some() {
+            project.default_branch.or(origin_default_branch.clone())
+        } else {
+            None
+        };
         project.trusted_at = Some(now.clone());
         project.updated_at = now.clone();
         state
@@ -2187,7 +2192,7 @@ async fn rpc_project_trust(
             },
             git_root,
             git_remote_url: None,
-            default_branch: None,
+            default_branch: origin_default_branch,
             trusted_at: Some(now.clone()),
             created_at: now.clone(),
             updated_at: now.clone(),
@@ -2214,6 +2219,36 @@ async fn rpc_project_trust(
     Ok(ProjectTrustResult {
         project: ProjectDto::from(&project),
     })
+}
+
+async fn rpc_project_list(state: &Arc<DaemonState>) -> Result<ProjectListResult, JsonRpcError> {
+    let mut projects = state.db.list_projects().await.map_err(map_core_error)?;
+    for project in &mut projects {
+        fill_missing_project_default_branch(&state.db, project).await?;
+    }
+
+    Ok(ProjectListResult {
+        projects: projects.iter().map(ProjectDto::from).collect(),
+    })
+}
+
+async fn fill_missing_project_default_branch(
+    db: &SchedulerDb,
+    project: &mut Project,
+) -> Result<(), JsonRpcError> {
+    if project.kind != ProjectKind::Git || project.default_branch.is_some() {
+        return Ok(());
+    }
+
+    let root = project.git_root.as_deref().unwrap_or(&project.path);
+    let Some(default_branch) = detect_origin_default_branch(Path::new(root)) else {
+        return Ok(());
+    };
+
+    project.default_branch = Some(default_branch);
+    project.updated_at = now_rfc3339();
+    db.update_project(project).await.map_err(map_core_error)?;
+    Ok(())
 }
 
 async fn rpc_project_untrust(
@@ -2768,6 +2803,50 @@ fn detect_git_root(path: &Path) -> Option<String> {
     } else {
         Some(root)
     }
+}
+
+fn detect_origin_default_branch(git_root: &Path) -> Option<String> {
+    let symbolic = std::process::Command::new("git")
+        .arg("-C")
+        .arg(git_root)
+        .arg("symbolic-ref")
+        .arg("--quiet")
+        .arg("refs/remotes/origin/HEAD")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| {
+            let value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            value
+                .strip_prefix("refs/remotes/origin/")
+                .map(str::to_owned)
+                .or_else(|| value.strip_prefix("origin/").map(str::to_owned))
+        })
+        .filter(|branch| !branch.is_empty());
+    if symbolic.is_some() {
+        return symbolic;
+    }
+
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(git_root)
+        .arg("remote")
+        .arg("show")
+        .arg("origin")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .find_map(|line| {
+                    line.strip_prefix("HEAD branch:")
+                        .map(str::trim)
+                        .filter(|branch| !branch.is_empty() && *branch != "(unknown)")
+                        .map(str::to_owned)
+                })
+        })
 }
 
 fn path_to_string(path: &Path) -> String {
