@@ -5,7 +5,7 @@
   "identifier": "com.local.codex-scheduler",
   "build": {
     "beforeDevCommand": "pnpm sidecars:prepare && pnpm dev",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://127.0.0.1:4317",
     "beforeBuildCommand": "pnpm sidecars:prepare && pnpm build",
     "frontendDist": "../out"
   },
