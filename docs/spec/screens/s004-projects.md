@@ -25,7 +25,7 @@ read_when:
 
 レイアウト領域:
 
-- `プロジェクト` title と `プロジェクトを追加` action を持つ header。header の補足説明文は表示しない。
+- `プロジェクト` title と `プロジェクトを追加` action を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - registered project table。`プロジェクト一覧` のような title と同義の section heading や count 説明文は表示しない。
 - project edit inline row または dialog。
 - remove project confirmation dialog。

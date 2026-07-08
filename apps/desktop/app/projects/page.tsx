@@ -169,6 +169,7 @@ export default function ProjectsPage() {
     <div className="grid gap-6">
       <PageHeader
         title="プロジェクト"
+        description="スケジュールされた Codex 実行で使うローカルフォルダとリポジトリを管理します。"
         actions={
           <Button
             type="button"

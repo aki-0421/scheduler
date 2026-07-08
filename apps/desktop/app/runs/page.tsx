@@ -179,7 +179,8 @@ function RunsPageContent() {
     <div className="grid gap-5">
       <PageHeader
         title="実行履歴"
-        className="md:flex-col md:items-stretch xl:flex-row xl:items-start"
+        description="Codex 実行の状態、出力、ログ、成果物を確認します。"
+        className="md:flex-col md:items-stretch xl:flex-row xl:items-center"
         actions={
           <>
             <Select

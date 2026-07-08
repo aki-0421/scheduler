@@ -145,7 +145,10 @@ export default function SettingsPage() {
 
   return (
     <div className="grid gap-6">
-      <PageHeader title="設定" />
+      <PageHeader
+        title="設定"
+        description="スケジューラー、Codex 実行、権限、診断の既定値を管理します。"
+      />
 
       <SettingsSection title="一般">
         <SettingRow

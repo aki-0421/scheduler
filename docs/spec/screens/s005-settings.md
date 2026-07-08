@@ -25,7 +25,7 @@ read_when:
 
 レイアウト領域:
 
-- `設定` title を持つ header。header の補足説明文は表示しない。
+- `設定` title を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - General section。section heading 直下の補足説明文は表示しない。
 - Execution section。section heading 直下の補足説明文は表示しない。
 - Permissions section。section heading 直下の補足説明文は表示しない。

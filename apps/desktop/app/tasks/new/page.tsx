@@ -13,7 +13,10 @@ import type { TaskDto } from "@/lib/types";
 function NewTaskLoading() {
   return (
     <div className="grid gap-5">
-      <PageHeader title="新規タスク" />
+      <PageHeader
+        title="新規タスク"
+        description="プロンプトとタスク名を基本タブにまとめ、通常変更しない実行設定は詳細タブで調整します。"
+      />
       <div className="grid gap-4">
         <Skeleton className="h-24" />
         <Skeleton className="h-72" />
@@ -71,6 +74,13 @@ function NewTaskPageContent() {
             : prefillFromTask
               ? "フォローアップタスク"
               : "新規タスク"
+        }
+        description={
+          duplicateFromTask
+            ? "既存タスクの設定をもとに、新しいタスクを作成します。"
+            : prefillFromTask
+              ? "選択した実行やタスクの文脈を引き継いで、次の作業用タスクを作成します。"
+              : "プロンプトとタスク名を基本タブにまとめ、通常変更しない実行設定は詳細タブで調整します。"
         }
       />
       <TaskWizard

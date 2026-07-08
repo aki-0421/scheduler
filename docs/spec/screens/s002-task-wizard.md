@@ -33,6 +33,7 @@ read_when:
 レイアウト領域:
 
 - page または dialog header。
+- page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - validation failure 時の error summary alert。
 - tabs: `基本`、`実行先`、`スケジュール`、`詳細`。
 - `基本` tab: required main flow。prompt、task name、任意の description を同じ画面にまとめる。

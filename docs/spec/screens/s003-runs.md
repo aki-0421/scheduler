@@ -28,7 +28,7 @@ read_when:
 
 レイアウト領域:
 
-- status filter と task filter を持つ header。header の補足説明文は表示しない。
+- status filter と task filter を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - preset button、list row を持つ run history section。list count の説明文は表示しない。
 - `/runs?run=<runId>` は session detail page として開く。
 - session detail header は task name、run status、trigger、scheduled / started time、parent task link を持つ。

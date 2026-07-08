@@ -54,6 +54,7 @@ read_when:
 - Toolbox: settings gear icon button。必要に応じて diagnostics などの icon-only controls を追加できる。
 - Header count: running count、queued count。長い `0件実行中 · 0件待機中` 形式は使わない。
 - Header breadcrumb: `プロジェクト`、`アーカイブ済み`、`アーカイブ済み / <task name>`、`アーカイブ済み / 新規タスク`、`実行履歴 / <run id>`、`設定`。
+- Page header: title cluster と action controls は同じ行内で垂直中央揃えにする。page-level explanation は常時 subtitle として表示せず、title 右の `?` help trigger の tooltip に置く。
 
 状態:
 

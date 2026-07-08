@@ -63,7 +63,10 @@ function TaskScreen({ taskId }: { taskId: string }) {
 
   return (
     <div className="grid gap-5">
-      <PageHeader title={task.data.name} />
+      <PageHeader
+        title={task.data.name}
+        description="このタスクの概要、実行履歴、プロンプト、設定、監査ログ、操作を確認します。"
+      />
       <TaskDetail
         task={task.data}
         runs={runs.data ?? []}
@@ -115,7 +118,10 @@ function TasksPageContent() {
 
   return (
     <div className="grid gap-5">
-      <PageHeader title="アーカイブ済み" />
+      <PageHeader
+        title="アーカイブ済み"
+        description="停止中、完了済み、1回きりのタスクを確認します。"
+      />
 
       <section className="grid min-w-0 gap-3">
         <div className="overflow-hidden rounded-lg border bg-surface/70">
