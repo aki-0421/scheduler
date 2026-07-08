@@ -13,7 +13,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ja-JP", {
 
 export function formatDateTime(value?: string) {
   if (!value) {
-    return "未設定";
+    return "Not set";
   }
 
   const date = new Date(value);
@@ -36,12 +36,12 @@ export function formatDuration(run: RunDto) {
   }
 
   if (durationMs < 60_000) {
-    return `${Math.round(durationMs / 1000)}秒`;
+    return `${Math.round(durationMs / 1000)} sec`;
   }
 
   const minutes = Math.floor(durationMs / 60_000);
   const seconds = Math.round((durationMs % 60_000) / 1000);
-  return `${minutes}分 ${seconds}秒`;
+  return `${minutes} min ${seconds} sec`;
 }
 
 export function formatTaskSchedule(task: TaskDto) {

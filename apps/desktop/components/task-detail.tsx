@@ -82,8 +82,8 @@ function AuditEventRow({ event }: { event: TaskAuditEvent }) {
       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{event.action}</Badge>
-            <Badge variant="muted">actor_type {event.actorType}</Badge>
+            <Badge variant="outline">{formatEnumLabel(event.action)}</Badge>
+            <Badge variant="muted">Actor: {formatEnumLabel(event.actorType)}</Badge>
             {event.actorId ? <Badge variant="muted">{event.actorId}</Badge> : null}
           </div>
           {event.reason ? (
