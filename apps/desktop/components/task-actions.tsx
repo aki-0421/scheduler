@@ -1,6 +1,8 @@
 "use client";
 
-import { Pencil, Pause, Play, RotateCcw, Trash2 } from "lucide-react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -12,7 +14,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,13 +23,20 @@ import {
   useRunTaskNow,
 } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 type TaskRowActionsProps = {
   task: TaskDto;
   onEdit?: (task: TaskDto) => void;
+  className?: string;
 };
 
-export function TaskRowActions({ task, onEdit }: TaskRowActionsProps) {
+export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const runNow = useRunTaskNow();
   const pause = usePauseTask();
   const resume = useResumeTask();
@@ -42,95 +50,204 @@ export function TaskRowActions({ task, onEdit }: TaskRowActionsProps) {
       .catch((error) =>
         toast.error(failure, {
           description:
-            error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
+            error instanceof Error ? error.message : "The scheduler command failed.",
         }),
       );
   }
 
+  function updateMenuPosition() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    setMenuPosition({
+      top: rect.bottom + 8,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+  }
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [menuOpen]);
+
+  function closeMenu() {
+    setMenuOpen(false);
+  }
+
+  function pauseTask() {
+    closeMenu();
+    withToast(
+      pause.mutateAsync(task.id),
+      "Task paused",
+      "Could not pause task",
+    );
+  }
+
+  function resumeTask() {
+    closeMenu();
+    withToast(
+      resume.mutateAsync(task.id),
+      "Task resumed",
+      "Could not resume task",
+    );
+  }
+
+  function editTask() {
+    closeMenu();
+    onEdit?.(task);
+  }
+
+  function requestDelete() {
+    closeMenu();
+    setDeleteDialogOpen(true);
+  }
+
   return (
-    <div className="flex items-center justify-end gap-1">
+    <div className={cn("flex items-center justify-end gap-1.5", className)}>
       <Button
-        variant="ghost"
-        size="icon"
-        aria-label={`${task.name} を今すぐ実行`}
+        variant="outline"
+        size="sm"
+        aria-label={`Run ${task.name} now`}
         disabled={runNow.isPending || task.status === "deleted"}
         onClick={() =>
           withToast(
             runNow.mutateAsync(task.id),
-            "run をキューに入れました",
-            "run をキューに入れられませんでした",
+            "Run queued",
+            "Could not queue run",
           )
         }
       >
         <Play className="size-4" aria-hidden="true" />
+        Run now
       </Button>
-      {canPause ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`${task.name} を一時停止`}
-          disabled={pause.isPending}
-          onClick={() =>
-            withToast(
-              pause.mutateAsync(task.id),
-              "タスクを一時停止しました",
-              "タスクを一時停止できませんでした",
-            )
-          }
-        >
-          <Pause className="size-4" aria-hidden="true" />
-        </Button>
-      ) : (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`${task.name} を再開`}
-          disabled={!canResume || resume.isPending}
-          onClick={() =>
-            withToast(
-              resume.mutateAsync(task.id),
-              "タスクを再開しました",
-              "タスクを再開できませんでした",
-            )
-          }
-        >
-          <RotateCcw className="size-4" aria-hidden="true" />
-        </Button>
-      )}
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={`${task.name} を編集`}
-        onClick={() => onEdit?.(task)}
-      >
-        <Pencil className="size-4" aria-hidden="true" />
-      </Button>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label={`${task.name} を削除`}>
-            <Trash2 className="size-4" aria-hidden="true" />
+      <DialogPrimitive.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
+        <DialogPrimitive.Trigger asChild>
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={`More actions for ${task.name}`}
+            onClick={updateMenuPosition}
+          >
+            <MoreHorizontal className="size-4" aria-hidden="true" />
           </Button>
-        </AlertDialogTrigger>
+        </DialogPrimitive.Trigger>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Content
+            ref={menuRef}
+            role="menu"
+            aria-label={`More actions for ${task.name}`}
+            className="fixed z-20 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            style={{ top: menuPosition.top, right: menuPosition.right }}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              window.requestAnimationFrame(() => {
+                menuRef.current
+                  ?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')
+                  ?.focus();
+              });
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              triggerRef.current?.focus();
+            }}
+          >
+            <DialogPrimitive.Title className="sr-only">
+              More actions for {task.name}
+            </DialogPrimitive.Title>
+          {canPause ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              role="menuitem"
+              aria-label={`Pause ${task.name}`}
+              disabled={pause.isPending}
+              onClick={pauseTask}
+            >
+              <Pause className="size-4" aria-hidden="true" />
+              Pause
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              role="menuitem"
+              aria-label={`Resume ${task.name}`}
+              disabled={!canResume || resume.isPending}
+              onClick={resumeTask}
+            >
+              <RotateCcw className="size-4" aria-hidden="true" />
+              Resume
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start"
+            role="menuitem"
+            aria-label={`Edit ${task.name}`}
+            onClick={editTask}
+          >
+            <Pencil className="size-4" aria-hidden="true" />
+            Edit
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-destructive hover:text-destructive"
+            role="menuitem"
+            aria-label={`Delete ${task.name}`}
+            onClick={requestDelete}
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+            Delete
+          </Button>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>タスクを削除しますか？</AlertDialogTitle>
+            <AlertDialogTitle>Delete this task?</AlertDialogTitle>
             <AlertDialogDescription>
-              {task.name} を有効なスケジュールから削除します。既存の run 履歴は残ります。
+              {task.name} will be removed from active schedules. Existing run
+              history will remain available.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() =>
                 withToast(
                   deleteTask.mutateAsync(task.id),
-                  "タスクを削除しました",
-                  "タスクを削除できませんでした",
+                  "Task deleted",
+                  "Could not delete task",
                 )
               }
             >
-              削除
+              Delete task
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

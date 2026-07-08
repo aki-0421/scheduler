@@ -15,6 +15,10 @@ const config: Config = {
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        surface: {
+          DEFAULT: "hsl(var(--surface))",
+          foreground: "hsl(var(--surface-foreground))",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -42,6 +46,36 @@ const config: Config = {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        status: {
+          success: {
+            DEFAULT: "hsl(var(--status-success))",
+            foreground: "hsl(var(--status-success-foreground))",
+            muted: "hsl(var(--status-success-muted))",
+            "muted-foreground": "hsl(var(--status-success-muted-foreground))",
+            border: "hsl(var(--status-success-border))",
+          },
+          warning: {
+            DEFAULT: "hsl(var(--status-warning))",
+            foreground: "hsl(var(--status-warning-foreground))",
+            muted: "hsl(var(--status-warning-muted))",
+            "muted-foreground": "hsl(var(--status-warning-muted-foreground))",
+            border: "hsl(var(--status-warning-border))",
+          },
+          error: {
+            DEFAULT: "hsl(var(--status-error))",
+            foreground: "hsl(var(--status-error-foreground))",
+            muted: "hsl(var(--status-error-muted))",
+            "muted-foreground": "hsl(var(--status-error-muted-foreground))",
+            border: "hsl(var(--status-error-border))",
+          },
+          info: {
+            DEFAULT: "hsl(var(--status-info))",
+            foreground: "hsl(var(--status-info-foreground))",
+            muted: "hsl(var(--status-info-muted))",
+            "muted-foreground": "hsl(var(--status-info-muted-foreground))",
+            border: "hsl(var(--status-info-border))",
+          },
         },
       },
       borderRadius: {

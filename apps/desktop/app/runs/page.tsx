@@ -6,15 +6,16 @@ import { Activity } from "lucide-react";
 import { Suspense, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import { RunDetail } from "@/components/run-detail";
-import { RunStatusBadge } from "@/components/status-badge";
+import { formatRunStatus, RunStatusBadge } from "@/components/status-badge";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  formatAbsoluteDateTime,
+  formatCount,
+  formatReadableEnum,
+  formatRelativeDateTime,
+  formatRunDuration,
+} from "@/components/task-run-display";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -23,19 +24,105 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { formatDateTime, formatDuration } from "@/lib/format";
 import { useRun, useRuns, useTasks } from "@/lib/queries";
-import { runStatuses, type RunStatus } from "@/lib/types";
+import { runStatuses, type RunDto, type RunStatus } from "@/lib/types";
 
 type RunPreset = "recent" | "failed" | "needs_attention";
+
+function RunPresetButton({
+  value,
+  current,
+  onSelect,
+  children,
+}: {
+  value: RunPreset;
+  current: RunPreset;
+  onSelect: (value: RunPreset) => void;
+  children: string;
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={current === value ? "default" : "ghost"}
+      onClick={() => onSelect(value)}
+    >
+      {children}
+    </Button>
+  );
+}
+
+function RunRow({
+  run,
+  taskName,
+  isSelected,
+}: {
+  run: RunDto;
+  taskName: string;
+  isSelected: boolean;
+}) {
+  const startedAt = run.startedAt ?? run.queuedAt ?? run.scheduledFor;
+  const needsAttention =
+    ["failed", "timed_out", "interrupted"].includes(run.status) ||
+    (run.findingsCount ?? 0) > 0 ||
+    (run.createdScheduleCount ?? 0) > 0;
+
+  return (
+    <Link
+      href={`/runs?run=${run.id}`}
+      data-state={isSelected ? "selected" : undefined}
+      className="grid gap-3 border-b p-4 transition-colors duration-150 last:border-b-0 hover:bg-muted/50 data-[state=selected]:bg-accent data-[state=selected]:text-accent-foreground"
+    >
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-medium">{taskName}</p>
+            <RunStatusBadge status={run.status} />
+            {needsAttention ? (
+              <span className="rounded-md bg-status-warning-muted px-2 py-0.5 text-xs font-medium text-status-warning-muted-foreground">
+                Review
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+            {run.id}
+          </p>
+        </div>
+        <div className="text-left text-sm sm:text-right">
+          <p className="font-medium tabular-nums">
+            {formatRelativeDateTime(startedAt, "Not started")}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+            {formatAbsoluteDateTime(startedAt, "Not started")}
+          </p>
+        </div>
+      </div>
+
+      <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Trigger</dt>
+          <dd className="mt-1 truncate font-medium">
+            {formatReadableEnum(run.triggerType)}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Scheduled</dt>
+          <dd className="mt-1 truncate tabular-nums">
+            {formatAbsoluteDateTime(run.scheduledFor)}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Duration</dt>
+          <dd className="mt-1 font-medium tabular-nums">{formatRunDuration(run)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Exit</dt>
+          <dd className="mt-1 font-medium tabular-nums">{run.exitCode ?? "—"}</dd>
+        </div>
+      </dl>
+    </Link>
+  );
+}
 
 function RunsPageContent() {
   const searchParams = useSearchParams();
@@ -82,131 +169,99 @@ function RunsPageContent() {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-2xl font-semibold text-balance">実行履歴</h1>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            実行履歴、失敗の triage、ログ末尾を確認します。
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant={preset === "failed" ? "default" : "outline"}
-            onClick={() => applyPreset("failed")}
-          >
-            failed
-          </Button>
-          <Button
-            type="button"
-            variant={preset === "needs_attention" ? "default" : "outline"}
-            onClick={() => applyPreset("needs_attention")}
-          >
-            要確認
-          </Button>
-          <Button
-            type="button"
-            variant={preset === "recent" ? "default" : "outline"}
-            onClick={() => applyPreset("recent")}
-          >
-            最近
-          </Button>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => {
-              setPreset("recent");
-              setStatusFilter(value as RunStatus | "all");
-            }}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">すべての status</SelectItem>
-              {runStatuses.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={taskFilter} onValueChange={setTaskFilter}>
-            <SelectTrigger className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">すべてのタスク</SelectItem>
-              {taskList.map((task) => (
-                <SelectItem key={task.id} value={task.id}>
-                  {task.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <PageHeader
+        title="Runs"
+        description="Review run history, failure triage, and log tails."
+        className="md:flex-col md:items-stretch xl:flex-row xl:items-start"
+        actions={
+          <>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => {
+                setPreset("recent");
+                setStatusFilter(value as RunStatus | "all");
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {runStatuses.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {formatRunStatus(status)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={taskFilter} onValueChange={setTaskFilter}>
+              <SelectTrigger className="w-full sm:w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All tasks</SelectItem>
+                {taskList.map((task) => (
+                  <SelectItem key={task.id} value={task.id}>
+                    {task.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+      />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.9fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>run 履歴</CardTitle>
-            <CardDescription>
-              {displayedRunList.length.toLocaleString("ja-JP")} 件の run
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+      <div className="grid gap-4">
+        <section className="grid min-w-0 gap-3">
+          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+            <div>
+              <h2 className="text-base font-semibold text-balance">Run history</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {formatCount(displayedRunList.length)}{" "}
+                {displayedRunList.length === 1 ? "run" : "runs"} shown. Select a
+                run to review the prompt, output, logs, and artifacts.
+              </p>
+            </div>
+            <div className="flex w-full flex-wrap gap-2 md:w-auto md:justify-end">
+              <div className="flex rounded-md border bg-background p-1">
+                <RunPresetButton value="recent" current={preset} onSelect={applyPreset}>
+                  Recent
+                </RunPresetButton>
+                <RunPresetButton value="failed" current={preset} onSelect={applyPreset}>
+                  Failed
+                </RunPresetButton>
+                <RunPresetButton
+                  value="needs_attention"
+                  current={preset}
+                  onSelect={applyPreset}
+                >
+                  Review
+                </RunPresetButton>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border bg-surface/70">
             {displayedRunList.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>タスク</TableHead>
-                    <TableHead>status</TableHead>
-                    <TableHead>予定時刻</TableHead>
-                    <TableHead>開始</TableHead>
-                    <TableHead>所要時間</TableHead>
-                    <TableHead>終了コード</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayedRunList.map((run) => (
-                    <TableRow key={run.id}>
-                      <TableCell>
-                        <Link
-                          href={`/runs?run=${run.id}`}
-                          className="font-medium hover:underline"
-                        >
-                          {taskById.get(run.taskId)?.name ?? run.taskId}
-                        </Link>
-                        <p className="mt-1 font-mono text-xs text-muted-foreground">
-                          {run.id}
-                        </p>
-                      </TableCell>
-                      <TableCell>
-                        <RunStatusBadge status={run.status} />
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {formatDateTime(run.scheduledFor)}
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {formatDateTime(run.startedAt)}
-                      </TableCell>
-                      <TableCell>{formatDuration(run)}</TableCell>
-                      <TableCell>{run.exitCode ?? "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              displayedRunList.map((run) => (
+                <RunRow
+                  key={run.id}
+                  run={run}
+                  taskName={taskById.get(run.taskId)?.name ?? run.taskId}
+                  isSelected={selectedRunId === run.id}
+                />
+              ))
             ) : (
               <EmptyState
                 icon={Activity}
-                title="条件に一致する run はありません"
-                description="フィルターを解除するか、タスクを手動実行すると履歴に表示されます。"
-                action={{ label: "タスクを開く", href: "/tasks" }}
+                title="No matching runs"
+                description="Clear filters or run a task manually to populate history."
+                action={{ label: "Open tasks", href: "/tasks" }}
               />
             )}
             {/* TODO: Add mark reviewed/archive actions when the DB schema supports triage state. */}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         {selectedRunId ? (
           selectedRun.data ? (
@@ -215,23 +270,11 @@ function RunsPageContent() {
               task={taskById.get(selectedRun.data.taskId)}
             />
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>run 詳細</CardTitle>
-                <CardDescription>選択した run を読み込んでいます。</CardDescription>
-              </CardHeader>
-            </Card>
+            <div className="rounded-lg border bg-surface/70 p-4 text-sm text-muted-foreground">
+              Loading the selected run.
+            </div>
           )
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>run 詳細</CardTitle>
-              <CardDescription>
-                run を選択すると、メタデータ、ログ、最終メッセージ、再実行操作を確認できます。
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -239,7 +282,7 @@ function RunsPageContent() {
 
 export default function RunsPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">run を読み込んでいます...</div>}>
+    <Suspense fallback={<div className="text-sm text-muted-foreground">Loading runs...</div>}>
       <RunsPageContent />
     </Suspense>
   );

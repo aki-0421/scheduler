@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1 --port 4317",
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
     "sidecars:prepare": "node scripts/prepare-sidecars.mjs",

@@ -581,18 +581,16 @@ fn parse_help_flags(help: &str) -> HashSet<String> {
 }
 
 fn validate_required_flags(capabilities: &CodexCapabilities) -> Result<()> {
-    let required = [
-        "--cd",
-        "--json",
-        "--sandbox",
-        "--ask-for-approval",
-        "--output-last-message",
-    ];
-    let missing = required
+    let required = ["--cd", "--json", "--sandbox", "--output-last-message"];
+    let mut missing = required
         .iter()
         .filter(|flag| !capabilities.supports_flag(flag))
         .map(|flag| (*flag).to_owned())
         .collect::<Vec<_>>();
+    if !capabilities.supports_flag("--config") && !capabilities.supports_flag("--ask-for-approval")
+    {
+        missing.push("--config or --ask-for-approval".to_owned());
+    }
     if missing.is_empty() {
         Ok(())
     } else {
@@ -1039,11 +1037,18 @@ fn build_command_record(
         argv.extend(["--reasoning-effort".to_owned(), reasoning_effort.clone()]);
     }
 
+    argv.extend(["--sandbox".to_owned(), sandbox.as_str().to_owned()]);
+
+    if capabilities.supports_flag("--config") {
+        argv.extend([
+            "--config".to_owned(),
+            "approval_policy=\"never\"".to_owned(),
+        ]);
+    } else {
+        argv.extend(["--ask-for-approval".to_owned(), "never".to_owned()]);
+    }
+
     argv.extend([
-        "--sandbox".to_owned(),
-        sandbox.as_str().to_owned(),
-        "--ask-for-approval".to_owned(),
-        "never".to_owned(),
         "--output-last-message".to_owned(),
         last_message_path.to_string_lossy().to_string(),
         "-".to_owned(),
@@ -1053,7 +1058,7 @@ fn build_command_record(
         warnings.push(RunnerWarning::new(
             "approval_policy_overridden",
             format!(
-                "scheduled runs use --ask-for-approval never; requested policy {} was overridden",
+                "scheduled runs use approval_policy=never; requested policy {} was overridden",
                 request.codex.approval_policy
             ),
         ));

@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskRowActions } from "@/components/task-actions";
 import { ipcClient } from "@/lib/ipc";
@@ -34,8 +34,35 @@ const activeTask: TaskDto = {
   },
 };
 
+const pausedTask: TaskDto = {
+  ...activeTask,
+  status: "paused",
+};
+
 describe("TaskRowActions", () => {
-  it("calls pause mutation for active tasks", async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("keeps run now as the primary visible action", async () => {
+    const user = userEvent.setup();
+    const runSpy = vi.spyOn(ipcClient, "taskRunNow").mockResolvedValue({
+      id: "run_test",
+      taskId: "task_test",
+      triggerType: "manual",
+      status: "queued",
+      findingsCount: 0,
+      createdScheduleCount: 0,
+    });
+
+    renderWithClient(<TaskRowActions task={activeTask} />);
+
+    await user.click(screen.getByRole("button", { name: "Run Task Test now" }));
+
+    await waitFor(() => expect(runSpy).toHaveBeenCalledWith("task_test"));
+  });
+
+  it("opens overflow before pausing active tasks", async () => {
     const user = userEvent.setup();
     const pauseSpy = vi
       .spyOn(ipcClient, "taskPause")
@@ -43,9 +70,48 @@ describe("TaskRowActions", () => {
 
     renderWithClient(<TaskRowActions task={activeTask} />);
 
-    await user.click(screen.getByLabelText("Task Test を一時停止"));
+    await user.click(screen.getByRole("button", { name: "More actions for Task Test" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Pause Task Test" }));
 
     await waitFor(() => expect(pauseSpy).toHaveBeenCalledWith("task_test"));
-    pauseSpy.mockRestore();
+  });
+
+  it("opens overflow before resuming paused tasks", async () => {
+    const user = userEvent.setup();
+    const resumeSpy = vi
+      .spyOn(ipcClient, "taskResume")
+      .mockResolvedValue({ ...activeTask, status: "active" });
+
+    renderWithClient(<TaskRowActions task={pausedTask} />);
+
+    await user.click(screen.getByRole("button", { name: "More actions for Task Test" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Resume Task Test" }));
+
+    await waitFor(() => expect(resumeSpy).toHaveBeenCalledWith("task_test"));
+  });
+
+  it("opens overflow before editing tasks", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+
+    renderWithClient(<TaskRowActions task={activeTask} onEdit={onEdit} />);
+
+    await user.click(screen.getByRole("button", { name: "More actions for Task Test" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Edit Task Test" }));
+
+    expect(onEdit).toHaveBeenCalledWith(activeTask);
+  });
+
+  it("opens overflow before confirming task deletion", async () => {
+    const user = userEvent.setup();
+    const deleteSpy = vi.spyOn(ipcClient, "taskDelete").mockResolvedValue(true);
+
+    renderWithClient(<TaskRowActions task={activeTask} />);
+
+    await user.click(screen.getByRole("button", { name: "More actions for Task Test" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Delete Task Test" }));
+    await user.click(await screen.findByRole("button", { name: "Delete task" }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("task_test"));
   });
 });

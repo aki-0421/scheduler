@@ -14,7 +14,7 @@ Usage: codex exec [OPTIONS] -
       --color <WHEN>
       --model <MODEL>
       --sandbox <MODE>
-      --ask-for-approval <POLICY>
+      --config <key=value>
       --output-last-message <PATH>
       --skip-git-repo-check
 HELP

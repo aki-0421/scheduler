@@ -3,10 +3,27 @@
 import { Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { TaskWizard } from "@/components/task-wizard";
+import { Skeleton } from "@/components/ui/skeleton";
 import { taskToDraft } from "@/lib/task-draft";
 import { useTask } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
+
+function NewTaskLoading() {
+  return (
+    <div className="grid gap-5">
+      <PageHeader
+        title="New task"
+        description="Describe the work, choose where Codex should run, and set the schedule."
+      />
+      <div className="grid gap-4">
+        <Skeleton className="h-24" />
+        <Skeleton className="h-72" />
+      </div>
+    </div>
+  );
+}
 
 function NewTaskPageContent() {
   const router = useRouter();
@@ -24,8 +41,8 @@ function NewTaskPageContent() {
       ...draft,
       id: undefined,
       slug: undefined,
-      name: `フォローアップ: ${sourceTask.data.name}`,
-      description: sourceRun ? `run ${sourceRun} のフォローアップ` : draft.description,
+      name: `Follow-up: ${sourceTask.data.name}`,
+      description: sourceRun ? `Follow-up for run ${sourceRun}` : draft.description,
       scheduleMode: "manual" as const,
       forcePaused: false,
     };
@@ -36,22 +53,28 @@ function NewTaskPageContent() {
   }
 
   if (prefillFromTask && sourceTask.isLoading) {
-    return <div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>;
+    return <NewTaskLoading />;
   }
 
   return (
-    <TaskWizard
-      key={prefillFromTask ?? "blank"}
-      initialDraft={initialDraft}
-      onSaved={handleSaved}
-      cancelHref="/tasks"
-    />
+    <div className="grid gap-5">
+      <PageHeader
+        title={prefillFromTask ? "Follow-up task" : "New task"}
+        description="Describe the work, choose where Codex should run, and set the schedule."
+      />
+      <TaskWizard
+        key={prefillFromTask ?? "blank"}
+        initialDraft={initialDraft}
+        onSaved={handleSaved}
+        cancelHref="/tasks"
+      />
+    </div>
   );
 }
 
 export default function NewTaskPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>}>
+    <Suspense fallback={<NewTaskLoading />}>
       <NewTaskPageContent />
     </Suspense>
   );

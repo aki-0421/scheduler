@@ -15,7 +15,7 @@ Usage: codex exec [OPTIONS] -
       --model <MODEL>
       --reasoning-effort <EFFORT>
       --sandbox <MODE>
-      --ask-for-approval <POLICY>
+      --config <key=value>
       --output-last-message <PATH>
       --skip-git-repo-check
 HELP
@@ -31,7 +31,7 @@ if [[ "${1:-}" == "exec" ]]; then
         last_message="$2"
         shift 2
         ;;
-      --cd|--color|--model|--reasoning-effort|--sandbox|--ask-for-approval)
+      --cd|--color|--model|--reasoning-effort|--sandbox|--config)
         shift 2
         ;;
       --json|--skip-git-repo-check|-)

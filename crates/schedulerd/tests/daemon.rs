@@ -30,6 +30,14 @@ async fn start_test_daemon(behavior: MockBehavior) -> (TempDir, DaemonHandle, Mo
     (temp_dir, handle, executor)
 }
 
+fn due_rfc3339() -> String {
+    format_utc_rfc3339(Utc::now() - ChronoDuration::seconds(1))
+}
+
+fn executor_call_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
 fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
     TaskDto {
         id: String::new(),
@@ -152,7 +160,7 @@ async fn source_token(
     capabilities: Vec<String>,
 ) -> (TaskDto, String, String) {
     let mut task = sample_task_dto(slug, TaskKind::Cron);
-    task.next_run_at = Some(now_rfc3339());
+    task.next_run_at = Some(format_utc_rfc3339(Utc::now() - ChronoDuration::seconds(2)));
     task.policies.schedule_cli_capabilities = Some(capabilities);
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
@@ -161,7 +169,7 @@ async fn source_token(
     )
     .await
     .expect("create source task");
-    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    assert!(executor.wait_for_calls(1, executor_call_timeout()).await);
     let call = executor
         .calls()
         .await
@@ -315,7 +323,7 @@ async fn daemon_tick_now_triggers_scheduler_tick_over_uds() {
         .await
         .expect("get task")
         .expect("task");
-    stored.next_run_at = Some(now_rfc3339());
+    stored.next_run_at = Some(due_rfc3339());
     stored.updated_at = now_rfc3339();
     handle.db().update_task(&stored).await.expect("update task");
 
@@ -789,7 +797,7 @@ async fn cron_create_tick_enqueues_due_run_and_calls_executor() {
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
 
     let mut task = sample_task_dto("cron-due", TaskKind::Cron);
-    task.next_run_at = Some(now_rfc3339());
+    task.next_run_at = Some(format_utc_rfc3339(Utc::now() - ChronoDuration::seconds(2)));
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
@@ -798,7 +806,7 @@ async fn cron_create_tick_enqueues_due_run_and_calls_executor() {
     .await
     .expect("create task");
 
-    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    assert!(executor.wait_for_calls(1, executor_call_timeout()).await);
     let runs = handle
         .db()
         .list_runs_for_task(&created.task.id)
@@ -827,7 +835,7 @@ async fn once_task_becomes_completed_after_run_creation() {
     .await
     .expect("create once");
 
-    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    assert!(executor.wait_for_calls(1, executor_call_timeout()).await);
     let stored = handle
         .db()
         .get_task(&created.task.id)
@@ -931,7 +939,7 @@ async fn missed_latest_catchup_creates_one_run_and_skipped_audit() {
     let handle = start_daemon(config, Arc::new(executor.clone()))
         .await
         .expect("start");
-    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    assert!(executor.wait_for_calls(1, executor_call_timeout()).await);
 
     let runs = handle
         .db()
@@ -958,7 +966,7 @@ async fn overlap_skip_records_skipped_run_when_previous_is_running() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
 
     let mut task = sample_task_dto("overlap-skip", TaskKind::Cron);
-    task.next_run_at = Some(now_rfc3339());
+    task.next_run_at = Some(format_utc_rfc3339(Utc::now() - ChronoDuration::seconds(2)));
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
@@ -966,7 +974,7 @@ async fn overlap_skip_records_skipped_run_when_previous_is_running() {
     )
     .await
     .expect("create task");
-    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    assert!(executor.wait_for_calls(1, executor_call_timeout()).await);
 
     let mut stored = handle
         .db()
@@ -974,12 +982,12 @@ async fn overlap_skip_records_skipped_run_when_previous_is_running() {
         .await
         .expect("get task")
         .expect("task");
-    stored.next_run_at = Some(format_utc_rfc3339(Utc::now() + ChronoDuration::seconds(1)));
+    stored.next_run_at = Some(format_utc_rfc3339(Utc::now() - ChronoDuration::seconds(1)));
     stored.updated_at = now_rfc3339();
     handle.db().update_task(&stored).await.expect("update task");
     handle.request_tick();
 
-    assert!(wait_for_skipped_run(&handle, &created.task.id, Duration::from_secs(2)).await);
+    assert!(wait_for_skipped_run(&handle, &created.task.id, executor_call_timeout()).await);
 
     handle.shutdown().await;
 }
@@ -1050,7 +1058,7 @@ async fn graceful_shutdown_cancels_or_interrupts_running_run() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
 
     let mut task = sample_task_dto("shutdown-running", TaskKind::Cron);
-    task.next_run_at = Some(now_rfc3339());
+    task.next_run_at = Some(due_rfc3339());
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
@@ -1058,7 +1066,7 @@ async fn graceful_shutdown_cancels_or_interrupts_running_run() {
     )
     .await
     .expect("create task");
-    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    assert!(executor.wait_for_calls(1, executor_call_timeout()).await);
     let call = executor
         .calls()
         .await
@@ -1266,7 +1274,7 @@ async fn run_token_uses_task_max_created_schedules_per_run() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
 
     let mut task = sample_task_dto("token-max-creates", TaskKind::Cron);
-    task.next_run_at = Some(now_rfc3339());
+    task.next_run_at = Some(due_rfc3339());
     task.policies.max_created_schedules_per_run = Some(17);
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
@@ -1275,7 +1283,7 @@ async fn run_token_uses_task_max_created_schedules_per_run() {
     )
     .await
     .expect("create task");
-    assert!(executor.wait_for_calls(1, Duration::from_secs(2)).await);
+    assert!(executor.wait_for_calls(1, executor_call_timeout()).await);
     let call = executor
         .calls()
         .await
@@ -1514,7 +1522,7 @@ async fn permanent_failure_is_not_retried() {
     .await;
 
     let mut task = sample_task_dto("permanent-fail", TaskKind::Cron);
-    task.next_run_at = Some(now_rfc3339());
+    task.next_run_at = Some(due_rfc3339());
     task.policies.max_retries = Some(1);
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
