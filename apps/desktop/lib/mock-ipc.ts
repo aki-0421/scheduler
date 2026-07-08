@@ -73,8 +73,8 @@ let tasks: TaskDto[] = [
   {
     id: "task_daily_review",
     slug: "daily-review",
-    name: "Daily repository review",
-    description: "Summarize risk in the active scheduler workspace.",
+    name: "毎日のリポジトリレビュー",
+    description: "有効な scheduler ワークスペースのリスクを要約します。",
     status: "active",
     kind: "cron",
     cronExpr: "0 9 * * 1-5",
@@ -94,7 +94,7 @@ let tasks: TaskDto[] = [
       approvalPolicy: "never",
     },
     prompt: {
-      body: "Review the latest scheduler changes and summarize regressions.",
+      body: "最新の scheduler 変更をレビューし、リグレッションを要約してください。",
       injectSchedulerInstructions: true,
     },
     policies: {
@@ -128,7 +128,7 @@ let tasks: TaskDto[] = [
           status: "active",
           codex: { sandboxMode: "workspace-write" },
         },
-        reason: "Settings adjusted from desktop UI",
+        reason: "デスクトップ UI から設定を調整",
         createdAt: minutesAgo(60),
       },
       {
@@ -138,7 +138,7 @@ let tasks: TaskDto[] = [
         actorId: undefined,
         action: "task.create",
         beforeJson: undefined,
-        afterJson: { name: "Daily repository review" },
+        afterJson: { name: "毎日のリポジトリレビュー" },
         reason: undefined,
         createdAt: createdAt,
       },
@@ -147,8 +147,8 @@ let tasks: TaskDto[] = [
   {
     id: "task_dependency_scan",
     slug: "dependency-scan",
-    name: "Dependency scan",
-    description: "Check dependency updates and create follow-up schedules.",
+    name: "依存関係スキャン",
+    description: "依存関係の更新を確認し、フォローアップスケジュールを作成します。",
     status: "paused",
     kind: "cron",
     cronExpr: "30 8 * * 1",
@@ -168,7 +168,7 @@ let tasks: TaskDto[] = [
       approvalPolicy: "never",
     },
     prompt: {
-      body: "Find outdated dependencies and propose a safe update plan.",
+      body: "古い依存関係を探し、安全な更新計画を提案してください。",
       injectSchedulerInstructions: true,
     },
     policies: {
@@ -187,8 +187,8 @@ let tasks: TaskDto[] = [
   {
     id: "task_release_notes",
     slug: "release-notes",
-    name: "Draft release notes",
-    description: "One-time run for the next local release.",
+    name: "リリースノート下書き",
+    description: "次のローカルリリース向けの一度だけの実行です。",
     status: "active",
     kind: "once",
     cronExpr: undefined,
@@ -203,7 +203,7 @@ let tasks: TaskDto[] = [
       approvalPolicy: "never",
     },
     prompt: {
-      body: "Draft release notes from the latest merged work.",
+      body: "最新のマージ済み作業からリリースノートの下書きを作成してください。",
       injectSchedulerInstructions: false,
     },
     policies: {
@@ -258,9 +258,9 @@ let runs: RunDto[] = [
       "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_success/events.jsonl",
     lastMessagePath:
       "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_success/last-message.md",
-    stdoutTail: "Final: No critical issues found\n",
+    stdoutTail: "Final: 重大な問題は見つかりませんでした\n",
     stderrTail: "",
-    resultSummary: "No critical issues found. Two follow-up notes were recorded.",
+    resultSummary: "重大な問題は見つかりませんでした。フォローアップメモを2件記録しました。",
     findingsCount: 2,
     createdScheduleCount: 1,
   },
@@ -271,7 +271,7 @@ let runs: RunDto[] = [
     scheduledFor: minutesAgo(90),
     attempt: 1,
     status: "failed",
-    statusReason: "Codex exited with code 1 after package metadata lookup failed.",
+    statusReason: "パッケージメタデータの取得に失敗した後、Codex はコード 1 で終了しました。",
     queuedAt: minutesAgo(90),
     startedAt: minutesAgo(89),
     endedAt: minutesAgo(84),
@@ -294,9 +294,9 @@ let runs: RunDto[] = [
       "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_failed/events.jsonl",
     lastMessagePath:
       "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_failed/last-message.md",
-    stdoutTail: "Starting dependency scan\nResolving package metadata\n",
+    stdoutTail: "依存関係スキャンを開始しています\nパッケージメタデータを解決しています\n",
     stderrTail: "registry lookup timed out\nretry budget exhausted\n",
-    resultSummary: "Dependency scan could not complete because npm metadata timed out.",
+    resultSummary: "npm メタデータがタイムアウトしたため、依存関係スキャンを完了できませんでした。",
     findingsCount: 0,
     createdScheduleCount: 0,
   },
@@ -332,9 +332,9 @@ let runs: RunDto[] = [
       "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_running/events.jsonl",
     lastMessagePath:
       "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_running/last-message.md",
-    stdoutTail: "Reading specs...\nChecking current workspace...\n",
+    stdoutTail: "仕様を読んでいます...\n現在のワークスペースを確認しています...\n",
     stderrTail: "",
-    resultSummary: "Review in progress.",
+    resultSummary: "レビュー中です。",
     findingsCount: 0,
     createdScheduleCount: 0,
   },
@@ -345,28 +345,28 @@ const logs = new Map<string, Record<LogStream, string>>([
     "run_success",
     {
       stdout:
-        "Starting Codex Scheduler review\nLoaded 18 changed files\nFinal: No critical issues found\n",
+        "Codex Scheduler レビューを開始しています\n18 件の変更ファイルを読み込みました\nFinal: 重大な問題は見つかりませんでした\n",
       stderr: "",
       events:
-        "{\"event_type\":\"run.started\",\"message\":\"Run started\"}\n{\"event_type\":\"run.completed\",\"message\":\"Run completed successfully\"}\n",
+        "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n{\"event_type\":\"run.completed\",\"message\":\"実行は正常に完了しました\"}\n",
     },
   ],
   [
     "run_failed",
     {
-      stdout: "Starting dependency scan\nResolving package metadata\n",
+      stdout: "依存関係スキャンを開始しています\nパッケージメタデータを解決しています\n",
       stderr: "registry lookup timed out\nretry budget exhausted\n",
       events:
-        "{\"event_type\":\"run.started\",\"message\":\"Run started\"}\n{\"event_type\":\"run.failed\",\"message\":\"Codex exited with code 1\"}\n",
+        "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n{\"event_type\":\"run.failed\",\"message\":\"Codex はコード 1 で終了しました\"}\n",
     },
   ],
   [
     "run_running",
     {
       stdout:
-        "Reading specs...\nChecking current workspace...\nInspecting IPC module...\n",
+        "仕様を読んでいます...\n現在のワークスペースを確認しています...\nIPC モジュールを調査しています...\n",
       stderr: "",
-      events: "{\"event_type\":\"run.started\",\"message\":\"Run started\"}\n",
+      events: "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n",
     },
   ],
 ]);
@@ -381,7 +381,7 @@ const artifacts = new Map<string, RunArtifactDto[]>([
         kind: "last-message",
         path:
           "/Users/aki-0421/Library/Application Support/Codex Scheduler/logs/run_success/last-message.md",
-        title: "Last message",
+        title: "最後のメッセージ",
         mimeType: "text/markdown",
         sizeBytes: 512,
         createdAt,
@@ -404,7 +404,7 @@ const artifacts = new Map<string, RunArtifactDto[]>([
 function taskById(idValue: string) {
   const task = tasks.find((item) => item.id === idValue && item.status !== "deleted");
   if (!task) {
-    throw new Error(`Task not found: ${idValue}`);
+    throw new Error(`タスクが見つかりません: ${idValue}`);
   }
   return task;
 }
@@ -412,7 +412,7 @@ function taskById(idValue: string) {
 function runById(idValue: string) {
   const run = runs.find((item) => item.id === idValue);
   if (!run) {
-    throw new Error(`Run not found: ${idValue}`);
+    throw new Error(`実行が見つかりません: ${idValue}`);
   }
   return run;
 }
@@ -467,16 +467,16 @@ function createRun(taskId: string, status: RunStatus = "queued") {
     lastMessagePath: undefined,
     stdoutTail: "",
     stderrTail: "",
-    resultSummary: "Manual run queued.",
+    resultSummary: "手動実行をキューに追加しました。",
     findingsCount: 0,
     createdScheduleCount: 0,
   };
   runs = [run, ...runs];
   logs.set(run.id, {
-    stdout: "Manual run queued by UI.\nWaiting for scheduler tick.\n",
+    stdout: "UI から手動実行をキューに追加しました。\nscheduler tick を待っています。\n",
     stderr: "",
     events:
-      "{\"event_type\":\"run.queued\",\"message\":\"Manual run queued by UI\"}\n",
+      "{\"event_type\":\"run.queued\",\"message\":\"UI から手動実行をキューに追加しました\"}\n",
   });
   return { run: clone(run) };
 }
@@ -539,7 +539,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
     case "export_run_logs":
       return `/tmp/codex-scheduler-${input.runId as string}-logs.txt`;
     case "prompt_import_file":
-      return "Imported prompt from a mock file.\n";
+      return "モックファイルからインポートしたプロンプトです。\n";
     case "task_list": {
       const status = input.status as TaskStatus | undefined;
       const filtered = tasks.filter(
@@ -599,7 +599,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const run = runById(input.id as string);
       run.status = "canceled";
       run.endedAt = new Date().toISOString();
-      run.resultSummary = "Run canceled from the UI.";
+      run.resultSummary = "UI から実行をキャンセルしました。";
       return { run: clone(run) };
     }
     case "run_tail_log": {
@@ -624,7 +624,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const path = String(input.path ?? "").trim();
       const project: ProjectDto = {
         id: id("proj"),
-        name: path.split("/").filter(Boolean).at(-1) ?? "Project",
+        name: path.split("/").filter(Boolean).at(-1) ?? "プロジェクト",
         path,
         kind: path.includes(".git") ? "git" : "folder",
         gitRoot: path,
@@ -641,7 +641,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const projectId = String(input.projectId ?? "").trim();
       const project = projects.find((item) => item.id === projectId);
       if (!project) {
-        throw new Error(`Project not found: ${projectId}`);
+        throw new Error(`プロジェクトが見つかりません: ${projectId}`);
       }
       const affectedTaskCount = activeTaskCountForProject(project);
       project.trustedAt = undefined;

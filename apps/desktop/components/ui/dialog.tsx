@@ -43,7 +43,7 @@ const DialogContent = React.forwardRef<
       {children}
       <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground ring-offset-background transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
         <X className="size-4" />
-        <span className="sr-only">Close</span>
+        <span className="sr-only">閉じる</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>

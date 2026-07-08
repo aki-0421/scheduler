@@ -33,13 +33,13 @@ import { useProjects, useTasks, useTrustProject, useUntrustProject } from "@/lib
 import type { ProjectDto } from "@/lib/types";
 
 function formatProjectKind(kind: ProjectDto["kind"]) {
-  return kind === "git" ? "Git" : "Folder";
+  return kind === "git" ? "Git" : "フォルダ";
 }
 
 function TrustBadge({ trustedAt }: { trustedAt?: string }) {
   return (
     <Badge variant={trustedAt ? "success" : "warning"}>
-      {trustedAt ? "Trusted" : "Untrusted"}
+      {trustedAt ? "信頼済み" : "未信頼"}
     </Badge>
   );
 }
@@ -67,7 +67,7 @@ export default function ProjectsPage() {
   function trust() {
     const trimmed = path.trim();
     if (!trimmed) {
-      toast.error("Enter a project path.");
+      toast.error("プロジェクトパスを入力してください。");
       pathInputRef.current?.focus();
       return;
     }
@@ -75,12 +75,12 @@ export default function ProjectsPage() {
     trustProject.mutate(trimmed, {
       onSuccess: () => {
         setPath("");
-        toast.success("Project trusted");
+        toast.success("プロジェクトを信頼済みにしました");
       },
       onError: (error) =>
-        toast.error("Could not trust project", {
+        toast.error("プロジェクトを信頼済みにできませんでした", {
           description:
-            error instanceof Error ? error.message : "The project command failed.",
+            error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
         }),
     });
   }
@@ -88,14 +88,14 @@ export default function ProjectsPage() {
   function untrust(project: ProjectDto) {
     untrustProject.mutate(project.id, {
       onSuccess: (result) => {
-        toast.success("Project trust removed", {
-          description: `${result.affectedTaskCount.toLocaleString("en-US")} affected active tasks`,
+        toast.success("プロジェクトの信頼を解除しました", {
+          description: `${result.affectedTaskCount.toLocaleString("ja-JP")}件の有効なタスクに影響します`,
         });
       },
       onError: (error) =>
-        toast.error("Could not remove project trust", {
+        toast.error("プロジェクトの信頼を解除できませんでした", {
           description:
-            error instanceof Error ? error.message : "The project command failed.",
+            error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
         }),
     });
   }
@@ -103,15 +103,15 @@ export default function ProjectsPage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Projects"
-        description="Manage the local folders and repositories that scheduled Codex runs are allowed to use."
+        title="プロジェクト"
+        description="スケジュールされた Codex 実行で使用を許可するローカルフォルダとリポジトリを管理します。"
       />
 
       <section className="grid gap-3 rounded-lg border bg-surface/70 p-4">
         <div>
-          <h2 className="text-base font-semibold text-balance">Trust a project path</h2>
+          <h2 className="text-base font-semibold text-balance">プロジェクトパスを信頼する</h2>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Add an absolute local path before repository-based tasks can run against it.
+            リポジトリベースのタスクを実行する前に、絶対ローカルパスを追加してください。
           </p>
         </div>
         <form
@@ -126,11 +126,11 @@ export default function ProjectsPage() {
             value={path}
             onChange={(event) => setPath(event.currentTarget.value)}
             placeholder="/Users/alice/src/my-app"
-            aria-label="Project path"
+            aria-label="プロジェクトパス"
           />
           <Button type="submit" disabled={trustProject.isPending}>
             <Plus className="size-4" aria-hidden="true" />
-            Trust path
+            パスを信頼
           </Button>
         </form>
       </section>
@@ -138,10 +138,9 @@ export default function ProjectsPage() {
       <section className="grid gap-3">
         <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
           <div>
-            <h2 className="text-base font-semibold text-balance">Trusted paths</h2>
+            <h2 className="text-base font-semibold text-balance">信頼済みパス</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {projectList.length.toLocaleString("en-US")}{" "}
-              {projectList.length === 1 ? "project" : "projects"} available for scheduled runs.
+              スケジュール実行で利用できるプロジェクトが {projectList.length.toLocaleString("ja-JP")} 件あります。
             </p>
           </div>
         </div>
@@ -151,12 +150,12 @@ export default function ProjectsPage() {
             <Table className="min-w-[880px] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[17rem]">Project</TableHead>
-                  <TableHead>Path</TableHead>
-                  <TableHead className="w-[10rem]">Trust</TableHead>
-                  <TableHead className="w-[8rem]">Active tasks</TableHead>
-                  <TableHead className="w-[9rem]">Default branch</TableHead>
-                  <TableHead className="w-[8rem] text-right">Actions</TableHead>
+                  <TableHead className="w-[17rem]">プロジェクト</TableHead>
+                  <TableHead>パス</TableHead>
+                  <TableHead className="w-[10rem]">信頼</TableHead>
+                  <TableHead className="w-[8rem]">有効なタスク</TableHead>
+                  <TableHead className="w-[9rem]">既定ブランチ</TableHead>
+                  <TableHead className="w-[8rem] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -168,7 +167,7 @@ export default function ProjectsPage() {
                         <div className="truncate font-medium">{project.name}</div>
                         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                           <Badge variant="outline">{formatProjectKind(project.kind)}</Badge>
-                          {project.gitRoot ? <span className="truncate">Git root</span> : null}
+                          {project.gitRoot ? <span className="truncate">Git ルート</span> : null}
                         </div>
                       </TableCell>
                       <TableCell className="min-w-0">
@@ -185,15 +184,15 @@ export default function ProjectsPage() {
                           <span className="text-xs text-muted-foreground tabular-nums">
                             {project.trustedAt
                               ? formatDateTime(project.trustedAt)
-                              : "Not trusted"}
+                              : "未信頼"}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell className="tabular-nums">
-                        {affectedTaskCount.toLocaleString("en-US")}
+                        {affectedTaskCount.toLocaleString("ja-JP")}
                       </TableCell>
                       <TableCell className="truncate">
-                        {project.defaultBranch ?? "Not set"}
+                        {project.defaultBranch ?? "未設定"}
                       </TableCell>
                       <TableCell className="text-right">
                         <AlertDialog>
@@ -202,31 +201,28 @@ export default function ProjectsPage() {
                               variant="outline"
                               size="sm"
                               disabled={!project.trustedAt || untrustProject.isPending}
-                              aria-label={`Remove trust for ${project.name}`}
+                              aria-label={`${project.name} の信頼を解除`}
                             >
-                              Remove trust
+                              信頼を解除
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle>
-                                Remove trust for {project.name}?
+                                {project.name} の信頼を解除しますか？
                               </AlertDialogTitle>
                               <AlertDialogDescription>
-                                Scheduled tasks will no longer be allowed to use this path.{" "}
-                                {affectedTaskCount.toLocaleString("en-US")} active{" "}
-                                {affectedTaskCount === 1 ? "task" : "tasks"} may fail until
-                                you trust the path again or move them to another trusted
-                                project. Local files and run history are not deleted.
+                                スケジュール済みタスクはこのパスを使用できなくなります。信頼を戻すか別の信頼済みプロジェクトへ移すまで、
+                                {affectedTaskCount.toLocaleString("ja-JP")} 件の有効なタスクが失敗する可能性があります。ローカルファイルと実行履歴は削除されません。
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Keep trusted</AlertDialogCancel>
+                              <AlertDialogCancel>信頼を維持</AlertDialogCancel>
                               <AlertDialogAction
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 onClick={() => untrust(project)}
                               >
-                                Remove trust
+                                信頼を解除
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -241,10 +237,10 @@ export default function ProjectsPage() {
         ) : (
           <EmptyState
             icon={FolderGit2}
-            title="No trusted projects"
-            description="Trust a local path before creating repository-based scheduled tasks."
+            title="信頼済みプロジェクトはありません"
+            description="リポジトリベースのスケジュールタスクを作成する前に、ローカルパスを信頼してください。"
             action={{
-              label: "Add a project path",
+              label: "プロジェクトパスを追加",
               onClick: () => pathInputRef.current?.focus(),
             }}
           />

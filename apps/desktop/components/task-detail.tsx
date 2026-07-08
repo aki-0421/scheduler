@@ -96,7 +96,7 @@ function DefinitionItem({
   );
 }
 
-function PathValue({ value, fallback = "Not set" }: { value?: string; fallback?: string }) {
+function PathValue({ value, fallback = "未設定" }: { value?: string; fallback?: string }) {
   if (!value) {
     return <span className="text-muted-foreground">{fallback}</span>;
   }
@@ -108,8 +108,8 @@ function PathValue({ value, fallback = "Not set" }: { value?: string; fallback?:
       </span>
       <CopyButton
         value={value}
-        label="Copy"
-        toastLabel="Path"
+        label="コピー"
+        toastLabel="パス"
         size="sm"
         variant="ghost"
         className="h-7 shrink-0 px-2 text-xs"
@@ -120,21 +120,21 @@ function PathValue({ value, fallback = "Not set" }: { value?: string; fallback?:
 
 function formatSeconds(value?: number) {
   if (!value) {
-    return "Not set";
+    return "未設定";
   }
 
   if (value < 60) {
-    return `${value} sec`;
+    return `${value}秒`;
   }
   if (value < 3_600) {
     const minutes = Math.floor(value / 60);
     const seconds = value % 60;
-    return seconds ? `${minutes} min ${seconds} sec` : `${minutes} min`;
+    return seconds ? `${minutes}分 ${seconds}秒` : `${minutes}分`;
   }
 
   const hours = Math.floor(value / 3_600);
   const minutes = Math.round((value % 3_600) / 60);
-  return minutes ? `${hours} hr ${minutes} min` : `${hours} hr`;
+  return minutes ? `${hours}時間 ${minutes}分` : `${hours}時間`;
 }
 
 function formatAuditJson(value: unknown) {
@@ -184,7 +184,7 @@ function AuditEventRow({ event }: { event: TaskAuditEvent }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{formatReadableEnum(event.action)}</Badge>
-            <Badge variant="muted">Actor: {formatReadableEnum(event.actorType)}</Badge>
+            <Badge variant="muted">実行者: {formatReadableEnum(event.actorType)}</Badge>
             {event.actorId ? <Badge variant="muted">{event.actorId}</Badge> : null}
           </div>
           {event.reason ? (
@@ -198,8 +198,8 @@ function AuditEventRow({ event }: { event: TaskAuditEvent }) {
         </span>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
-        <AuditPayloadDetails label="Before" value={event.beforeJson} />
-        <AuditPayloadDetails label="After" value={event.afterJson} />
+        <AuditPayloadDetails label="変更前" value={event.beforeJson} />
+        <AuditPayloadDetails label="変更後" value={event.afterJson} />
       </div>
     </div>
   );
@@ -227,8 +227,8 @@ export function TaskDetail({
   const capabilities = task.policies.scheduleCliCapabilities ?? [];
   const retryDetail =
     task.policies.maxRetries && task.policies.maxRetries > 0
-      ? `${task.policies.maxRetries} retries · ${formatSeconds(task.policies.retryBackoffSec)} backoff`
-      : "No automatic retries";
+      ? `${task.policies.maxRetries} 回再試行 · ${formatSeconds(task.policies.retryBackoffSec)} 待機`
+      : "自動再試行なし";
 
   return (
     <div className="grid gap-4">
@@ -243,12 +243,12 @@ export function TaskDetail({
               {isDangerFullAccess ? (
                 <Badge variant="warning" className="gap-1">
                   <AlertTriangle className="size-3" aria-hidden="true" />
-                  Full access
+                  フルアクセス
                 </Badge>
               ) : null}
             </div>
             <p className="mt-2 text-sm text-muted-foreground text-pretty">
-              {task.description || "No description"}
+              {task.description || "説明なし"}
             </p>
             <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
               {task.id}
@@ -263,12 +263,12 @@ export function TaskDetail({
 
         <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <DefinitionItem
-            label="Schedule"
+            label="スケジュール"
             value={schedule.label}
             detail={schedule.detail}
           />
           <DefinitionItem
-            label="Next run"
+            label="次回実行"
             value={
               <span className="tabular-nums">
                 {formatAbsoluteDateTime(task.nextRunAt)}
@@ -276,11 +276,11 @@ export function TaskDetail({
             }
           />
           <DefinitionItem
-            label="Target"
+            label="実行先"
             value={target.label}
             detail={
               <span className="block truncate font-mono" title={target.detail}>
-                {target.detail ?? "App-managed workspace"}
+                {target.detail ?? "アプリ管理ワークスペース"}
               </span>
             }
           />
@@ -288,10 +288,10 @@ export function TaskDetail({
       </section>
 
       <DetailSection
-        title="Prompt"
-        description="Instruction that will be sent to Codex for each run."
+        title="プロンプト"
+        description="各実行で Codex に送信される指示です。"
         icon={FileText}
-        actions={<CopyButton value={task.prompt.body} toastLabel="Prompt" />}
+        actions={<CopyButton value={task.prompt.body} toastLabel="プロンプト" />}
       >
         <pre className="max-h-[24rem] overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs leading-5">
           {task.prompt.body}
@@ -300,19 +300,19 @@ export function TaskDetail({
 
       <div className="grid gap-4 xl:grid-cols-2">
         <DetailSection
-          title="Schedule and target"
-          description="When this task runs and where Codex will execute."
+          title="スケジュールと実行先"
+          description="このタスクをいつ、どこで実行するかを示します。"
           icon={Clock}
         >
           <dl className="grid gap-3">
             <DefinitionItem
-              label="Schedule"
+              label="スケジュール"
               value={schedule.label}
               detail={schedule.detail}
             />
-            <DefinitionItem label="Timezone" value={task.timezone} />
+            <DefinitionItem label="タイムゾーン" value={task.timezone} />
             <DefinitionItem
-              label="Next run"
+              label="次回実行"
               value={
                 <span className="tabular-nums">
                   {formatAbsoluteDateTime(task.nextRunAt)}
@@ -320,28 +320,28 @@ export function TaskDetail({
               }
             />
             <DefinitionItem
-              label="Missed runs"
+              label="未実行分"
               value={formatReadableEnum(task.policies.missedPolicy)}
               detail={
                 task.policies.missedWindowDays
-                  ? `${task.policies.missedWindowDays} day window`
+                  ? `${task.policies.missedWindowDays}日間の期間`
                   : undefined
               }
             />
             <DefinitionItem
-              label="Target mode"
+              label="実行先モード"
               value={target.label}
               detail={target.detail}
             />
             <DefinitionItem
-              label="Repository"
-              value={<PathValue value={task.target.repoPath} fallback="App-managed workspace" />}
+              label="リポジトリ"
+              value={<PathValue value={task.target.repoPath} fallback="アプリ管理ワークスペース" />}
             />
             <DefinitionItem
-              label="Base ref"
+              label="ベース参照"
               value={
                 <span className="font-mono text-xs">
-                  {task.target.baseRef ?? "default"}
+                  {task.target.baseRef ?? "既定"}
                 </span>
               }
             />
@@ -349,18 +349,18 @@ export function TaskDetail({
         </DetailSection>
 
         <DetailSection
-          title="Execution and safety"
-          description="Codex model, permissions, runtime, and scheduler controls."
+          title="実行と安全性"
+          description="Codex モデル、権限、実行時間、スケジューラー制御です。"
           icon={KeyRound}
         >
           <dl className="grid gap-3">
-            <DefinitionItem value={task.codex.model ?? "Default model"} label="Model" />
+            <DefinitionItem value={task.codex.model ?? "既定モデル"} label="モデル" />
             <DefinitionItem
-              label="Reasoning effort"
+              label="推論 effort"
               value={formatReadableEnum(task.codex.reasoningEffort)}
             />
             <DefinitionItem
-              label="Sandbox"
+              label="サンドボックス"
               value={
                 <Badge variant={isDangerFullAccess ? "warning" : "outline"}>
                   {formatReadableEnum(task.codex.sandboxMode)}
@@ -368,48 +368,48 @@ export function TaskDetail({
               }
             />
             <DefinitionItem
-              label="Approval policy"
+              label="承認ポリシー"
               value={formatReadableEnum(task.codex.approvalPolicy)}
             />
             <DefinitionItem
-              label="Max runtime"
+              label="最大実行時間"
               value={formatSeconds(task.policies.maxRuntimeSec)}
             />
-            <DefinitionItem label="Retries" value={retryDetail} />
+            <DefinitionItem label="再試行" value={retryDetail} />
             <DefinitionItem
-              label="Overlap policy"
+              label="重複ポリシー"
               value={formatReadableEnum(task.policies.overlapPolicy)}
             />
             <DefinitionItem
-              label="Schedule CLI"
+              label="スケジュール CLI"
               value={
                 <Badge variant={task.policies.allowScheduleCli ? "success" : "muted"}>
-                  {task.policies.allowScheduleCli ? "Allowed" : "Blocked"}
+                  {task.policies.allowScheduleCli ? "許可" : "ブロック"}
                 </Badge>
               }
               detail={
                 capabilities.length
                   ? capabilities.map(formatReadableEnum).join(", ")
-                  : "No extra schedule capabilities"
+                  : "追加の schedule 権限なし"
               }
             />
             <DefinitionItem
-              label="Created schedules cap"
-              value={task.policies.maxCreatedSchedulesPerRun ?? "Not capped"}
+              label="作成スケジュール上限"
+              value={task.policies.maxCreatedSchedulesPerRun ?? "上限なし"}
             />
             <DefinitionItem
-              label="Cleanup"
+              label="クリーンアップ"
               value={formatReadableEnum(task.policies.cleanupPolicy)}
               detail={
                 task.policies.cleanupAfterDays
-                  ? `${task.policies.cleanupAfterDays} day retention`
+                  ? `${task.policies.cleanupAfterDays}日間保持`
                   : undefined
               }
             />
             <DefinitionItem
-              label="Scheduler instructions"
+              label="スケジューラー指示"
               value={
-                task.prompt.injectSchedulerInstructions ? "Injected" : "Not injected"
+                task.prompt.injectSchedulerInstructions ? "挿入済み" : "未挿入"
               }
             />
           </dl>
@@ -417,17 +417,17 @@ export function TaskDetail({
       </div>
 
       <DetailSection
-        title="Recent runs"
-        description="Recent scheduler runs for this task."
+        title="最近の実行"
+        description="このタスクの最近のスケジューラー実行です。"
         icon={Target}
       >
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Status</TableHead>
-                <TableHead>Scheduled</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Exit</TableHead>
+                <TableHead>状態</TableHead>
+                <TableHead>予定時刻</TableHead>
+                <TableHead>所要時間</TableHead>
+                <TableHead>終了コード</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -447,7 +447,7 @@ export function TaskDetail({
               ) : (
                 <TableRow>
                   <TableCell colSpan={4} className="text-muted-foreground">
-                    No runs yet.
+                    実行履歴はまだありません。
                   </TableCell>
                 </TableRow>
               )}
@@ -455,13 +455,13 @@ export function TaskDetail({
           </Table>
       </DetailSection>
 
-      <DetailSection title="Audit log" icon={History}>
+      <DetailSection title="監査ログ" icon={History}>
         <div className="grid gap-3 text-sm">
           {auditEvents.length ? (
             auditEvents.map((event) => <AuditEventRow key={event.id} event={event} />)
           ) : (
             <p className="text-muted-foreground">
-              The current daemon task API did not return audit events.
+              現在のデーモンタスク API から監査イベントは返されませんでした。
             </p>
           )}
         </div>

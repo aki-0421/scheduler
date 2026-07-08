@@ -121,48 +121,48 @@ export default function DashboardPage() {
     health.data?.schedulerEnabled ?? settings.data["scheduler.enabled"];
   const nextRun = nextRuns[0];
   const heroDescription = nextRun
-    ? `${nextRun.name} is next, scheduled for ${formatDateTime(nextRun.nextRunAt)}.`
+    ? `次の実行は ${nextRun.name} で、${formatDateTime(nextRun.nextRunAt)} に予定されています。`
     : taskList.length
-      ? "No active task has an upcoming run. Resume or schedule a task to fill the queue."
-      : "Create your first scheduled Codex task to start the queue.";
+      ? "次回実行がある有効なタスクはありません。タスクを再開するかスケジュールを設定してください。"
+      : "最初の Codex スケジュールタスクを作成するとキューが動き始めます。";
   const codexStatus = diagnostics.data
     ? diagnostics.data.codexPath.exists
-      ? "Ready"
-      : "Missing"
+      ? "準備完了"
+      : "未検出"
     : health.data?.ok
-      ? "Not checked"
-      : "Unavailable";
+      ? "未確認"
+      : "利用不可";
 
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Today"
+        title="今日"
         description={heroDescription}
       />
 
       <div className="flex flex-wrap gap-2">
         <SummaryChip
           icon={Activity}
-          label="Scheduler"
-          value={schedulerEnabled ? "On" : "Paused"}
+          label="スケジューラー"
+          value={schedulerEnabled ? "オン" : "一時停止"}
           tone={schedulerEnabled ? "success" : "muted"}
         />
         <SummaryChip
           icon={Play}
-          label="Running now"
-          value={runningCount.toLocaleString("en-US")}
+          label="現在実行中"
+          value={runningCount.toLocaleString("ja-JP")}
           tone={runningCount ? "info" : "muted"}
         />
         <SummaryChip
           icon={AlertCircle}
-          label="Failed today"
-          value={failedLastDay.toLocaleString("en-US")}
+          label="今日の失敗"
+          value={failedLastDay.toLocaleString("ja-JP")}
           tone={failedLastDay ? "destructive" : "muted"}
         />
         <SummaryChip
           icon={ListTodo}
-          label="Needs review"
-          value={requiringReview.toLocaleString("en-US")}
+          label="確認が必要"
+          value={requiringReview.toLocaleString("ja-JP")}
           tone={requiringReview ? "warning" : "muted"}
         />
         <SummaryChip
@@ -181,11 +181,11 @@ export default function DashboardPage() {
 
       <section className="grid gap-3">
         <SectionHeader
-          title="Upcoming runs"
-          description="The next scheduled Codex tasks, ordered by their next run time."
+          title="今後の実行"
+          description="次回実行時刻の近い順に並べた Codex タスクです。"
           action={
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/tasks">View tasks</Link>
+              <Link href="/tasks">タスクを見る</Link>
             </Button>
           }
         />
@@ -204,11 +204,11 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <div className="grid gap-1">
-                  <span className="text-xs text-muted-foreground">Schedule</span>
+                  <span className="text-xs text-muted-foreground">スケジュール</span>
                   <span className="truncate text-sm">{formatTaskSchedule(task)}</span>
                 </div>
                 <div className="grid gap-1">
-                  <span className="text-xs text-muted-foreground">Next run</span>
+                  <span className="text-xs text-muted-foreground">次回実行</span>
                   <span className="text-sm tabular-nums">
                     {formatDateTime(task.nextRunAt)}
                   </span>
@@ -222,14 +222,14 @@ export default function DashboardPage() {
         ) : (
           <EmptyState
             icon={Clock}
-            title={taskList.length ? "No upcoming runs" : "No tasks yet"}
+            title={taskList.length ? "今後の実行はありません" : "タスクがまだありません"}
             description={
               taskList.length
-                ? "Scheduled or resumed tasks will appear here when they have a next run time."
-                : "Create a scheduled Codex task to see what will run next."
+                ? "スケジュール済みまたは再開済みのタスクに次回実行時刻があると、ここに表示されます。"
+                : "スケジュール付きの Codex タスクを作成すると、次に実行される内容を確認できます。"
             }
             action={{
-              label: taskList.length ? "Open tasks" : "Create first task",
+              label: taskList.length ? "タスクを開く" : "最初のタスクを作成",
               href: taskList.length ? "/tasks" : "/tasks/new",
             }}
           />
@@ -238,11 +238,11 @@ export default function DashboardPage() {
 
       <section className="grid gap-3">
         <SectionHeader
-          title="Recent activity"
-          description="The latest run results across every task."
+          title="最近のアクティビティ"
+          description="すべてのタスクの最新実行結果です。"
           action={
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/runs">View runs</Link>
+              <Link href="/runs">実行履歴を見る</Link>
             </Button>
           }
         />
@@ -253,7 +253,7 @@ export default function DashboardPage() {
               const summary =
                 run.resultSummary ??
                 run.statusReason ??
-                (isRunActive(run.status) ? "Run in progress." : run.id);
+                (isRunActive(run.status) ? "実行中です。" : run.id);
 
               return (
                 <Link
@@ -266,20 +266,20 @@ export default function DashboardPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
-                      {task?.name ?? "Unknown task"}
+                      {task?.name ?? "不明なタスク"}
                     </p>
                     <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
                       {summary}
                     </p>
                   </div>
                   <div className="grid gap-1">
-                    <span className="text-xs text-muted-foreground">Started</span>
+                    <span className="text-xs text-muted-foreground">開始</span>
                     <span className="text-sm tabular-nums">
                       {formatDateTime(run.startedAt ?? run.scheduledFor)}
                     </span>
                   </div>
                   <div className="grid gap-1 lg:text-right">
-                    <span className="text-xs text-muted-foreground">Duration</span>
+                    <span className="text-xs text-muted-foreground">所要時間</span>
                     <span className="text-sm tabular-nums">{formatDuration(run)}</span>
                   </div>
                 </Link>
@@ -289,22 +289,21 @@ export default function DashboardPage() {
         ) : (
           <EmptyState
             icon={Activity}
-            title="No runs yet"
-            description="Runs will appear here after a task is queued or started manually."
-            action={{ label: "Open tasks", href: "/tasks" }}
+            title="実行履歴はまだありません"
+            description="タスクがキューに入るか手動で開始されると、ここに表示されます。"
+            action={{ label: "タスクを開く", href: "/tasks" }}
           />
         )}
       </section>
 
       <section className="grid gap-3 border-t pt-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
         <div>
-          <h2 className="text-sm font-medium">Scheduler operations</h2>
+          <h2 className="text-sm font-medium">スケジューラー操作</h2>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Maintenance actions stay here so the dashboard keeps the next run and recent
-            activity in focus.
+            メンテナンス操作はここに集約し、ダッシュボードでは次回実行と最近の動きを見やすくします。
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
-            Daemon {health.data?.version ?? "not checked"} · Codex path{" "}
+            デーモン {health.data?.version ?? "未確認"} · Codex パス{" "}
             <span className="font-mono">{settings.data["runner.codex_path"]}</span>
           </p>
         </div>
@@ -318,21 +317,21 @@ export default function DashboardPage() {
                 onSuccess: (result) =>
                   toast.success(
                     result.triggered
-                      ? "Due run check started"
-                      : "The daemon accepted the tick request",
+                      ? "期限到来チェックを開始しました"
+                      : "デーモンが tick 要求を受け付けました",
                   ),
                 onError: (error) =>
-                  toast.error("Could not start the due run check", {
+                  toast.error("期限到来チェックを開始できませんでした", {
                     description:
                       error instanceof Error
                         ? error.message
-                        : "The daemon command failed.",
+                        : "デーモンコマンドに失敗しました。",
                   }),
               })
             }
           >
             <CalendarClock className="size-4" aria-hidden="true" />
-            Check due runs
+            期限到来を確認
           </Button>
           <Button
             variant="outline"
@@ -342,23 +341,23 @@ export default function DashboardPage() {
               setSetting.mutate(
                 { key: "scheduler.enabled", value: false },
                 {
-                  onSuccess: () => toast.success("Schedules paused"),
+                  onSuccess: () => toast.success("スケジュールを一時停止しました"),
                   onError: (error) =>
-                    toast.error("Could not pause schedules", {
+                    toast.error("スケジュールを一時停止できませんでした", {
                       description:
                         error instanceof Error
                           ? error.message
-                          : "The settings command failed.",
+                          : "設定コマンドに失敗しました。",
                     }),
                 },
               )
             }
           >
             <PauseCircle className="size-4" aria-hidden="true" />
-            Pause schedules
+            スケジュールを一時停止
           </Button>
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/runs">Open diagnostics</Link>
+            <Link href="/runs">診断を開く</Link>
           </Button>
         </div>
       </section>

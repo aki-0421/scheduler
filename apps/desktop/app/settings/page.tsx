@@ -114,11 +114,11 @@ export default function SettingsPage() {
           setSetting.mutateAsync({ key, value: form[key] }),
         ),
       );
-      toast.success("Settings saved");
+      toast.success("設定を保存しました");
     } catch (error) {
-      toast.error("Could not save settings", {
+      toast.error("設定を保存できませんでした", {
         description:
-          error instanceof Error ? error.message : "The settings command failed.",
+          error instanceof Error ? error.message : "設定コマンドに失敗しました。",
       });
     }
   }
@@ -128,14 +128,14 @@ export default function SettingsPage() {
     try {
       const path = await ipcClient.diagnosticsExport();
       if (path) {
-        toast.success("Diagnostics exported", { description: path });
+        toast.success("診断情報をエクスポートしました", { description: path });
       } else {
-        toast.info("Diagnostics export canceled");
+        toast.info("診断情報のエクスポートをキャンセルしました");
       }
     } catch (error) {
-      toast.error("Could not export diagnostics", {
+      toast.error("診断情報をエクスポートできませんでした", {
         description:
-          error instanceof Error ? error.message : "The diagnostics command failed.",
+          error instanceof Error ? error.message : "診断コマンドに失敗しました。",
       });
     } finally {
       setIsExportingDiagnostics(false);
@@ -145,17 +145,17 @@ export default function SettingsPage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Settings"
-        description="Configure scheduler behavior, default Codex execution, notifications, and diagnostics."
+        title="設定"
+        description="スケジューラーの挙動、Codex 実行の既定値、通知、診断を設定します。"
       />
 
       <SettingsSection
-        title="General"
-        description="Global switches that decide whether scheduled work runs and when you are notified."
+        title="一般"
+        description="スケジュール作業を実行するか、いつ通知するかを決める全体設定です。"
       >
         <SettingRow
-          label="Scheduler"
-          description="Controls whether scheduled tasks are queued automatically."
+          label="スケジューラー"
+          description="スケジュール済みタスクを自動的にキューへ入れるかを制御します。"
           htmlFor="settings-scheduler-enabled"
           controlClassName="md:w-auto"
         >
@@ -166,8 +166,8 @@ export default function SettingsPage() {
           />
         </SettingRow>
         <SettingRow
-          label="Notifications"
-          description="Send desktop notifications when a run fails or times out."
+          label="通知"
+          description="実行が失敗またはタイムアウトしたときにデスクトップ通知を送信します。"
           htmlFor="notifications-enabled"
           controlClassName="md:w-auto"
         >
@@ -180,12 +180,12 @@ export default function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        title="Execution"
-        description="Defaults copied into new tasks and limits used by the local daemon."
+        title="実行"
+        description="新規タスクにコピーされる既定値と、ローカルデーモンで使う上限です。"
       >
         <SettingRow
-          label="Global concurrency"
-          description="Maximum number of scheduler runs the daemon may execute at once."
+          label="全体同時実行数"
+          description="デーモンが同時に実行できるスケジューラー実行の最大数です。"
           htmlFor="global-concurrency"
         >
           <Input
@@ -199,8 +199,8 @@ export default function SettingsPage() {
           />
         </SettingRow>
         <SettingRow
-          label="Codex path"
-          description="Command or absolute path used to launch the Codex CLI."
+          label="Codex パス"
+          description="Codex CLI を起動するコマンドまたは絶対パスです。"
           htmlFor="codex-path"
         >
           <Input
@@ -210,8 +210,8 @@ export default function SettingsPage() {
           />
         </SettingRow>
         <SettingRow
-          label="Default model"
-          description="Model value copied into newly created tasks."
+          label="既定モデル"
+          description="新規タスクへコピーされるモデル値です。"
           htmlFor="default-model"
         >
           <Input
@@ -225,12 +225,12 @@ export default function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        title="Permissions"
-        description="Default safety settings for new Codex runs and isolated worktree cleanup."
+        title="権限"
+        description="新しい Codex 実行と隔離ワークツリーのクリーンアップに使う既定の安全設定です。"
       >
         <SettingRow
-          label="Default sandbox"
-          description="Filesystem access mode copied into newly created tasks."
+          label="既定サンドボックス"
+          description="新規タスクへコピーされるファイルシステムアクセスモードです。"
           htmlFor="default-sandbox-mode"
         >
           <Select
@@ -255,8 +255,8 @@ export default function SettingsPage() {
           </Select>
         </SettingRow>
         <SettingRow
-          label="Default approval policy"
-          description="Approval behavior copied into newly created tasks."
+          label="既定承認ポリシー"
+          description="新規タスクへコピーされる承認動作です。"
           htmlFor="default-approval-policy"
         >
           <Select
@@ -281,8 +281,8 @@ export default function SettingsPage() {
           </Select>
         </SettingRow>
         <SettingRow
-          label="Worktree cleanup"
-          description="Default cleanup policy for isolated worktree runs."
+          label="ワークツリーのクリーンアップ"
+          description="隔離ワークツリー実行に使う既定のクリーンアップポリシーです。"
           htmlFor="default-cleanup-policy"
         >
           <Select
@@ -309,34 +309,34 @@ export default function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        title="Diagnostics"
-        description="Read-only local paths and a diagnostic export for scheduler support work."
+        title="診断"
+        description="読み取り専用のローカルパスと、サポート作業用の診断エクスポートです。"
       >
         <SettingRow
-          label="Socket path"
-          description="Unix socket used by the desktop app to reach the scheduler daemon."
+          label="ソケットパス"
+          description="デスクトップアプリがスケジューラーデーモンへ接続するための Unix ソケットです。"
           controlClassName="md:w-[28rem]"
         >
           <ReadOnlyCode value="~/Library/Application Support/Codex Scheduler/scheduler.sock" />
         </SettingRow>
         <SettingRow
-          label="Database path"
-          description="Local SQLite database used by Codex Scheduler."
+          label="データベースパス"
+          description="Codex Scheduler が使用するローカル SQLite データベースです。"
           controlClassName="md:w-[28rem]"
         >
           <ReadOnlyCode value="~/Library/Application Support/Codex Scheduler/scheduler.sqlite3" />
         </SettingRow>
         <SettingRow
-          label="Schema version"
-          description="Current database schema version reported by the daemon."
+          label="スキーマバージョン"
+          description="デーモンが報告する現在のデータベーススキーマバージョンです。"
         >
           <span className="block text-sm tabular-nums">
-            {health.data?.dbSchemaVersion ?? "Unknown"}
+            {health.data?.dbSchemaVersion ?? "不明"}
           </span>
         </SettingRow>
         <SettingRow
-          label="Export diagnostics"
-          description="Write daemon health, diagnostics, and redacted daemon log tails to a local file."
+          label="診断情報をエクスポート"
+          description="デーモンの健全性、診断、マスク済みログ末尾をローカルファイルに書き出します。"
           controlClassName="md:w-auto"
         >
           <Button
@@ -346,7 +346,7 @@ export default function SettingsPage() {
             onClick={() => void exportDiagnostics()}
           >
             <Download className="size-4" aria-hidden="true" />
-            Export diagnostics
+            診断情報をエクスポート
           </Button>
         </SettingRow>
       </SettingsSection>
@@ -355,7 +355,7 @@ export default function SettingsPage() {
         <div className="flex justify-end">
           <Button disabled={setSetting.isPending} onClick={() => void save()}>
             <Save className="size-4" aria-hidden="true" />
-            Save settings
+            設定を保存
           </Button>
         </div>
       </div>

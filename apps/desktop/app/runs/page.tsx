@@ -80,7 +80,7 @@ function RunRow({
             <RunStatusBadge status={run.status} />
             {needsAttention ? (
               <span className="rounded-md bg-status-warning-muted px-2 py-0.5 text-xs font-medium text-status-warning-muted-foreground">
-                Review
+                要確認
               </span>
             ) : null}
           </div>
@@ -90,33 +90,33 @@ function RunRow({
         </div>
         <div className="text-left text-sm sm:text-right">
           <p className="font-medium tabular-nums">
-            {formatRelativeDateTime(startedAt, "Not started")}
+            {formatRelativeDateTime(startedAt, "未開始")}
           </p>
           <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-            {formatAbsoluteDateTime(startedAt, "Not started")}
+            {formatAbsoluteDateTime(startedAt, "未開始")}
           </p>
         </div>
       </div>
 
       <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div className="min-w-0">
-          <dt className="text-xs text-muted-foreground">Trigger</dt>
+          <dt className="text-xs text-muted-foreground">トリガー</dt>
           <dd className="mt-1 truncate font-medium">
             {formatReadableEnum(run.triggerType)}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-xs text-muted-foreground">Scheduled</dt>
+          <dt className="text-xs text-muted-foreground">予定時刻</dt>
           <dd className="mt-1 truncate tabular-nums">
             {formatAbsoluteDateTime(run.scheduledFor)}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-xs text-muted-foreground">Duration</dt>
+          <dt className="text-xs text-muted-foreground">所要時間</dt>
           <dd className="mt-1 font-medium tabular-nums">{formatRunDuration(run)}</dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-xs text-muted-foreground">Exit</dt>
+          <dt className="text-xs text-muted-foreground">終了コード</dt>
           <dd className="mt-1 font-medium tabular-nums">{run.exitCode ?? "—"}</dd>
         </div>
       </dl>
@@ -170,8 +170,8 @@ function RunsPageContent() {
   return (
     <div className="grid gap-5">
       <PageHeader
-        title="Runs"
-        description="Review run history, failure triage, and log tails."
+        title="実行履歴"
+        description="実行履歴、失敗のトリアージ、ログ末尾を確認します。"
         className="md:flex-col md:items-stretch xl:flex-row xl:items-start"
         actions={
           <>
@@ -186,7 +186,7 @@ function RunsPageContent() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="all">すべての状態</SelectItem>
                 {runStatuses.map((status) => (
                   <SelectItem key={status} value={status}>
                     {formatRunStatus(status)}
@@ -199,7 +199,7 @@ function RunsPageContent() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All tasks</SelectItem>
+                <SelectItem value="all">すべてのタスク</SelectItem>
                 {taskList.map((task) => (
                   <SelectItem key={task.id} value={task.id}>
                     {task.name}
@@ -215,27 +215,26 @@ function RunsPageContent() {
         <section className="grid min-w-0 gap-3">
           <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
             <div>
-              <h2 className="text-base font-semibold text-balance">Run history</h2>
+              <h2 className="text-base font-semibold text-balance">実行履歴</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {formatCount(displayedRunList.length)}{" "}
-                {displayedRunList.length === 1 ? "run" : "runs"} shown. Select a
-                run to review the prompt, output, logs, and artifacts.
+                件の実行を表示しています。実行を選択すると、プロンプト、出力、ログ、成果物を確認できます。
               </p>
             </div>
             <div className="flex w-full flex-wrap gap-2 md:w-auto md:justify-end">
               <div className="flex rounded-md border bg-background p-1">
                 <RunPresetButton value="recent" current={preset} onSelect={applyPreset}>
-                  Recent
+                  最近
                 </RunPresetButton>
                 <RunPresetButton value="failed" current={preset} onSelect={applyPreset}>
-                  Failed
+                  失敗
                 </RunPresetButton>
                 <RunPresetButton
                   value="needs_attention"
                   current={preset}
                   onSelect={applyPreset}
                 >
-                  Review
+                  要確認
                 </RunPresetButton>
               </div>
             </div>
@@ -254,9 +253,9 @@ function RunsPageContent() {
             ) : (
               <EmptyState
                 icon={Activity}
-                title="No matching runs"
-                description="Clear filters or run a task manually to populate history."
-                action={{ label: "Open tasks", href: "/tasks" }}
+                title="一致する実行はありません"
+                description="フィルターを解除するか、タスクを手動実行すると履歴が表示されます。"
+                action={{ label: "タスクを開く", href: "/tasks" }}
               />
             )}
             {/* TODO: Add mark reviewed/archive actions when the DB schema supports triage state. */}
@@ -271,7 +270,7 @@ function RunsPageContent() {
             />
           ) : (
             <div className="rounded-lg border bg-surface/70 p-4 text-sm text-muted-foreground">
-              Loading the selected run.
+              選択した実行を読み込んでいます。
             </div>
           )
         ) : null}
@@ -282,7 +281,7 @@ function RunsPageContent() {
 
 export default function RunsPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">Loading runs...</div>}>
+    <Suspense fallback={<div className="text-sm text-muted-foreground">実行履歴を読み込んでいます...</div>}>
       <RunsPageContent />
     </Suspense>
   );

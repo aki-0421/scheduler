@@ -30,11 +30,11 @@ import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Tasks", href: "/tasks", icon: ListTodo },
-  { label: "Runs", href: "/runs", icon: Activity },
-  { label: "Projects", href: "/projects", icon: FolderGit2 },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "今日", href: "/", icon: LayoutDashboard },
+  { label: "タスク", href: "/tasks", icon: ListTodo },
+  { label: "実行履歴", href: "/runs", icon: Activity },
+  { label: "プロジェクト", href: "/projects", icon: FolderGit2 },
+  { label: "設定", href: "/settings", icon: Settings },
 ];
 
 function isActivePath(pathname: string, href: string) {
@@ -46,7 +46,7 @@ function isActivePath(pathname: string, href: string) {
 
 function HealthIndicator() {
   const health = useHealth();
-  const status = health.data?.ok ? "Running" : health.isLoading ? "Checking" : "Error";
+  const status = health.data?.ok ? "稼働中" : health.isLoading ? "確認中" : "エラー";
   const variant = health.data?.ok ? "success" : health.isLoading ? "muted" : "destructive";
 
   return (
@@ -54,8 +54,8 @@ function HealthIndicator() {
       <Badge variant={variant}>{status}</Badge>
       <span className="hidden text-xs text-muted-foreground tabular-nums md:inline">
         {health.data
-          ? `${health.data.runningCount.toLocaleString("en-US")} running · ${health.data.queuedCount.toLocaleString("en-US")} queued`
-          : "Daemon status"}
+          ? `${health.data.runningCount.toLocaleString("ja-JP")}件実行中 · ${health.data.queuedCount.toLocaleString("ja-JP")}件待機中`
+          : "デーモン状態"}
       </span>
     </div>
   );
@@ -69,7 +69,7 @@ function SchedulerEnabledToggle() {
   return (
     <div className="flex items-center gap-2">
       <Label htmlFor="global-scheduler-enabled" className="hidden text-xs md:block">
-        Scheduler
+        スケジューラー
       </Label>
       <Switch
         id="global-scheduler-enabled"
@@ -80,15 +80,15 @@ function SchedulerEnabledToggle() {
             { key: "scheduler.enabled", value: checked },
             {
               onError: (error) => {
-                toast.error("Could not update scheduler setting", {
+                toast.error("スケジューラー設定を更新できませんでした", {
                   description:
-                    error instanceof Error ? error.message : "Settings command failed.",
+                    error instanceof Error ? error.message : "設定コマンドに失敗しました。",
                 });
               },
             },
           )
         }
-        aria-label="Toggle scheduler"
+        aria-label="スケジューラーを切り替え"
       />
     </div>
   );
@@ -102,7 +102,7 @@ function AppMark() {
       </div>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold leading-5">Codex Scheduler</p>
-        <p className="truncate text-xs text-muted-foreground">Local automation</p>
+        <p className="truncate text-xs text-muted-foreground">ローカル自動化</p>
       </div>
     </div>
   );
@@ -134,7 +134,7 @@ function NavLink({
 
 function SidebarNav({ pathname }: { pathname: string }) {
   return (
-    <nav className="grid gap-1 p-3" aria-label="Main navigation">
+    <nav className="grid gap-1 p-3" aria-label="メインナビゲーション">
       {navItems.map((item) => (
         <NavLink key={item.href} item={item} active={isActivePath(pathname, item.href)} />
       ))}
@@ -146,16 +146,16 @@ function MobileNav({ pathname }: { pathname: string }) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Open navigation">
+        <Button variant="ghost" size="icon" aria-label="ナビゲーションを開く">
           <Menu className="size-5" aria-hidden="true" />
         </Button>
       </DialogTrigger>
       <DialogContent className="left-0 top-0 h-dvh w-[min(86vw,280px)] translate-x-0 translate-y-0 content-start rounded-none border-y-0 border-l-0 p-0 shadow-lg sm:max-w-none">
-        <DialogTitle className="sr-only">Navigation</DialogTitle>
+        <DialogTitle className="sr-only">ナビゲーション</DialogTitle>
         <div className="border-b px-4 py-3">
           <AppMark />
         </div>
-        <nav className="grid gap-1 p-3" aria-label="Mobile navigation">
+        <nav className="grid gap-1 p-3" aria-label="モバイルナビゲーション">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActivePath(pathname, item.href);
@@ -221,7 +221,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Button asChild size="sm">
                 <Link href="/tasks/new">
                   <Plus className="size-4" aria-hidden="true" />
-                  New task
+                  新規タスク
                 </Link>
               </Button>
             </div>

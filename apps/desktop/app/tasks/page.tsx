@@ -75,7 +75,7 @@ function TaskRow({
             {hasFullAccess ? (
               <Badge variant="warning">
                 <AlertTriangle className="size-3" aria-hidden="true" />
-                Full access
+                フルアクセス
               </Badge>
             ) : null}
           </div>
@@ -91,7 +91,7 @@ function TaskRow({
 
       <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div className="min-w-0">
-          <dt className="text-xs text-muted-foreground">Schedule</dt>
+          <dt className="text-xs text-muted-foreground">スケジュール</dt>
           <dd className="mt-1 truncate font-medium">{schedule.label}</dd>
           {schedule.detail ? (
             <dd className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -100,13 +100,13 @@ function TaskRow({
           ) : null}
         </div>
         <div className="min-w-0">
-          <dt className="text-xs text-muted-foreground">Status</dt>
+          <dt className="text-xs text-muted-foreground">状態</dt>
           <dd className="mt-1">
             <TaskStatusBadge status={task.status} />
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-xs text-muted-foreground">Next run</dt>
+          <dt className="text-xs text-muted-foreground">次回実行</dt>
           <dd className="mt-1 truncate font-medium tabular-nums">
             {formatRelativeDateTime(task.nextRunAt)}
           </dd>
@@ -115,7 +115,7 @@ function TaskRow({
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-xs text-muted-foreground">Last run</dt>
+          <dt className="text-xs text-muted-foreground">前回実行</dt>
           <dd className="mt-1 flex min-w-0 items-center gap-2">
             {lastRun ? (
               <>
@@ -125,7 +125,7 @@ function TaskRow({
                 </span>
               </>
             ) : (
-              <span className="text-muted-foreground">No runs yet</span>
+              <span className="text-muted-foreground">実行履歴なし</span>
             )}
           </dd>
           {lastRun ? (
@@ -154,8 +154,8 @@ function TasksPageContent() {
   return (
     <div className="grid gap-5">
       <PageHeader
-        title="Tasks"
-        description="Manage Codex schedules, execution targets, and safety policies."
+        title="タスク"
+        description="Codex のスケジュール、実行先、安全ポリシーを管理します。"
         actions={
           <>
             <Select
@@ -166,7 +166,7 @@ function TasksPageContent() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="all">すべての状態</SelectItem>
                 {taskStatuses.map((status) => (
                   <SelectItem key={status} value={status}>
                     {formatTaskStatus(status)}
@@ -177,7 +177,7 @@ function TasksPageContent() {
             <Button asChild>
               <Link href="/tasks/new">
                 <Plus className="size-4" aria-hidden="true" />
-                New task
+                新規タスク
               </Link>
             </Button>
           </>
@@ -188,11 +188,10 @@ function TasksPageContent() {
         <section className="grid min-w-0 gap-3">
           <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
             <div>
-              <h2 className="text-base font-semibold text-balance">Task list</h2>
+              <h2 className="text-base font-semibold text-balance">タスク一覧</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {formatCount(taskList.length)}{" "}
-                {taskList.length === 1 ? "task" : "tasks"} available. Select a task
-                to inspect its prompt, policies, runs, and audit events.
+                件のタスクがあります。タスクを選択すると、プロンプト、ポリシー、実行履歴、監査イベントを確認できます。
               </p>
             </div>
           </div>
@@ -211,9 +210,9 @@ function TasksPageContent() {
             ) : (
               <EmptyState
                 icon={ListTodo}
-                title="No tasks yet"
-                description="Create the recurring or manual Codex work you want to schedule."
-                action={{ label: "New task", href: "/tasks/new" }}
+                title="タスクがまだありません"
+                description="スケジュールしたい Codex の定期作業または手動作業を作成してください。"
+                action={{ label: "新規タスク", href: "/tasks/new" }}
               />
             )}
           </div>
@@ -229,7 +228,7 @@ function TasksPageContent() {
             />
           ) : (
             <div className="rounded-lg border bg-surface/70 p-4 text-sm text-muted-foreground">
-              Loading the selected task.
+              選択したタスクを読み込んでいます。
             </div>
           )
         ) : null}
@@ -238,7 +237,7 @@ function TasksPageContent() {
       <Dialog open={Boolean(editingTask)} onOpenChange={(open) => !open && setEditingTask(undefined)}>
         <DialogContent className="max-h-[90dvh] w-[min(96vw,1100px)] overflow-auto">
           <DialogHeader>
-            <DialogTitle>Edit task</DialogTitle>
+            <DialogTitle>タスクを編集</DialogTitle>
           </DialogHeader>
           {editingTask ? (
             <TaskWizard
@@ -256,7 +255,7 @@ function TasksPageContent() {
 
 export default function TasksPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">Loading tasks...</div>}>
+    <Suspense fallback={<div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>}>
       <TasksPageContent />
     </Suspense>
   );
