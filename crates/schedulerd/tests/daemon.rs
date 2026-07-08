@@ -974,7 +974,7 @@ async fn overlap_skip_records_skipped_run_when_previous_is_running() {
         .await
         .expect("get task")
         .expect("task");
-    stored.next_run_at = Some(format_utc_rfc3339(Utc::now() + ChronoDuration::seconds(1)));
+    stored.next_run_at = Some(format_utc_rfc3339(Utc::now() - ChronoDuration::seconds(1)));
     stored.updated_at = now_rfc3339();
     handle.db().update_task(&stored).await.expect("update task");
     handle.request_tick();
