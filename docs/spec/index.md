@@ -18,9 +18,9 @@ These documents describe the current branch implementation of Codex Scheduler. T
 - [Data Model](data-model.md): persisted entities, DTOs, enums, settings, and retention records.
 - [Scheduling And Execution](scheduling-and-execution.md): schedule calculation, daemon ticks, run lifecycle, Codex runner behavior, logs, retry, and cleanup.
 - [Interfaces](interfaces.md): desktop UI, Tauri commands, daemon JSON-RPC, and `codex-schedule` CLI surface.
+- [Screen Specifications](screens.md): desktop screen IDs, screen-level requirements, states, controls, validation, accessibility, and acceptance criteria.
 - [Security And Operations](security-and-operations.md): local trust boundaries, project trust, capability tokens, sandbox policy, diagnostics, release artifacts, and verification.
 
 ## Reading Order
 
-Start with [Product Scope](product-scope.md) when changing user-facing behavior. Use [Architecture](architecture.md) and [Data Model](data-model.md) before changing Rust or IPC contracts. Use [Scheduling And Execution](scheduling-and-execution.md) before changing scheduler, daemon, or runner behavior. Use [Interfaces](interfaces.md) before changing the desktop app, CLI, or RPC methods. Use [Security And Operations](security-and-operations.md) before changing permissions, path access, token handling, diagnostics, sidecar packaging, or cleanup.
-
+Start with [Product Scope](product-scope.md) when changing user-facing behavior. Use [Screen Specifications](screens.md) before changing desktop screens, dialogs, form behavior, loading states, or screen copy. Use [Architecture](architecture.md) and [Data Model](data-model.md) before changing Rust or IPC contracts. Use [Scheduling And Execution](scheduling-and-execution.md) before changing scheduler, daemon, or runner behavior. Use [Interfaces](interfaces.md) before changing the desktop app, CLI, or RPC methods. Use [Security And Operations](security-and-operations.md) before changing permissions, path access, token handling, diagnostics, sidecar packaging, or cleanup.
