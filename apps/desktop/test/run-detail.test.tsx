@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunDetail } from "@/components/run-detail";
@@ -20,24 +21,36 @@ const run: RunDto = {
   createdScheduleCount: 0,
 };
 
+async function openLogsTab() {
+  await userEvent.click(screen.getByRole("tab", { name: "ログ" }));
+}
+
 describe("RunDetail", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("renders stdout and stderr tail data", async () => {
-    const tailSpy = vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
-      runId: params.runId,
-      stream: params.stream,
-      cursor: params.cursor ?? 0,
-      nextCursor: 10,
-      eof: true,
-      data: params.stream === "stdout" ? "stdout log line\n" : "stderr log line\n",
-    }));
+    const tailSpy = vi
+      .spyOn(ipcClient, "runTailLog")
+      .mockImplementation(async (params) => ({
+        runId: params.runId,
+        stream: params.stream,
+        cursor: params.cursor ?? 0,
+        nextCursor: 10,
+        eof: true,
+        data:
+          params.stream === "stdout"
+            ? "stdout log line\n"
+            : "stderr log line\n",
+      }));
 
     renderWithClient(<RunDetail run={run} />);
+    await openLogsTab();
 
     expect(await screen.findByText(/stdout log line/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "stderr" }));
+    expect(await screen.findByText(/stderr log line/)).toBeInTheDocument();
     expect(tailSpy).toHaveBeenCalledWith({
       runId: "run_test",
       stream: "stdout",
@@ -57,9 +70,14 @@ describe("RunDetail", () => {
     }));
 
     renderWithClient(<RunDetail run={run} />);
+    await openLogsTab();
 
-    expect(await screen.findByText(/https:\/\/example\.test\/log/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /example\.test/ })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/https:\/\/example\.test\/log/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /example\.test/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("resets rendered log state when switching runs", async () => {
@@ -76,6 +94,7 @@ describe("RunDetail", () => {
     }));
 
     const { rerender } = renderWithClient(<RunDetail run={run} />);
+    await openLogsTab();
 
     expect(await screen.findByText(/first run log/)).toBeInTheDocument();
 

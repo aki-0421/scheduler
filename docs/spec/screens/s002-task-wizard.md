@@ -33,13 +33,13 @@ read_when:
 レイアウト領域:
 
 - page または dialog header。
-- wizard purpose copy を持つ card header。
 - validation failure 時の error summary alert。
 - tabs: `基本`、`実行先`、`スケジュール`、`詳細`。
 - `基本` tab: required main flow。prompt、task name、任意の description を同じ画面にまとめる。
 - `実行先` tab: target mode、project selector、folder picker、base ref、local modification warning。
 - `スケジュール` tab: schedule selector、schedule-specific fields、timezone、preview。
 - `詳細` tab: Codex model、permission、retry、cleanup、scheduler CLI、lock / pause safety controls。
+- tab content の先頭には、tab label と同義の section heading や説明文を置かない。
 - cancel、save paused、save active の footer action。
 
 フィールドとコントロール:

@@ -29,20 +29,15 @@ import { cn } from "@/lib/utils";
 
 function SettingsSection({
   title,
-  description,
   children,
 }: {
   title: string;
-  description: string;
   children: ReactNode;
 }) {
   return (
     <section className="grid gap-3 border-t pt-5 first:border-t-0">
-      <div className="grid gap-1 md:grid-cols-[11rem_minmax(0,1fr)]">
+      <div>
         <h2 className="text-base font-semibold text-balance">{title}</h2>
-        <p className="max-w-3xl text-sm text-muted-foreground text-pretty">
-          {description}
-        </p>
       </div>
       <div className="overflow-hidden rounded-lg border bg-surface/70 px-4">
         {children}
@@ -74,7 +69,9 @@ function SettingRow({
           {description}
         </p>
       </div>
-      <div className={cn("min-w-0 md:justify-self-end md:w-80", controlClassName)}>
+      <div
+        className={cn("min-w-0 md:justify-self-end md:w-80", controlClassName)}
+      >
         {children}
       </div>
     </div>
@@ -118,7 +115,9 @@ export default function SettingsPage() {
     } catch (error) {
       toast.error("設定を保存できませんでした", {
         description:
-          error instanceof Error ? error.message : "設定コマンドに失敗しました。",
+          error instanceof Error
+            ? error.message
+            : "設定コマンドに失敗しました。",
       });
     }
   }
@@ -135,7 +134,9 @@ export default function SettingsPage() {
     } catch (error) {
       toast.error("診断情報をエクスポートできませんでした", {
         description:
-          error instanceof Error ? error.message : "診断コマンドに失敗しました。",
+          error instanceof Error
+            ? error.message
+            : "診断コマンドに失敗しました。",
       });
     } finally {
       setIsExportingDiagnostics(false);
@@ -144,15 +145,9 @@ export default function SettingsPage() {
 
   return (
     <div className="grid gap-6">
-      <PageHeader
-        title="設定"
-        description="スケジューラーの挙動、Codex 実行の既定値、通知、診断を設定します。"
-      />
+      <PageHeader title="設定" />
 
-      <SettingsSection
-        title="一般"
-        description="スケジュール作業を実行するか、いつ通知するかを決める全体設定です。"
-      >
+      <SettingsSection title="一般">
         <SettingRow
           label="スケジューラー"
           description="スケジュール済みタスクを自動的にキューへ入れるかを制御します。"
@@ -174,15 +169,14 @@ export default function SettingsPage() {
           <Switch
             id="notifications-enabled"
             checked={form["notifications.enabled"]}
-            onCheckedChange={(checked) => update("notifications.enabled", checked)}
+            onCheckedChange={(checked) =>
+              update("notifications.enabled", checked)
+            }
           />
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection
-        title="実行"
-        description="新規タスクにコピーされる既定値と、ローカルデーモンで使う上限です。"
-      >
+      <SettingsSection title="実行">
         <SettingRow
           label="全体同時実行数"
           description="デーモンが同時に実行できるスケジューラー実行の最大数です。"
@@ -194,7 +188,10 @@ export default function SettingsPage() {
             min={1}
             value={form["daemon.global_concurrency"]}
             onChange={(event) =>
-              update("daemon.global_concurrency", Number(event.currentTarget.value))
+              update(
+                "daemon.global_concurrency",
+                Number(event.currentTarget.value),
+              )
             }
           />
         </SettingRow>
@@ -206,7 +203,9 @@ export default function SettingsPage() {
           <Input
             id="codex-path"
             value={form["runner.codex_path"]}
-            onChange={(event) => update("runner.codex_path", event.currentTarget.value)}
+            onChange={(event) =>
+              update("runner.codex_path", event.currentTarget.value)
+            }
           />
         </SettingRow>
         <SettingRow
@@ -224,10 +223,7 @@ export default function SettingsPage() {
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection
-        title="権限"
-        description="新しい Codex 実行と隔離ワークツリーのクリーンアップに使う既定の安全設定です。"
-      >
+      <SettingsSection title="権限">
         <SettingRow
           label="既定サンドボックス"
           description="新規タスクへコピーされるファイルシステムアクセスモードです。"
@@ -308,10 +304,7 @@ export default function SettingsPage() {
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection
-        title="診断"
-        description="読み取り専用のローカルパスと、サポート作業用の診断エクスポートです。"
-      >
+      <SettingsSection title="診断">
         <SettingRow
           label="ソケットパス"
           description="デスクトップアプリがスケジューラーデーモンへ接続するための Unix ソケットです。"

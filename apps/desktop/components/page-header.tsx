@@ -4,17 +4,11 @@ import { cn } from "@/lib/utils";
 
 type PageHeaderProps = {
   title: string;
-  description?: string;
   actions?: ReactNode;
   className?: string;
 };
 
-export function PageHeader({
-  title,
-  description,
-  actions,
-  className,
-}: PageHeaderProps) {
+export function PageHeader({ title, actions, className }: PageHeaderProps) {
   return (
     <div
       className={cn(
@@ -23,14 +17,13 @@ export function PageHeader({
       )}
     >
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold leading-7 text-balance">{title}</h1>
-        {description ? (
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground text-pretty">
-            {description}
-          </p>
-        ) : null}
+        <h1 className="text-xl font-semibold leading-7 text-balance">
+          {title}
+        </h1>
       </div>
-      {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }

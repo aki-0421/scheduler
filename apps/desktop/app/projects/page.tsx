@@ -29,7 +29,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ipcClient } from "@/lib/ipc";
-import { useProjects, useTasks, useTrustProject, useUntrustProject } from "@/lib/queries";
+import {
+  useProjects,
+  useTasks,
+  useTrustProject,
+  useUntrustProject,
+} from "@/lib/queries";
 import type { ProjectDto } from "@/lib/types";
 
 const PROJECT_NAME_STORAGE_KEY = "codex-scheduler.project-display-names";
@@ -49,8 +54,15 @@ function githubRepositoryName(remoteUrl?: string) {
   return `${match[1]}/${match[2]}`;
 }
 
-function projectDisplayName(project: ProjectDto, localNames: Record<string, string>) {
-  return githubRepositoryName(project.gitRemoteUrl) ?? localNames[project.id] ?? project.name;
+function projectDisplayName(
+  project: ProjectDto,
+  localNames: Record<string, string>,
+) {
+  return (
+    githubRepositoryName(project.gitRemoteUrl) ??
+    localNames[project.id] ??
+    project.name
+  );
 }
 
 export default function ProjectsPage() {
@@ -59,7 +71,9 @@ export default function ProjectsPage() {
       return {};
     }
     try {
-      return JSON.parse(window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY) ?? "{}") as Record<string, string>;
+      return JSON.parse(
+        window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY) ?? "{}",
+      ) as Record<string, string>;
     } catch {
       return {};
     }
@@ -106,13 +120,17 @@ export default function ProjectsPage() {
         onError: (error) =>
           toast.error("プロジェクトを追加できませんでした", {
             description:
-              error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
+              error instanceof Error
+                ? error.message
+                : "プロジェクトコマンドに失敗しました。",
           }),
       });
     } catch (error) {
       toast.error("フォルダを選択できませんでした", {
         description:
-          error instanceof Error ? error.message : "ファイルブラウザを開けませんでした。",
+          error instanceof Error
+            ? error.message
+            : "ファイルブラウザを開けませんでした。",
       });
     } finally {
       setIsPickingFolder(false);
@@ -129,7 +147,9 @@ export default function ProjectsPage() {
       onError: (error) =>
         toast.error("プロジェクトを削除できませんでした", {
           description:
-            error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
+            error instanceof Error
+              ? error.message
+              : "プロジェクトコマンドに失敗しました。",
         }),
     });
   }
@@ -137,7 +157,10 @@ export default function ProjectsPage() {
   function updateProjectDisplayName(projectId: string, value: string) {
     setLocalNames((current) => {
       const next = { ...current, [projectId]: value };
-      window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, JSON.stringify(next));
+      window.localStorage.setItem(
+        PROJECT_NAME_STORAGE_KEY,
+        JSON.stringify(next),
+      );
       return next;
     });
   }
@@ -146,7 +169,6 @@ export default function ProjectsPage() {
     <div className="grid gap-6">
       <PageHeader
         title="プロジェクト"
-        description="スケジュールされた Codex 実行で使うローカルフォルダとリポジトリを管理します。"
         actions={
           <Button
             type="button"
@@ -160,15 +182,6 @@ export default function ProjectsPage() {
       />
 
       <section className="grid gap-3">
-        <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
-          <div>
-            <h2 className="text-base font-semibold text-balance">プロジェクト一覧</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              スケジュール実行で利用できるプロジェクトが {projectList.length.toLocaleString("ja-JP")} 件あります。
-            </p>
-          </div>
-        </div>
-
         {sortedProjects.length ? (
           <div className="overflow-x-auto overflow-y-hidden rounded-lg border bg-surface/70">
             <Table className="min-w-[860px] table-fixed">
@@ -191,16 +204,26 @@ export default function ProjectsPage() {
                     <TableRow key={project.id}>
                       <TableCell className="min-w-0">
                         {githubName ? (
-                          <div className="truncate font-medium">{displayName}</div>
+                          <div className="truncate font-medium">
+                            {displayName}
+                          </div>
                         ) : (
                           <div className="flex min-w-0 items-center gap-2">
-                            <Pencil className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            <Pencil
+                              className="size-4 shrink-0 text-muted-foreground"
+                              aria-hidden="true"
+                            />
                             <Input
                               value={displayName}
                               onChange={(event) =>
-                                updateProjectDisplayName(project.id, event.currentTarget.value)
+                                updateProjectDisplayName(
+                                  project.id,
+                                  event.currentTarget.value,
+                                )
                               }
-                              onBlur={() => toast.success("表示名を更新しました")}
+                              onBlur={() =>
+                                toast.success("表示名を更新しました")
+                              }
                               aria-label={`${project.name} の表示名`}
                               className="h-8"
                             />
@@ -216,7 +239,9 @@ export default function ProjectsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{formatProjectKind(project.kind)}</Badge>
+                        <Badge variant="outline">
+                          {formatProjectKind(project.kind)}
+                        </Badge>
                       </TableCell>
                       <TableCell className="tabular-nums">
                         {affectedTaskCount.toLocaleString("ja-JP")}
@@ -243,7 +268,8 @@ export default function ProjectsPage() {
                               </AlertDialogTitle>
                               <AlertDialogDescription>
                                 このプロジェクトを参照するスケジュール済みタスクは実行できなくなる可能性があります。
-                                {affectedTaskCount.toLocaleString("ja-JP")} 件の有効なタスクに影響します。ローカルファイルと実行履歴は削除されません。
+                                {affectedTaskCount.toLocaleString("ja-JP")}{" "}
+                                件の有効なタスクに影響します。ローカルファイルと実行履歴は削除されません。
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>

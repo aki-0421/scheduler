@@ -14,13 +14,7 @@ import { Field } from "@/components/field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -252,7 +246,10 @@ function formatCronError(message?: string) {
     return undefined;
   }
 
-  if (message.includes("Seconds are not supported") || message.includes("秒フィールド")) {
+  if (
+    message.includes("Seconds are not supported") ||
+    message.includes("秒フィールド")
+  ) {
     return "秒フィールドはサポートしていません。5フィールドの cron 式を使ってください。";
   }
 
@@ -260,7 +257,10 @@ function formatCronError(message?: string) {
     return "5フィールドの cron 式を入力してください。";
   }
 
-  if (message.includes("Invalid cron expression") || message.includes("cron 式が無効")) {
+  if (
+    message.includes("Invalid cron expression") ||
+    message.includes("cron 式が無効")
+  ) {
     return "有効な cron 式を入力してください。";
   }
 
@@ -273,7 +273,9 @@ function normalizeErrors(stepErrors: StepErrors): Record<string, string> {
       normalized[key] =
         key === "cronPreview"
           ? (formatCronError(message) ?? "有効な cron 式を入力してください。")
-          : japaneseErrorMessages[key] ?? message ?? "この項目を確認してください。";
+          : (japaneseErrorMessages[key] ??
+            message ??
+            "この項目を確認してください。");
       return normalized;
     },
     {},
@@ -403,7 +405,8 @@ function CheckboxRow({
   const inputId = id ?? generatedId;
   const descriptionId = description ? `${inputId}-description` : undefined;
   const errorId = error ? `${inputId}-error` : undefined;
-  const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
+  const describedBy =
+    [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
 
   return (
     <label
@@ -425,7 +428,10 @@ function CheckboxRow({
       <span className="grid gap-1">
         <span className="font-medium">{label}</span>
         {description ? (
-          <span id={descriptionId} className="text-xs text-muted-foreground text-pretty">
+          <span
+            id={descriptionId}
+            className="text-xs text-muted-foreground text-pretty"
+          >
             {description}
           </span>
         ) : null}
@@ -458,7 +464,10 @@ function SwitchRow({
     <div className="flex items-center justify-between gap-4 rounded-md border p-3">
       <div className="grid gap-1">
         <Label htmlFor={id}>{label}</Label>
-        <p id={descriptionId} className="text-xs text-muted-foreground text-pretty">
+        <p
+          id={descriptionId}
+          className="text-xs text-muted-foreground text-pretty"
+        >
           {description}
         </p>
       </div>
@@ -519,9 +528,11 @@ export function TaskWizard({
   const isRepoTarget = draft.targetMode !== "chat";
   const isDangerFullAccess = draft.sandboxMode === "danger-full-access";
   const canUpdateAnySchedule =
-    draft.allowScheduleCli && draft.capabilities.includes("schedule:update-any");
+    draft.allowScheduleCli &&
+    draft.capabilities.includes("schedule:update-any");
   const canModifyLocalChanges =
-    draft.targetMode === "repo-local" && draft.sandboxMode === "workspace-write";
+    draft.targetMode === "repo-local" &&
+    draft.sandboxMode === "workspace-write";
   const hasErrors = Object.keys(errors).length > 0;
   const errorSummary = getOrderedErrorEntries(errors);
 
@@ -573,7 +584,13 @@ export function TaskWizard({
         presetMode: value,
       };
     });
-    clearErrors("scheduleMode", "timezone", "onceDate", "onceTime", "cronPreview");
+    clearErrors(
+      "scheduleMode",
+      "timezone",
+      "onceDate",
+      "onceTime",
+      "cronPreview",
+    );
   }
 
   function selectProject(value: string) {
@@ -593,7 +610,8 @@ export function TaskWizard({
       projectId: project.id,
       repoPath: project.gitRoot ?? project.path,
       baseRef: project.defaultBranch ?? current.baseRef,
-      targetMode: current.targetMode === "chat" ? "repo-local" : current.targetMode,
+      targetMode:
+        current.targetMode === "chat" ? "repo-local" : current.targetMode,
     }));
     clearErrors("projectId", "repoPath", "targetMode");
   }
@@ -601,10 +619,9 @@ export function TaskWizard({
   function collectErrors() {
     const allErrors = [0, 1, 2, 3, 4]
       .map((index) => normalizeErrors(validateTaskDraftStep(draft, index)))
-      .reduce<Record<string, string>>(
-        (accumulator, value) => ({ ...accumulator, ...value }),
-        {},
-      );
+      .reduce<
+        Record<string, string>
+      >((accumulator, value) => ({ ...accumulator, ...value }), {});
 
     setErrors(allErrors);
     const [firstError] = getOrderedErrorEntries(allErrors);
@@ -617,9 +634,13 @@ export function TaskWizard({
   function focusErrorField(key: string) {
     const target = (errorTargetIds[key] ?? [])
       .map((id) => document.getElementById(id))
-      .find((element): element is HTMLElement => element instanceof HTMLElement);
+      .find(
+        (element): element is HTMLElement => element instanceof HTMLElement,
+      );
 
-    const fallback = document.querySelector<HTMLElement>('[aria-invalid="true"]');
+    const fallback = document.querySelector<HTMLElement>(
+      '[aria-invalid="true"]',
+    );
     const element = target ?? fallback;
     if (!element) {
       return;
@@ -654,10 +675,15 @@ export function TaskWizard({
       toast.success(task ? "タスクを更新しました" : "タスクを作成しました");
       onSaved?.(saved);
     } catch (error) {
-      toast.error(task ? "タスクを更新できませんでした" : "タスクを作成できませんでした", {
-        description:
-          error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
-      });
+      toast.error(
+        task ? "タスクを更新できませんでした" : "タスクを作成できませんでした",
+        {
+          description:
+            error instanceof Error
+              ? error.message
+              : "スケジューラーコマンドに失敗しました。",
+        },
+      );
     }
   }
 
@@ -682,7 +708,10 @@ export function TaskWizard({
               projectId: project.id,
               repoPath: project.gitRoot ?? project.path,
               baseRef: project.defaultBranch ?? current.baseRef,
-              targetMode: current.targetMode === "chat" ? "repo-local" : current.targetMode,
+              targetMode:
+                current.targetMode === "chat"
+                  ? "repo-local"
+                  : current.targetMode,
             }));
             clearErrors("projectId", "repoPath", "targetMode");
             toast.success("プロジェクトを追加しました");
@@ -699,7 +728,9 @@ export function TaskWizard({
     } catch (error) {
       toast.error("プロジェクトフォルダを選択できませんでした", {
         description:
-          error instanceof Error ? error.message : "ダイアログコマンドに失敗しました。",
+          error instanceof Error
+            ? error.message
+            : "ダイアログコマンドに失敗しました。",
       });
     } finally {
       setIsPickingRepo(false);
@@ -718,7 +749,9 @@ export function TaskWizard({
     } catch (error) {
       toast.error("プロンプトをインポートできませんでした", {
         description:
-          error instanceof Error ? error.message : "プロンプトファイルを読み取れませんでした。",
+          error instanceof Error
+            ? error.message
+            : "プロンプトファイルを読み取れませんでした。",
       });
     } finally {
       setIsImportingPrompt(false);
@@ -732,19 +765,15 @@ export function TaskWizard({
 
   return (
     <Card>
-      <CardHeader className="border-b bg-muted/20">
-        <CardTitle>{task ? "タスクを編集" : "新規タスク"}</CardTitle>
-        <CardDescription>
-          指示を書き、Codex の実行場所と実行タイミングを選びます。
-        </CardDescription>
-      </CardHeader>
       <CardContent className="grid gap-5 p-4">
         {hasErrors ? (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" aria-hidden="true" />
             <AlertTitle>確認が必要な項目があります</AlertTitle>
             <AlertDescription className="grid gap-2">
-              <p>強調表示された項目を修正してから、もう一度保存してください。</p>
+              <p>
+                強調表示された項目を修正してから、もう一度保存してください。
+              </p>
               <ul className="list-disc space-y-1 pl-4">
                 {errorSummary.map(({ key, label, message }) => (
                   <li key={key}>
@@ -765,7 +794,10 @@ export function TaskWizard({
           </Alert>
         ) : null}
 
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as WizardTab)}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as WizardTab)}
+        >
           <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="basics">基本</TabsTrigger>
             <TabsTrigger value="target">実行先</TabsTrigger>
@@ -786,7 +818,9 @@ export function TaskWizard({
                   className="min-h-[360px] resize-y font-mono text-sm leading-6"
                   value={draft.prompt}
                   placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"
-                  onChange={(event) => update("prompt", event.currentTarget.value)}
+                  onChange={(event) =>
+                    update("prompt", event.currentTarget.value)
+                  }
                 />
                 <div className="flex justify-end">
                   <Button
@@ -809,7 +843,9 @@ export function TaskWizard({
                   id="task-name"
                   value={draft.name}
                   placeholder="毎日のリポジトリレビュー"
-                  onChange={(event) => update("name", event.currentTarget.value)}
+                  onChange={(event) =>
+                    update("name", event.currentTarget.value)
+                  }
                 />
               </Field>
               <Field label="説明" htmlFor="task-description">
@@ -826,12 +862,6 @@ export function TaskWizard({
           </TabsContent>
 
           <TabsContent value="target" className="grid gap-4">
-            <div className="grid gap-1">
-              <h3 className="text-sm font-semibold text-balance">実行先</h3>
-              <p className="text-sm text-muted-foreground text-pretty">
-                Codex が使用するワークスペースを選びます。通常はチャットワークスペースのままで構いません。
-              </p>
-            </div>
             <div className="grid gap-4 lg:grid-cols-2">
               <SelectField
                 id="target-mode"
@@ -849,198 +879,196 @@ export function TaskWizard({
                 description="登録済みプロジェクトを選ぶか、フォルダを選択して追加します。"
               />
             </div>
-              {isRepoTarget ? (
-                <div className="grid gap-4">
-                  <Field
-                    label="プロジェクトパス"
-                    htmlFor="repo-path"
-                    error={errors.repoPath}
-                    description="パスはプロジェクト選択またはフォルダ選択から設定します。"
-                  >
-                    <div className="flex gap-2">
-                      <Input
-                        id="repo-path"
-                        className="min-w-0"
-                        value={draft.repoPath}
-                        readOnly
-                        placeholder="プロジェクトを選択してください"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={isPickingRepo || trustProject.isPending}
-                        onClick={() => void pickRepositoryFolder()}
-                      >
-                        <FolderOpen className="size-4" aria-hidden="true" />
-                        フォルダを選択
-                      </Button>
-                    </div>
-                  </Field>
-                  <Field label="ベース参照" htmlFor="base-ref">
+            {isRepoTarget ? (
+              <div className="grid gap-4">
+                <Field
+                  label="プロジェクトパス"
+                  htmlFor="repo-path"
+                  error={errors.repoPath}
+                  description="パスはプロジェクト選択またはフォルダ選択から設定します。"
+                >
+                  <div className="flex gap-2">
                     <Input
-                      id="base-ref"
-                      value={draft.baseRef}
-                      onChange={(event) => update("baseRef", event.currentTarget.value)}
+                      id="repo-path"
+                      className="min-w-0"
+                      value={draft.repoPath}
+                      readOnly
+                      placeholder="プロジェクトを選択してください"
                     />
-                  </Field>
-                  {matchedProject ? (
-                    <div className="rounded-md border p-3 text-xs text-muted-foreground">
-                      {matchedProject.path}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {canModifyLocalChanges ? (
-                <Alert variant="warning">
-                  <AlertTriangle className="size-4" aria-hidden="true" />
-                  <AlertTitle>既存リポジトリが変更される可能性があります</AlertTitle>
-                  <AlertDescription>
-                    ワークスペース書き込みでは、Codex が現在の作業ツリーのファイルを変更できます。
-                  </AlertDescription>
-                </Alert>
-              ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isPickingRepo || trustProject.isPending}
+                      onClick={() => void pickRepositoryFolder()}
+                    >
+                      <FolderOpen className="size-4" aria-hidden="true" />
+                      フォルダを選択
+                    </Button>
+                  </div>
+                </Field>
+                <Field label="ベース参照" htmlFor="base-ref">
+                  <Input
+                    id="base-ref"
+                    value={draft.baseRef}
+                    onChange={(event) =>
+                      update("baseRef", event.currentTarget.value)
+                    }
+                  />
+                </Field>
+                {matchedProject ? (
+                  <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                    {matchedProject.path}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {canModifyLocalChanges ? (
+              <Alert variant="warning">
+                <AlertTriangle className="size-4" aria-hidden="true" />
+                <AlertTitle>
+                  既存リポジトリが変更される可能性があります
+                </AlertTitle>
+                <AlertDescription>
+                  ワークスペース書き込みでは、Codex
+                  が現在の作業ツリーのファイルを変更できます。
+                </AlertDescription>
+              </Alert>
+            ) : null}
           </TabsContent>
 
           <TabsContent value="schedule" className="grid gap-4">
-            <div className="grid gap-1">
-              <h3 className="text-sm font-semibold text-balance">スケジュール</h3>
-              <p className="text-sm text-muted-foreground text-pretty">
-                読みやすい実行間隔を選びます。cron はカスタムスケジュールでのみ表示します。
-              </p>
-            </div>
-              <SelectField
-                id="schedule"
-                label="実行タイミング"
-                value={scheduleChoice}
-                options={scheduleOptions}
-                onChange={updateScheduleChoice}
-              />
+            <SelectField
+              id="schedule"
+              label="実行タイミング"
+              value={scheduleChoice}
+              options={scheduleOptions}
+              onChange={updateScheduleChoice}
+            />
 
-              {scheduleChoice === "once" ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="日付" htmlFor="once-date" error={errors.onceDate}>
-                    <Input
-                      id="once-date"
-                      type="date"
-                      value={draft.onceDate}
-                      onChange={(event) =>
-                        update("onceDate", event.currentTarget.value)
-                      }
-                    />
-                  </Field>
-                  <Field label="時刻" htmlFor="once-time" error={errors.onceTime}>
-                    <Input
-                      id="once-time"
-                      type="time"
-                      value={draft.onceTime}
-                      onChange={(event) =>
-                        update("onceTime", event.currentTarget.value)
-                      }
-                    />
-                  </Field>
-                </div>
-              ) : null}
-
-              {scheduleChoice === "daily" ||
-              scheduleChoice === "weekdays" ||
-              scheduleChoice === "weekly" ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {scheduleChoice === "weekly" ? (
-                    <SelectField
-                      id="weekly-day"
-                      label="曜日"
-                      value={draft.weeklyDay}
-                      options={weekdayOptions}
-                      onChange={(value) => update("weeklyDay", value)}
-                    />
-                  ) : null}
-                  <Field label="時刻" htmlFor="preset-time">
-                    <Input
-                      id="preset-time"
-                      type="time"
-                      value={draft.presetTime}
-                      onChange={(event) =>
-                        update("presetTime", event.currentTarget.value)
-                      }
-                    />
-                  </Field>
-                </div>
-              ) : null}
-
-              {scheduleChoice === "cron" ? (
-                <Field
-                  label="カスタム cron 式"
-                  htmlFor="cron-expression"
-                  error={errors.cronPreview ?? cronError}
-                  description="5フィールドの cron 式を使ってください。"
-                >
+            {scheduleChoice === "once" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="日付" htmlFor="once-date" error={errors.onceDate}>
                   <Input
-                    id="cron-expression"
-                    value={draft.cronExpr}
-                    aria-invalid={Boolean(errors.cronPreview ?? cronError)}
+                    id="once-date"
+                    type="date"
+                    value={draft.onceDate}
                     onChange={(event) =>
-                      update("cronExpr", event.currentTarget.value, [
-                        "cronPreview",
-                      ])
+                      update("onceDate", event.currentTarget.value)
                     }
-                    placeholder="0 9 * * 1-5"
                   />
                 </Field>
-              ) : null}
+                <Field label="時刻" htmlFor="once-time" error={errors.onceTime}>
+                  <Input
+                    id="once-time"
+                    type="time"
+                    value={draft.onceTime}
+                    onChange={(event) =>
+                      update("onceTime", event.currentTarget.value)
+                    }
+                  />
+                </Field>
+              </div>
+            ) : null}
 
-              {scheduleChoice !== "manual" ? (
-                <SelectField
-                  id="timezone"
-                  label="タイムゾーン"
-                  value={draft.timezone}
-                  options={timezoneOptions}
-                  onChange={(value) => update("timezone", value)}
-                  error={errors.timezone}
+            {scheduleChoice === "daily" ||
+            scheduleChoice === "weekdays" ||
+            scheduleChoice === "weekly" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {scheduleChoice === "weekly" ? (
+                  <SelectField
+                    id="weekly-day"
+                    label="曜日"
+                    value={draft.weeklyDay}
+                    options={weekdayOptions}
+                    onChange={(value) => update("weeklyDay", value)}
+                  />
+                ) : null}
+                <Field label="時刻" htmlFor="preset-time">
+                  <Input
+                    id="preset-time"
+                    type="time"
+                    value={draft.presetTime}
+                    onChange={(event) =>
+                      update("presetTime", event.currentTarget.value)
+                    }
+                  />
+                </Field>
+              </div>
+            ) : null}
+
+            {scheduleChoice === "cron" ? (
+              <Field
+                label="カスタム cron 式"
+                htmlFor="cron-expression"
+                error={errors.cronPreview ?? cronError}
+                description="5フィールドの cron 式を使ってください。"
+              >
+                <Input
+                  id="cron-expression"
+                  value={draft.cronExpr}
+                  aria-invalid={Boolean(errors.cronPreview ?? cronError)}
+                  onChange={(event) =>
+                    update("cronExpr", event.currentTarget.value, [
+                      "cronPreview",
+                    ])
+                  }
+                  placeholder="0 9 * * 1-5"
                 />
-              ) : null}
+              </Field>
+            ) : null}
 
-              <div className="rounded-md border bg-muted/30 p-3">
-                <div className="flex items-start gap-2">
-                  <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
-                  <div className="grid gap-1">
-                    <p className="text-sm font-medium">{getScheduleSummary(draft)}</p>
-                    {cronPreview.ok && cronPreview.dates.length ? (
-                      <div data-testid="cron-preview" className="grid gap-1">
-                        <p className="text-xs text-muted-foreground">次の5回</p>
-                        <div className="grid gap-1 text-sm tabular-nums">
-                          {cronPreview.dates.map((date) => (
-                            <span key={date}>{formatDateTime(date)}</span>
-                          ))}
-                        </div>
+            {scheduleChoice !== "manual" ? (
+              <SelectField
+                id="timezone"
+                label="タイムゾーン"
+                value={draft.timezone}
+                options={timezoneOptions}
+                onChange={(value) => update("timezone", value)}
+                error={errors.timezone}
+              />
+            ) : null}
+
+            <div className="rounded-md border bg-muted/30 p-3">
+              <div className="flex items-start gap-2">
+                <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
+                <div className="grid gap-1">
+                  <p className="text-sm font-medium">
+                    {getScheduleSummary(draft)}
+                  </p>
+                  {cronPreview.ok && cronPreview.dates.length ? (
+                    <div data-testid="cron-preview" className="grid gap-1">
+                      <p className="text-xs text-muted-foreground">次の5回</p>
+                      <div className="grid gap-1 text-sm tabular-nums">
+                        {cronPreview.dates.map((date) => (
+                          <span key={date}>{formatDateTime(date)}</span>
+                        ))}
                       </div>
-                    ) : scheduleChoice === "once" ? (
-                      <p className="text-xs text-muted-foreground">
-                        次回実行: {getOncePreview(draft)}
-                      </p>
-                    ) : scheduleChoice === "manual" ? (
-                      <p className="text-xs text-muted-foreground">
-                        タスク一覧、詳細ビュー、または scheduler CLI からこのタスクを実行します。
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        今後の実行をプレビューするにはスケジュールを修正してください。
-                      </p>
-                    )}
-                  </div>
+                    </div>
+                  ) : scheduleChoice === "once" ? (
+                    <p className="text-xs text-muted-foreground">
+                      次回実行: {getOncePreview(draft)}
+                    </p>
+                  ) : scheduleChoice === "manual" ? (
+                    <p className="text-xs text-muted-foreground">
+                      タスク詳細または scheduler CLI
+                      からこのタスクを実行します。
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      今後の実行をプレビューするにはスケジュールを修正してください。
+                    </p>
+                  )}
                 </div>
               </div>
+            </div>
           </TabsContent>
 
           <TabsContent value="advanced" className="grid gap-4">
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-              <div className="grid gap-1">
-                <h3 className="text-sm font-semibold text-balance">詳細設定</h3>
-                <p className="text-sm text-muted-foreground text-pretty">
-                  Codex モデル、サンドボックス、承認、再試行、scheduler CLI アクセスを設定します。
-                </p>
-              </div>
-              {isDangerFullAccess ? <Badge variant="warning">フルアクセス</Badge> : null}
-            </div>
+            {isDangerFullAccess ? (
+              <Badge variant="warning" className="w-fit">
+                フルアクセス
+              </Badge>
+            ) : null}
             <div className="grid gap-4 lg:grid-cols-3">
               <Field
                 label="Codex バイナリパス"
@@ -1052,7 +1080,9 @@ export function TaskWizard({
                 <Input
                   id="model"
                   value={draft.model}
-                  onChange={(event) => update("model", event.currentTarget.value)}
+                  onChange={(event) =>
+                    update("model", event.currentTarget.value)
+                  }
                 />
               </Field>
               <Field
@@ -1193,7 +1223,8 @@ export function TaskWizard({
                   <AlertTriangle className="size-4" aria-hidden="true" />
                   <AlertTitle>任意のスケジュールを更新できます</AlertTitle>
                   <AlertDescription>
-                    このタスクはスケジュールされた Codex 実行から schedule:update-any を使用できます。
+                    このタスクはスケジュールされた Codex 実行から
+                    schedule:update-any を使用できます。
                   </AlertDescription>
                 </Alert>
               ) : null}
@@ -1250,7 +1281,11 @@ export function TaskWizard({
                 一時停止で作成
               </Button>
             ) : null}
-            <Button type="button" disabled={isSaving} onClick={() => void save(false)}>
+            <Button
+              type="button"
+              disabled={isSaving}
+              onClick={() => void save(false)}
+            >
               {task ? "変更を保存" : "タスクを作成"}
             </Button>
           </div>

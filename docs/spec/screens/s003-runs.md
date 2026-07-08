@@ -1,7 +1,7 @@
 ---
 title: S003 Task Sessions
 description: Task Session screen の chat UI、tool usage display、history filter、log tail、export、cancel、follow-up requirement を定義する。
-updated: 2026-07-08
+updated: 2026-07-09
 read_when:
   - Runs page、task session page、run filtering、chat transcript、tool usage display、artifact action、cancel/retry/follow-up flow を変更するとき。
 ---
@@ -28,13 +28,14 @@ read_when:
 
 レイアウト領域:
 
-- status filter と task filter を持つ header。
-- count、preset button、list row を持つ run history section。
+- status filter と task filter を持つ header。header の補足説明文は表示しない。
+- preset button、list row を持つ run history section。list count の説明文は表示しない。
 - `/runs?run=<runId>` は session detail page として開く。
 - session detail header は task name、run status、trigger、scheduled / started time、parent task link を持つ。
-- primary content は chat UI。system / user prompt、assistant output、tool call、tool result、daemon event を時系列 bubble として表示する。
+- selected session detail は `概要`、`チャット`、`プロンプト`、`出力`、`ログ`、`成果物` の tabs で表示する。
+- `チャット` tab は system / user prompt、assistant output、tool call、tool result、daemon event を時系列 bubble として表示する。
 - right or top action area は workspace / follow-up / cancel / retry / export logs を持つ。
-- technical tabs: `チャット`、`ログ`、`成果物`、`メタデータ`。default は `チャット`。
+- tab content の先頭には、tab label と同義の section heading や説明文を置かない。
 
 フィールドとコントロール:
 

@@ -13,10 +13,7 @@ import type { TaskDto } from "@/lib/types";
 function NewTaskLoading() {
   return (
     <div className="grid gap-5">
-      <PageHeader
-        title="新規タスク"
-        description="作業内容、Codex の実行場所、スケジュールを設定します。"
-      />
+      <PageHeader title="新規タスク" />
       <div className="grid gap-4">
         <Skeleton className="h-24" />
         <Skeleton className="h-72" />
@@ -43,7 +40,9 @@ function NewTaskPageContent() {
       ...draft,
       id: undefined,
       slug: undefined,
-      name: duplicate ? `${sourceTask.data.name} のコピー` : `フォローアップ: ${sourceTask.data.name}`,
+      name: duplicate
+        ? `${sourceTask.data.name} のコピー`
+        : `フォローアップ: ${sourceTask.data.name}`,
       description: duplicate
         ? draft.description
         : sourceRun
@@ -66,8 +65,13 @@ function NewTaskPageContent() {
   return (
     <div className="grid gap-5">
       <PageHeader
-        title={duplicateFromTask ? "タスクを複製" : prefillFromTask ? "フォローアップタスク" : "新規タスク"}
-        description="作業内容、Codex の実行場所、スケジュールを設定します。"
+        title={
+          duplicateFromTask
+            ? "タスクを複製"
+            : prefillFromTask
+              ? "フォローアップタスク"
+              : "新規タスク"
+        }
       />
       <TaskWizard
         key={prefillFromTask ?? duplicateFromTask ?? "blank"}

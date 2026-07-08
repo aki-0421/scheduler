@@ -1,7 +1,7 @@
 ---
 title: S005 Settings
 description: Settings screen の global scheduler、notification、execution default、permission default、diagnostics control を定義する。
-updated: 2026-07-08
+updated: 2026-07-09
 read_when:
   - Settings page、settings key、scheduler default、notification default、diagnostics export、schema display を変更するとき。
 ---
@@ -25,11 +25,11 @@ read_when:
 
 レイアウト領域:
 
-- settings purpose を持つ header。
-- General section。
-- Execution section。
-- Permissions section。
-- Diagnostics section。
+- `設定` title を持つ header。header の補足説明文は表示しない。
+- General section。section heading 直下の補足説明文は表示しない。
+- Execution section。section heading 直下の補足説明文は表示しない。
+- Permissions section。section heading 直下の補足説明文は表示しない。
+- Diagnostics section。section heading 直下の補足説明文は表示しない。
 - bottom の sticky save bar。
 
 フィールドとコントロール:

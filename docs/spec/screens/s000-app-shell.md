@@ -1,7 +1,7 @@
 ---
 title: S000 App Shell
 description: Codex Scheduler の global shell、sidebar、header、root navigation behavior を定義する。
-updated: 2026-07-08
+updated: 2026-07-09
 read_when:
   - desktop app shell、sidebar、header、global navigation、root redirect、task sidebar behavior を変更するとき。
   - scheduler health summary、task count indicator、settings entry、mobile navigation を変更するとき。
@@ -41,6 +41,7 @@ read_when:
 - sidebar 最下部には fixed icon toolbox section を置き、settings gear icon を含める。
 - sidebar 全体は `user-select: none` にする。
 - header は scheduler status badge と scheduler enabled toggle を表示しない。
+- header left area は current route の breadcrumb を表示する。breadcrumb は current page title、selected task name、selected run id を使い、長い値は truncate する。
 - header の running / queued summary は text sentence ではなく icon + number を使う。例: spinner / activity icon と `0`、queue icon と `0`。
 - header は primary action として `新規タスク` を持つ。
 - mobile navigation は同じ情報構造を drawer 内で表現する。
@@ -52,6 +53,7 @@ read_when:
 - Archived item: folder icon + `アーカイブ済み` label。archived count は sidebar に表示しない。
 - Toolbox: settings gear icon button。必要に応じて diagnostics などの icon-only controls を追加できる。
 - Header count: running count、queued count。長い `0件実行中 · 0件待機中` 形式は使わない。
+- Header breadcrumb: `プロジェクト`、`アーカイブ済み`、`アーカイブ済み / <task name>`、`アーカイブ済み / 新規タスク`、`実行履歴 / <run id>`、`設定`。
 
 状態:
 
@@ -86,4 +88,5 @@ read_when:
 - running task は spinner と `実行中` text で判別できる。
 - completed one-shot task と paused task は sidebar main section に表示されず、`アーカイブ済み` から一覧できる。
 - header に `稼働中` badge と scheduler toggle が表示されない。
+- header に breadcrumb が表示される。
 - header count は icon + number で表示される。

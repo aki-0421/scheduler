@@ -14,7 +14,6 @@ import {
   describeTaskSchedule,
   describeTaskTarget,
   formatAbsoluteDateTime,
-  formatCount,
   formatRunDuration,
 } from "@/components/task-run-display";
 import { Badge } from "@/components/ui/badge";
@@ -64,10 +63,7 @@ function TaskScreen({ taskId }: { taskId: string }) {
 
   return (
     <div className="grid gap-5">
-      <PageHeader
-        title={task.data.name}
-        description="このタスクのセッション履歴と操作を確認します。"
-      />
+      <PageHeader title={task.data.name} />
       <TaskDetail
         task={task.data}
         runs={runs.data ?? []}
@@ -109,31 +105,19 @@ function TasksPageContent() {
     return <TaskScreen taskId={selectedTaskId} />;
   }
 
-  const archivedTasks = taskList
-    .filter(isArchivedTask)
-    .sort((left, right) => {
-      const leftRun = taskLastRun(left, runList);
-      const rightRun = taskLastRun(right, runList);
-      return (rightRun?.startedAt ?? rightRun?.scheduledFor ?? "").localeCompare(
-        leftRun?.startedAt ?? leftRun?.scheduledFor ?? "",
-      );
-    });
+  const archivedTasks = taskList.filter(isArchivedTask).sort((left, right) => {
+    const leftRun = taskLastRun(left, runList);
+    const rightRun = taskLastRun(right, runList);
+    return (rightRun?.startedAt ?? rightRun?.scheduledFor ?? "").localeCompare(
+      leftRun?.startedAt ?? leftRun?.scheduledFor ?? "",
+    );
+  });
 
   return (
     <div className="grid gap-5">
-      <PageHeader
-        title="アーカイブ済み"
-        description="1回きりのタスク、停止中のタスク、完了または削除されたタスクを実行の新しい順に表示します。"
-      />
+      <PageHeader title="アーカイブ済み" />
 
       <section className="grid min-w-0 gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-balance">タスク一覧</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {formatCount(archivedTasks.length)} 件のアーカイブ済みタスクがあります。
-          </p>
-        </div>
-
         <div className="overflow-hidden rounded-lg border bg-surface/70">
           {archivedTasks.length ? (
             archivedTasks.map((task) => {
@@ -149,7 +133,9 @@ function TasksPageContent() {
                   <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                     <div className="min-w-0">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium">{task.name}</p>
+                        <p className="truncate text-sm font-medium">
+                          {task.name}
+                        </p>
                         <TaskStatusBadge status={task.status} />
                         <Badge variant="outline">{target.label}</Badge>
                       </div>
@@ -160,24 +146,38 @@ function TasksPageContent() {
                     <div className="text-left text-xs text-muted-foreground sm:text-right">
                       <p>前回実行</p>
                       <p className="mt-1 tabular-nums">
-                        {formatAbsoluteDateTime(lastRun?.startedAt ?? lastRun?.scheduledFor)}
+                        {formatAbsoluteDateTime(
+                          lastRun?.startedAt ?? lastRun?.scheduledFor,
+                        )}
                       </p>
                     </div>
                   </div>
 
                   <dl className="grid gap-3 text-sm sm:grid-cols-3">
                     <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">スケジュール</dt>
-                      <dd className="mt-1 truncate font-medium">{schedule.label}</dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">前回状態</dt>
-                      <dd className="mt-1">
-                        {lastRun ? <RunStatusBadge status={lastRun.status} /> : "実行履歴なし"}
+                      <dt className="text-xs text-muted-foreground">
+                        スケジュール
+                      </dt>
+                      <dd className="mt-1 truncate font-medium">
+                        {schedule.label}
                       </dd>
                     </div>
                     <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">所要時間</dt>
+                      <dt className="text-xs text-muted-foreground">
+                        前回状態
+                      </dt>
+                      <dd className="mt-1">
+                        {lastRun ? (
+                          <RunStatusBadge status={lastRun.status} />
+                        ) : (
+                          "実行履歴なし"
+                        )}
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs text-muted-foreground">
+                        所要時間
+                      </dt>
                       <dd className="mt-1 font-medium tabular-nums">
                         {lastRun ? formatRunDuration(lastRun) : "—"}
                       </dd>
@@ -202,7 +202,13 @@ function TasksPageContent() {
 
 export default function TasksPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>}>
+    <Suspense
+      fallback={
+        <div className="text-sm text-muted-foreground">
+          タスクを読み込んでいます...
+        </div>
+      }
+    >
       <TasksPageContent />
     </Suspense>
   );

@@ -28,8 +28,10 @@ read_when:
 
 - `/tasks?view=archived`: archived task list。completed one-shot、paused / stopped、deleted task を execution newest-first で表示する。
 - `/tasks?task=<taskId>`: task detail page。`概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作` の tabs で 1 機能ずつ表示する。常時表示の right action panel は置かない。
+- header と list section には、title と同義の補足説明文や count 説明文を置かない。
 - detail header: task name、status、lock state、target、next run。
 - tabs: `概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作`。タスク操作は `操作` tab に集約する。
+- tab content の先頭には、tab label を繰り返すだけの section heading や説明文を置かない。
 - run history row は status、trigger、scheduled/start time、duration、result summary を表示し、押すと `/runs?run=<runId>` へ遷移する。
 - edit / duplicate flow は right column action から開始する。
 

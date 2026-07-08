@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   Activity,
+  ChevronRight,
   Folder,
   FolderGit2,
   Loader2,
@@ -28,6 +29,11 @@ import { useHealth, useRuns, useTasks } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+type BreadcrumbItem = {
+  label: string;
+  href?: string;
+};
+
 function isActivePath(pathname: string, href: string) {
   if (href === "/") {
     return pathname === "/";
@@ -35,7 +41,17 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function isTaskRoute(pathname: string, selectedTaskId: string | undefined, taskId: string) {
+function normalizePathname(pathname: string) {
+  return pathname.length > 1 && pathname.endsWith("/")
+    ? pathname.slice(0, -1)
+    : pathname;
+}
+
+function isTaskRoute(
+  pathname: string,
+  selectedTaskId: string | undefined,
+  taskId: string,
+) {
   return pathname === "/tasks" && selectedTaskId === taskId;
 }
 
@@ -61,7 +77,10 @@ function HeaderCounts() {
   const queued = health.data?.queuedCount ?? 0;
 
   return (
-    <div className="flex items-center gap-1.5 text-sm text-muted-foreground" aria-label="実行状態">
+    <div
+      className="flex items-center gap-1.5 text-sm text-muted-foreground"
+      aria-label="実行状態"
+    >
       <span className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-surface px-2 tabular-nums">
         <Activity className="size-4" aria-hidden="true" />
         {running.toLocaleString("ja-JP")}
@@ -74,7 +93,109 @@ function HeaderCounts() {
   );
 }
 
-function ProjectLink({ pathname, close }: { pathname: string; close?: boolean }) {
+function shortIdentifier(value: string) {
+  return value.length > 18 ? `${value.slice(0, 18)}...` : value;
+}
+
+function HeaderBreadcrumbs({
+  pathname,
+  selectedTaskId,
+  selectedRunId,
+}: {
+  pathname: string;
+  selectedTaskId?: string;
+  selectedRunId?: string;
+}) {
+  const tasks = useTasks();
+  const runs = useRuns();
+  const task = selectedTaskId
+    ? (tasks.data ?? []).find((item) => item.id === selectedTaskId)
+    : undefined;
+  const run = selectedRunId
+    ? (runs.data ?? []).find((item) => item.id === selectedRunId)
+    : undefined;
+  const crumbs: BreadcrumbItem[] = (() => {
+    if (pathname === "/tasks/new") {
+      return [
+        { label: "アーカイブ済み", href: "/tasks?view=archived" },
+        { label: "新規タスク" },
+      ];
+    }
+    if (pathname === "/tasks" && selectedTaskId) {
+      return [
+        { label: "アーカイブ済み", href: "/tasks?view=archived" },
+        { label: task?.name ?? shortIdentifier(selectedTaskId) },
+      ];
+    }
+    if (pathname === "/tasks") {
+      return [{ label: "アーカイブ済み" }];
+    }
+    if (pathname === "/runs" && selectedRunId) {
+      return [
+        { label: "実行履歴", href: "/runs" },
+        { label: shortIdentifier(run?.id ?? selectedRunId) },
+      ];
+    }
+    if (pathname === "/runs") {
+      return [{ label: "実行履歴" }];
+    }
+    if (pathname === "/settings") {
+      return [{ label: "設定" }];
+    }
+    return [{ label: "プロジェクト" }];
+  })();
+
+  return (
+    <nav className="min-w-0" aria-label="パンくず">
+      <ol className="flex min-w-0 items-center gap-1 text-sm">
+        {crumbs.map((crumb, index) => {
+          const current = index === crumbs.length - 1;
+          return (
+            <li
+              key={`${crumb.label}-${index}`}
+              className="flex min-w-0 items-center gap-1"
+            >
+              {index > 0 ? (
+                <ChevronRight
+                  className="size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              ) : null}
+              {crumb.href && !current ? (
+                <Link
+                  href={crumb.href}
+                  className="truncate text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  {crumb.label}
+                </Link>
+              ) : (
+                <span
+                  className={cn(
+                    "truncate",
+                    current
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                  aria-current={current ? "page" : undefined}
+                >
+                  {crumb.label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+function ProjectLink({
+  pathname,
+  close,
+}: {
+  pathname: string;
+  close?: boolean;
+}) {
   const active = isActivePath(pathname, "/projects");
   const content = (
     <Link
@@ -208,7 +329,10 @@ function SidebarContent({
         <ProjectLink pathname={pathname} close={close} />
       </div>
       <Separator />
-      <nav className="min-h-0 flex-1 overflow-y-auto p-3" aria-label="実行予定タスク">
+      <nav
+        className="min-h-0 flex-1 overflow-y-auto p-3"
+        aria-label="実行予定タスク"
+      >
         <div className="grid gap-1">
           {tasks.isLoading ? (
             <>
@@ -238,7 +362,10 @@ function SidebarContent({
       </div>
       <Separator />
       <div className="flex h-14 shrink-0 items-center justify-end px-3">
-        <SettingsTool active={isActivePath(pathname, "/settings")} close={close} />
+        <SettingsTool
+          active={isActivePath(pathname, "/settings")}
+          close={close}
+        />
       </div>
     </div>
   );
@@ -260,7 +387,11 @@ function MobileNav({
       </DialogTrigger>
       <DialogContent className="left-0 top-0 h-dvh w-[min(86vw,300px)] translate-x-0 translate-y-0 content-start rounded-none border-y-0 border-l-0 p-0 shadow-lg sm:max-w-none">
         <DialogTitle className="sr-only">ナビゲーション</DialogTitle>
-        <SidebarContent pathname={pathname} selectedTaskId={selectedTaskId} close />
+        <SidebarContent
+          pathname={pathname}
+          selectedTaskId={selectedTaskId}
+          close
+        />
       </DialogContent>
     </Dialog>
   );
@@ -268,8 +399,10 @@ function MobileNav({
 
 function AppShellContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const normalizedPathname = normalizePathname(pathname);
   const searchParams = useSearchParams();
   const selectedTaskId = searchParams.get("task") ?? undefined;
+  const selectedRunId = searchParams.get("run") ?? undefined;
 
   return (
     <div className="h-dvh overflow-hidden bg-surface text-foreground">
@@ -283,15 +416,27 @@ function AppShellContent({ children }: { children: ReactNode }) {
         }}
       >
         <aside className="hidden h-full w-64 shrink-0 overflow-hidden border-r bg-surface md:block">
-          <SidebarContent pathname={pathname} selectedTaskId={selectedTaskId} />
+          <SidebarContent
+            pathname={normalizedPathname}
+            selectedTaskId={selectedTaskId}
+          />
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b bg-background px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-2 md:hidden">
-              <MobileNav pathname={pathname} selectedTaskId={selectedTaskId} />
+              <MobileNav
+                pathname={normalizedPathname}
+                selectedTaskId={selectedTaskId}
+              />
             </div>
-            <div className="min-w-0 flex-1" />
+            <div className="min-w-0 flex-1">
+              <HeaderBreadcrumbs
+                pathname={normalizedPathname}
+                selectedTaskId={selectedTaskId}
+                selectedRunId={selectedRunId}
+              />
+            </div>
             <div className="ml-auto flex items-center gap-3">
               <HeaderCounts />
               <Button asChild size="sm">
@@ -315,7 +460,11 @@ function AppShellContent({ children }: { children: ReactNode }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <Suspense fallback={<div className="h-dvh bg-background text-foreground">{children}</div>}>
+    <Suspense
+      fallback={
+        <div className="h-dvh bg-background text-foreground">{children}</div>
+      }
+    >
       <AppShellContent>{children}</AppShellContent>
     </Suspense>
   );

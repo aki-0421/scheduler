@@ -11,7 +11,6 @@ import { RunDetail } from "@/components/run-detail";
 import { formatRunStatus, RunStatusBadge } from "@/components/status-badge";
 import {
   formatAbsoluteDateTime,
-  formatCount,
   formatReadableEnum,
   formatRelativeDateTime,
   formatRunDuration,
@@ -113,11 +112,15 @@ function RunRow({
         </div>
         <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">所要時間</dt>
-          <dd className="mt-1 font-medium tabular-nums">{formatRunDuration(run)}</dd>
+          <dd className="mt-1 font-medium tabular-nums">
+            {formatRunDuration(run)}
+          </dd>
         </div>
         <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">終了コード</dt>
-          <dd className="mt-1 font-medium tabular-nums">{run.exitCode ?? "—"}</dd>
+          <dd className="mt-1 font-medium tabular-nums">
+            {run.exitCode ?? "—"}
+          </dd>
         </div>
       </dl>
     </Link>
@@ -142,7 +145,12 @@ function RunsPageContent() {
   const sortedRunList = runList
     .slice()
     .sort((left, right) =>
-      (right.startedAt ?? right.scheduledFor ?? right.queuedAt ?? "").localeCompare(
+      (
+        right.startedAt ??
+        right.scheduledFor ??
+        right.queuedAt ??
+        ""
+      ).localeCompare(
         left.startedAt ?? left.scheduledFor ?? left.queuedAt ?? "",
       ),
     );
@@ -171,7 +179,6 @@ function RunsPageContent() {
     <div className="grid gap-5">
       <PageHeader
         title="実行履歴"
-        description="実行履歴、失敗のトリアージ、ログ末尾を確認します。"
         className="md:flex-col md:items-stretch xl:flex-row xl:items-start"
         actions={
           <>
@@ -213,20 +220,21 @@ function RunsPageContent() {
 
       <div className="grid gap-4">
         <section className="grid min-w-0 gap-3">
-          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-            <div>
-              <h2 className="text-base font-semibold text-balance">実行履歴</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {formatCount(displayedRunList.length)}{" "}
-                件の実行を表示しています。実行を選択すると、プロンプト、出力、ログ、成果物を確認できます。
-              </p>
-            </div>
+          <div className="flex justify-end">
             <div className="flex w-full flex-wrap gap-2 md:w-auto md:justify-end">
               <div className="flex rounded-md border bg-background p-1">
-                <RunPresetButton value="recent" current={preset} onSelect={applyPreset}>
+                <RunPresetButton
+                  value="recent"
+                  current={preset}
+                  onSelect={applyPreset}
+                >
                   最近
                 </RunPresetButton>
-                <RunPresetButton value="failed" current={preset} onSelect={applyPreset}>
+                <RunPresetButton
+                  value="failed"
+                  current={preset}
+                  onSelect={applyPreset}
+                >
                   失敗
                 </RunPresetButton>
                 <RunPresetButton
@@ -281,7 +289,13 @@ function RunsPageContent() {
 
 export default function RunsPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">実行履歴を読み込んでいます...</div>}>
+    <Suspense
+      fallback={
+        <div className="text-sm text-muted-foreground">
+          実行履歴を読み込んでいます...
+        </div>
+      }
+    >
       <RunsPageContent />
     </Suspense>
   );

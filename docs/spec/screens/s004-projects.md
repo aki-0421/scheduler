@@ -1,7 +1,7 @@
 ---
 title: S004 Projects
 description: Projects screen の file-browser-based project registration、GitHub repository display、editable folder project name を定義する。
-updated: 2026-07-08
+updated: 2026-07-09
 read_when:
   - Projects page、project registration、folder picker、project naming、repository display、project task impact messaging を変更するとき。
 ---
@@ -25,8 +25,8 @@ read_when:
 
 レイアウト領域:
 
-- page purpose と `プロジェクトを追加` action を持つ header。
-- registered project cards または table。
+- `プロジェクト` title と `プロジェクトを追加` action を持つ header。header の補足説明文は表示しない。
+- registered project table。`プロジェクト一覧` のような title と同義の section heading や count 説明文は表示しない。
 - project edit inline row または dialog。
 - remove project confirmation dialog。
 
