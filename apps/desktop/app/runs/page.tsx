@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/select";
 import { useRun, useRuns, useTasks } from "@/lib/queries";
 import { runStatuses, type RunDto, type RunStatus } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 type RunPreset = "recent" | "failed" | "needs_attention";
 
@@ -211,14 +210,7 @@ function RunsPageContent() {
         }
       />
 
-      <div
-        className={cn(
-          "grid gap-4",
-          selectedRunId
-            ? "xl:grid-cols-[minmax(0,0.95fr)_minmax(380px,0.8fr)]"
-            : undefined,
-        )}
-      >
+      <div className="grid gap-4">
         <section className="grid min-w-0 gap-3">
           <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
             <div>

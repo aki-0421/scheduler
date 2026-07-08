@@ -41,7 +41,6 @@ import {
 import { taskLastRun } from "@/lib/format";
 import { useRuns, useTask, useTaskAudits, useTasks } from "@/lib/queries";
 import { taskStatuses, type TaskDto, type TaskStatus } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 function TaskRow({
   task,
@@ -185,14 +184,7 @@ function TasksPageContent() {
         }
       />
 
-      <div
-        className={cn(
-          "grid gap-4",
-          selectedTaskId
-            ? "xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.75fr)]"
-            : undefined,
-        )}
-      >
+      <div className="grid gap-4">
         <section className="grid min-w-0 gap-3">
           <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
             <div>
