@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -211,6 +212,7 @@ export function TaskDetail({
   auditEvents: loadedAuditEvents,
   onEdit,
 }: TaskDetailProps) {
+  const router = useRouter();
   const recentRuns = runs
     .filter((run) => run.taskId === task.id)
     .slice()
@@ -497,6 +499,7 @@ export function TaskDetail({
           task={task}
           className="grid justify-stretch [&>button]:w-full"
           onEdit={(selected) => onEdit?.(selected)}
+          onDeleted={() => router.push("/tasks?view=archived")}
         />
         <Button variant="outline" asChild>
           <Link href={`/tasks/new?duplicateFromTask=${encodeURIComponent(task.id)}`}>
