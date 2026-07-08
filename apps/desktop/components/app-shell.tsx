@@ -132,15 +132,7 @@ function TaskLink({
   return close ? <DialogClose asChild>{content}</DialogClose> : content;
 }
 
-function ArchivedLink({
-  count,
-  active,
-  close,
-}: {
-  count: number;
-  active: boolean;
-  close?: boolean;
-}) {
+function ArchivedLink({ active, close }: { active: boolean; close?: boolean }) {
   const content = (
     <Link
       href="/tasks?view=archived"
@@ -152,7 +144,6 @@ function ArchivedLink({
     >
       <Folder className="size-4 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">アーカイブ済み</span>
-      <span className="text-xs tabular-nums opacity-75">{count.toLocaleString("ja-JP")}</span>
     </Link>
   );
 
@@ -209,13 +200,6 @@ function SidebarContent({
       }
       return (left.nextRunAt ?? "").localeCompare(right.nextRunAt ?? "");
     });
-  const archivedCount = taskList.filter(
-    (task) =>
-      task.status !== "active" ||
-      task.kind === "manual" ||
-      task.kind === "once" ||
-      !task.nextRunAt,
-  ).length;
   const archiveActive = pathname === "/tasks" && !selectedTaskId;
 
   return (
@@ -250,10 +234,10 @@ function SidebarContent({
       </nav>
       <Separator />
       <div className="p-3">
-        <ArchivedLink count={archivedCount} active={archiveActive} close={close} />
+        <ArchivedLink active={archiveActive} close={close} />
       </div>
       <Separator />
-      <div className="flex h-14 shrink-0 items-center px-3">
+      <div className="flex h-14 shrink-0 items-center justify-end px-3">
         <SettingsTool active={isActivePath(pathname, "/settings")} close={close} />
       </div>
     </div>

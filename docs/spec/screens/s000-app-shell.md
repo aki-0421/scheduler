@@ -49,7 +49,7 @@ read_when:
 
 - Sidebar project item: icon + `プロジェクト` label。
 - Sidebar task item: task name、next run relative time、running spinner または next-run icon。
-- Archived item: folder icon + `アーカイブ済み` label、archived count。
+- Archived item: folder icon + `アーカイブ済み` label。archived count は sidebar に表示しない。
 - Toolbox: settings gear icon button。必要に応じて diagnostics などの icon-only controls を追加できる。
 - Header count: running count、queued count。長い `0件実行中 · 0件待機中` 形式は使わない。
 
@@ -58,8 +58,8 @@ read_when:
 - Loading: sidebar task section は compact skeleton rows を表示する。
 - Empty active tasks: main section に `予定されたタスクはありません` を表示し、`新規タスク` への compact action を出す。
 - Running task: spinner、`実行中` label、active style を表示する。
-- Archived exists: `アーカイブ済み` に count を表示する。
-- Archived empty: `アーカイブ済み` は disabled ではなく count `0` の neutral item として表示し、押すと empty archived list に遷移する。
+- Archived exists: `アーカイブ済み` を neutral item として表示し、押すと archived list に遷移する。
+- Archived empty: `アーカイブ済み` は disabled にせず、押すと empty archived list に遷移する。
 - Health unavailable: count は `--` ではなく `0` を表示し、icon に muted style を使う。
 
 バリデーションとエラー:
