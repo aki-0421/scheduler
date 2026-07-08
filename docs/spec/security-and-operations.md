@@ -110,6 +110,12 @@ spctl --assess --type execute --verbose apps/desktop/src-tauri/target/release/bu
 
 Use the release document for the full macOS signing and notarization checklist.
 
+## Pull Request Operations
+
+When creating or updating a GitHub pull request for this repository, use `.github/PULL_REQUEST_TEMPLATE.md` as the required body structure. Preserve the template headings and fill in each section rather than replacing it with an ad hoc summary.
+
+If a PR is created through `gh pr create`, either let GitHub apply the template or pass a body that follows the template exactly. If the body must be corrected later, update it to the same structure before handing off the PR.
+
 ## Verification Commands
 
 Use these checks after implementation changes:
