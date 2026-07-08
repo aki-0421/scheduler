@@ -1,32 +1,32 @@
 ---
 title: S002 Task Wizard
-description: Task Wizard の create、follow-up、edit flow、field、validation、safety requirement を定義する。
+description: Task Wizard の create、follow-up、edit、duplicate flow、field、validation、lock、safety requirement を定義する。
 updated: 2026-07-08
 read_when:
-  - task creation、task editing、follow-up task prefill、schedule control、target selection、advanced policy、wizard validation を変更するとき。
+  - task creation、task editing、task duplication、follow-up task prefill、schedule control、target selection、advanced policy、lock behavior、wizard validation を変更するとき。
 ---
 
 # S002 Task Wizard
 
-ルートと surface: `/tasks/new`、`/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`、`/tasks` 上の edit dialog。
+ルートと surface: `/tasks/new`、`/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`、task detail 上の edit / duplicate dialog。
 
-目的: 明示的な prompt、target、schedule、execution、permission、retry、cleanup control を持つ scheduled Codex work を作成、follow up、または編集する。
+目的: 明示的な prompt、target、schedule、execution、permission、retry、cleanup、lock control を持つ scheduled Codex work を作成、follow up、複製、または編集する。
 
-入口: `New task`、run detail からの follow-up action、task edit action。
+入口: `New task`、task session detail からの follow-up action、task detail の edit / duplicate action。
 
 出口:
 
-- create または follow-up 成功時は `/tasks?task=<newTaskId>` に redirect する。
-- edit 成功時は dialog を閉じる。
-- cancel は `/tasks` に戻るか edit dialog を閉じる。
+- create または follow-up 成功時は `/tasks/<newTaskId>` に redirect する。
+- duplicate 成功時は複製された task の `/tasks/<newTaskId>` に redirect する。
+- edit 成功時は dialog を閉じ、task detail を refresh する。
+- cancel は `/tasks` または task detail に戻るか edit dialog を閉じる。
 
 データ依存:
 
 - follow-up prefill には `useTask(prefillFromTask)` を使う。
-- trusted project selection には `useProjects()` を使う。
-- inline project trust には `useTrustProject()` を使う。
+- project selection には `useProjects()` を使う。
+- inline project add には `ipcClient.projectPickFolder()` と project registration mutation を使う。
 - save には `useCreateTask()` と `useUpdateTask()` を使う。
-- folder picker には `ipcClient.projectPickFolder()` を使う。
 - prompt import には `ipcClient.promptImportFile()` を使う。
 - schedule preview と validation には `getCronPreview()` と timezone helper を使う。
 
@@ -38,18 +38,21 @@ read_when:
 - main prompt and identity column。
 - target and schedule side column。
 - advanced settings details panel。
+- lock control を含む safety section。
 - cancel、save paused、save active の footer action。
 
 フィールドとコントロール:
 
 - prompt textarea、import prompt button、task name、任意の description。
 - target mode: chat workspace、existing repository、fresh worktree。
-- project selector: trusted project または custom path。
-- repository path、browse button、base ref、repository target 向け inline trust button。
+- project selector: registered project または folder picker から追加した project。
+- repository path は手入力ではなく project selection / folder picker によって設定する。
+- base ref。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
 - once date and time、preset time、weekly day、custom 5-field cron、timezone、next-five-runs preview。
 - advanced settings: Codex path display、model、reasoning effort、sandbox、approval policy、max runtime、retries、overlap、missed runs、cleanup、schedule CLI switch、scheduler instruction switch、capability checkbox、max created schedules、start paused switch。
 - full filesystem access confirmation checkbox は `danger-full-access` の場合にのみ表示される。
+- lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
 
 既定値:
 
@@ -64,24 +67,27 @@ read_when:
 - default overlap policy は `skip`。
 - default cleanup は `keep`。
 - Schedule CLI は create、update-current、list capability 付きで default allowed。
+- Task lock は default off。
 
 バリデーションとエラー:
 
 - required: prompt、task name、timezone、model、reasoning effort。
-- repository target には repository path が必要。
+- repository target には registered project が必要。
 - once schedule には selected timezone に対して valid な date and time が必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。
 - max runtime は少なくとも 60 seconds。
 - retries は negative にできない。
 - max created schedules は 1 through 100。
+- locked task の edit は unlock されるまで blocked される。
 - full filesystem access には explicit confirmation が必要。
 - validation failure は clickable field link を含む destructive summary を表示し、first error に focus する。
 
 状態:
 
 - follow-up prefill loading は skeleton content を表示する。
-- repository trust state は `Trusted` または `Not trusted` を表示する。
+- project selection state は registered project name と local path を表示する。
 - existing repository かつ workspace-write の場合、local change が変更され得る warning を表示する。
+- locked task edit は lock badge と unlock guidance を表示する。
 - cron preview は valid な場合に next five runs、once schedule の場合に once preview、manual task の場合に manual guidance、invalid な場合に fix-schedule guidance を表示する。
 - advanced field に validation error がある場合、advanced panel は自動で開く。
 
@@ -90,21 +96,25 @@ read_when:
 - field error は field component または `aria-invalid` で関連付けられる。
 - error summary button は target field へ scroll and focus する。
 - switch と checkbox は label と description を含む。
+- lock switch は lock が AI / scheduled-run actor に対して何を防ぐかを説明する。
 - dangerous access confirmation は inline field-level error を含む。
 
 セキュリティと安全性:
 
-- repository task は save 前に trust を surface する。
+- repository task は save 前に project scope を surface する。
 - `danger-full-access` は単なる dropdown value ではない。warning と required confirmation を開く。
 - Schedule CLI capability は explicit であり、`maxCreatedSchedulesPerRun` によって capped される。
+- locked task は scheduled Codex session による edit / delete / pause / resume を拒否するため、lock / unlock は audit に記録する。
 
 受け入れ条件:
 
 - prompt または name が empty の場合、save は error summary を表示し、最初の invalid field に focus する。
-- repository target に path がない場合、save は blocked される。
+- repository target に project がない場合、save は blocked される。
+- locked task を edit しようとした場合、unlock なしでは save できない。
 - `danger-full-access` に confirmation がない場合、save は blocked される。
 - valid cron schedule の場合、preview は next five runs を list する。
-- create が成功した場合、user は作成された task detail に遷移する。
+- create が成功した場合、user は `/tasks/<newTaskId>` に遷移する。
+- duplicate が成功した場合、lock state は unlocked で作成される。
 - edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
 
 既知の gap:

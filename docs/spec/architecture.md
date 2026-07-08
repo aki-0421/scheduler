@@ -55,7 +55,7 @@ default app data directory は次である。
 - `worktrees/`: isolated Git worktree。
 - `chat-workspaces/`: temporary chat-only workspace。
 
-desktop backend は logs、worktrees、chat workspaces、trusted project roots 配下の path だけを open する。
+desktop backend は logs、worktrees、chat workspaces、registered project roots 配下の path だけを open する。
 
 ## Sidecar の packaging
 
