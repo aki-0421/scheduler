@@ -1,0 +1,10 @@
+version: 1
+documents:
+  roots:
+    - .
+  include:
+    - docs/
+  exclude:
+    - node_modules/**
+  ignoreReserved: true
+  maxSize: 32 KiB
