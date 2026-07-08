@@ -80,7 +80,7 @@ export function Field({
         </p>
       ) : null}
       {error ? (
-        <p id={errorId} className="text-xs text-destructive">
+        <p id={errorId} className="text-xs text-destructive" role="alert">
           {error}
         </p>
       ) : null}

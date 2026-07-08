@@ -177,12 +177,60 @@ const advancedErrorKeys = new Set([
   "dangerConfirmed",
 ]);
 
+const errorFieldOrder = [
+  "prompt",
+  "name",
+  "repoPath",
+  "onceDate",
+  "onceTime",
+  "cronPreview",
+  "timezone",
+  "model",
+  "reasoningEffort",
+  "maxRuntimeSec",
+  "maxRetries",
+  "dangerConfirmed",
+  "maxCreatedSchedulesPerRun",
+];
+
+const errorLabelByKey: Record<string, string> = {
+  prompt: "Prompt",
+  name: "Task name",
+  repoPath: "Repository path",
+  onceDate: "Date",
+  onceTime: "Time",
+  cronPreview: "Custom cron expression",
+  timezone: "Timezone",
+  model: "Model",
+  reasoningEffort: "Reasoning effort",
+  maxRuntimeSec: "Max runtime",
+  maxRetries: "Retries",
+  dangerConfirmed: "Full filesystem access",
+  maxCreatedSchedulesPerRun: "Max schedules created per run",
+};
+
+const errorTargetIds: Record<string, string[]> = {
+  prompt: ["task-prompt"],
+  name: ["task-name"],
+  repoPath: ["repo-path"],
+  onceDate: ["once-date"],
+  onceTime: ["once-time"],
+  cronPreview: ["cron-expression"],
+  timezone: ["timezone"],
+  model: ["model"],
+  reasoningEffort: ["reasoning"],
+  maxRuntimeSec: ["max-runtime"],
+  maxRetries: ["retries"],
+  dangerConfirmed: ["danger-confirmed"],
+  maxCreatedSchedulesPerRun: ["max-created-schedules"],
+};
+
 function formatCronError(message?: string) {
   if (!message) {
     return undefined;
   }
 
-  if (message.includes("秒 field")) {
+  if (message.includes("Seconds are not supported")) {
     return "Seconds are not supported. Use a 5-field cron expression.";
   }
 
@@ -190,7 +238,7 @@ function formatCronError(message?: string) {
     return "Enter a 5-field cron expression.";
   }
 
-  if (message.includes("cron 式")) {
+  if (message.includes("Invalid cron expression")) {
     return "Enter a valid cron expression.";
   }
 
@@ -208,6 +256,19 @@ function normalizeErrors(stepErrors: StepErrors): Record<string, string> {
     },
     {},
   );
+}
+
+function getOrderedErrorEntries(errors: Record<string, string>) {
+  const orderedKeys = [
+    ...errorFieldOrder.filter((key) => errors[key]),
+    ...Object.keys(errors).filter((key) => !errorFieldOrder.includes(key)),
+  ];
+
+  return orderedKeys.map((key) => ({
+    key,
+    label: errorLabelByKey[key] ?? "Field",
+    message: errors[key],
+  }));
 }
 
 function getScheduleChoice(draft: TaskDraft): ScheduleChoice {
@@ -347,7 +408,7 @@ function CheckboxRow({
           </span>
         ) : null}
         {error ? (
-          <span id={errorId} className="text-xs text-destructive">
+          <span id={errorId} className="text-xs text-destructive" role="alert">
             {error}
           </span>
         ) : null}
@@ -465,6 +526,7 @@ export function TaskWizard({
   const canModifyLocalChanges =
     draft.targetMode === "repo-local" && draft.sandboxMode === "workspace-write";
   const hasErrors = Object.keys(errors).length > 0;
+  const errorSummary = getOrderedErrorEntries(errors);
 
   function clearErrors(...keys: string[]) {
     setErrors((current) => {
@@ -553,10 +615,34 @@ export function TaskWizard({
     return allErrors;
   }
 
+  function focusErrorField(key: string) {
+    const target = (errorTargetIds[key] ?? [])
+      .map((id) => document.getElementById(id))
+      .find((element): element is HTMLElement => element instanceof HTMLElement);
+
+    const fallback = document.querySelector<HTMLElement>('[aria-invalid="true"]');
+    const element = target ?? fallback;
+    if (!element) {
+      return;
+    }
+
+    element.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    element.focus({ preventScroll: true });
+  }
+
+  function focusFirstError(nextErrors: Record<string, string>) {
+    const [firstError] = getOrderedErrorEntries(nextErrors);
+    if (!firstError) {
+      return;
+    }
+
+    window.setTimeout(() => focusErrorField(firstError.key), 0);
+  }
+
   async function save(paused: boolean) {
     const allErrors = collectErrors();
     if (Object.keys(allErrors).length > 0) {
-      toast.error("Review the highlighted fields before saving.");
+      focusFirstError(allErrors);
       return;
     }
 
@@ -638,8 +724,21 @@ export function TaskWizard({
           <Alert variant="destructive">
             <AlertTriangle className="size-4" aria-hidden="true" />
             <AlertTitle>Some fields need attention</AlertTitle>
-            <AlertDescription>
-              Fix the highlighted fields and try saving again.
+            <AlertDescription className="grid gap-2">
+              <p>Fix the highlighted fields and try saving again.</p>
+              <ul className="list-disc space-y-1 pl-4">
+                {errorSummary.map(({ key, label, message }) => (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      className="text-left underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+                      onClick={() => focusErrorField(key)}
+                    >
+                      <span className="font-medium">{label}:</span> {message}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </AlertDescription>
           </Alert>
         ) : null}

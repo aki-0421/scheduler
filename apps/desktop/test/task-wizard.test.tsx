@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskWizard } from "@/components/task-wizard";
 import { ipcClient } from "@/lib/ipc";
-import { buildTaskDto, defaultTaskDraft } from "@/lib/task-draft";
+import { buildTaskDto, defaultTaskDraft, taskToDraft } from "@/lib/task-draft";
 import { renderWithClient } from "./test-utils";
 
 describe("TaskWizard cron validation", () => {
@@ -51,6 +51,41 @@ describe("TaskWizard cron validation", () => {
     expect(preview.querySelectorAll("span")).toHaveLength(5);
   });
 
+  it("shows the default cron cadence as the matching schedule preset", () => {
+    const draft = defaultTaskDraft();
+
+    renderWithClient(<TaskWizard initialDraft={draft} />);
+
+    expect(draft.scheduleMode).toBe("preset");
+    expect(draft.presetMode).toBe("weekdays");
+    expect(draft.cronExpr).toBe("0 9 * * 1-5");
+    expect(buildTaskDto(draft, false).cronExpr).toBe("0 9 * * 1-5");
+    expect(screen.getByRole("combobox", { name: "When" })).toHaveTextContent(
+      "Every weekday",
+    );
+    expect(screen.queryByLabelText("Custom cron expression")).not.toBeInTheDocument();
+    expect(screen.getByText("Every weekday at 09:00")).toBeInTheDocument();
+  });
+
+  it("maps matching cron tasks back to presets for editing", () => {
+    const sourceDraft = {
+      ...defaultTaskDraft(),
+      name: "Weekly review",
+      prompt: "Review the repository.",
+      scheduleMode: "cron" as const,
+      cronExpr: "30 8 * * 1",
+    };
+    const task = buildTaskDto(sourceDraft, false);
+
+    const draft = taskToDraft(task);
+
+    expect(draft.scheduleMode).toBe("preset");
+    expect(draft.presetMode).toBe("weekly");
+    expect(draft.presetTime).toBe("08:30");
+    expect(draft.weeklyDay).toBe("1");
+    expect(draft.cronExpr).toBe("30 8 * * 1");
+  });
+
   it("shows hardening warnings in advanced settings", async () => {
     const user = userEvent.setup();
     const draft = {
@@ -82,8 +117,20 @@ describe("TaskWizard cron validation", () => {
 
     await user.click(screen.getByRole("button", { name: "Create task" }));
 
-    expect(await screen.findByText("Task name is required.")).toBeInTheDocument();
-    expect(screen.getByText("Prompt is required.")).toBeInTheDocument();
+    expect(await screen.findByText("Some fields need attention")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Prompt: Prompt is required." }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Task name: Task name is required." }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Task name is required.", { selector: "p" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Prompt is required.", { selector: "p" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Prompt")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Task name")).toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(screen.getByLabelText("Prompt")).toHaveFocus());
   });
 
   it("submits the existing task DTO shape through the create mutation", async () => {
