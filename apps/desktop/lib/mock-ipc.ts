@@ -76,6 +76,7 @@ let tasks: TaskDto[] = [
     name: "毎日のリポジトリレビュー",
     description: "有効な scheduler ワークスペースのリスクを要約します。",
     status: "active",
+    locked: true,
     kind: "cron",
     cronExpr: "0 9 * * 1-5",
     runAt: undefined,
@@ -150,6 +151,7 @@ let tasks: TaskDto[] = [
     name: "依存関係スキャン",
     description: "依存関係の更新を確認し、フォローアップスケジュールを作成します。",
     status: "paused",
+    locked: false,
     kind: "cron",
     cronExpr: "30 8 * * 1",
     runAt: undefined,
@@ -190,6 +192,7 @@ let tasks: TaskDto[] = [
     name: "リリースノート下書き",
     description: "次のローカルリリース向けの一度だけの実行です。",
     status: "active",
+    locked: false,
     kind: "once",
     cronExpr: undefined,
     runAt: minutesFromNow(360),
@@ -559,6 +562,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const task = clone(input.task as TaskDto);
       task.id = task.id || id("task");
       task.slug = task.slug || slugify(task.name) || task.id;
+      task.locked = task.locked ?? false;
       tasks = [task, ...tasks];
       return { task: clone(task) };
     }

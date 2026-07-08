@@ -9,7 +9,7 @@ read_when:
 
 # データモデル
 
-schema version は `1` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
+schema version は `2` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
 
 ## 主要エンティティ
 

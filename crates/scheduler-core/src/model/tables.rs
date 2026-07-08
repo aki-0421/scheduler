@@ -28,6 +28,7 @@ pub struct Task {
     pub name: String,
     pub description: Option<String>,
     pub status: TaskStatus,
+    pub locked: bool,
     pub kind: TaskKind,
     pub cron_expr: Option<String>,
     pub run_at: Option<String>,

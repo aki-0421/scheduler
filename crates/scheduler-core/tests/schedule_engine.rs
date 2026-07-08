@@ -21,6 +21,7 @@ fn sample_task(kind: TaskKind, cron_expr: Option<&str>, run_at: Option<&str>) ->
         name: "Sample Task".to_owned(),
         description: None,
         status: TaskStatus::Active,
+        locked: false,
         kind,
         cron_expr: cron_expr.map(str::to_owned),
         run_at: run_at.map(str::to_owned),

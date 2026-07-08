@@ -51,6 +51,7 @@ export type TaskDraft = {
   capabilities: string[];
   forcePaused: boolean;
   dangerConfirmed: boolean;
+  locked: boolean;
 };
 
 export type StepErrors = Partial<Record<keyof TaskDraft | "cronPreview", string>>;
@@ -236,6 +237,7 @@ export function defaultTaskDraft(): TaskDraft {
     capabilities: ["schedule:create", "schedule:update-current", "schedule:list"],
     forcePaused: false,
     dangerConfirmed: false,
+    locked: false,
   };
 }
 
@@ -278,6 +280,7 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     maxCreatedSchedulesPerRun: task.policies.maxCreatedSchedulesPerRun ?? 5,
     capabilities: task.policies.scheduleCliCapabilities ?? [],
     forcePaused: task.status === "paused",
+    locked: task.locked,
   };
 }
 
@@ -422,6 +425,7 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
     name: draft.name.trim(),
     description: draft.description.trim() || undefined,
     status: paused || draft.forcePaused ? "paused" : "active",
+    locked: draft.locked,
     kind,
     cronExpr,
     runAt,

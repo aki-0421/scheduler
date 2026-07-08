@@ -1140,6 +1140,7 @@ async fn update_task_sqlite_fallback(
         .await
         .map_err(scheduler_error_to_cli)?
         .ok_or_else(|| CliError::task_not_found("task not found"))?;
+    ensure_unlocked_for_cli(&before, "task.update")?;
     let before_json = serde_json::to_value(TaskDto::from(&before)).map_err(json_to_cli)?;
     let mut dto = TaskDto::from(&before);
     apply_task_patch(&mut dto, &cmd.fields, &cmd.clear)?;
@@ -1179,6 +1180,7 @@ async fn task_status_sqlite_fallback(
         .await
         .map_err(scheduler_error_to_cli)?
         .ok_or_else(|| CliError::task_not_found("task not found"))?;
+    ensure_unlocked_for_cli(&task, method)?;
     let before_json = serde_json::to_value(TaskDto::from(&task)).map_err(json_to_cli)?;
     task.status = if method == METHOD_TASK_PAUSE {
         TaskStatus::Paused
@@ -1217,6 +1219,7 @@ async fn delete_task_sqlite_fallback(
         .await
         .map_err(scheduler_error_to_cli)?
         .ok_or_else(|| CliError::task_not_found("task not found"))?;
+    ensure_unlocked_for_cli(&before, "task.delete")?;
     let deleted = db
         .delete_task(&cmd.id, &now_rfc3339())
         .await
@@ -1361,6 +1364,16 @@ async fn complete_project_fields(
     Ok(())
 }
 
+fn ensure_unlocked_for_cli(task: &Task, operation: &str) -> Result<(), CliError> {
+    if task.locked {
+        return Err(CliError::permission_denied(format!(
+            "{operation} is blocked because task `{}` is locked",
+            task.id
+        )));
+    }
+    Ok(())
+}
+
 fn build_create_task(fields: &TaskFields, slug: String) -> Result<TaskDto, CliError> {
     let name = fields
         .name
@@ -1380,6 +1393,7 @@ fn build_create_task(fields: &TaskFields, slug: String) -> Result<TaskDto, CliEr
         } else {
             TaskStatus::Active
         },
+        locked: false,
         kind: schedule.kind,
         cron_expr: schedule.cron_expr,
         run_at: schedule.run_at,
