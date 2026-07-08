@@ -185,9 +185,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-dvh bg-surface text-foreground">
+    <div className="h-dvh overflow-hidden bg-surface text-foreground">
       <div
-        className="flex min-h-dvh"
+        className="flex h-full min-h-0 overflow-hidden"
         style={{
           paddingTop: "env(safe-area-inset-top)",
           paddingBottom: "env(safe-area-inset-bottom)",
@@ -195,14 +195,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           paddingRight: "env(safe-area-inset-right)",
         }}
       >
-        <aside className="hidden w-56 shrink-0 border-r bg-surface md:block">
+        <aside className="hidden h-full w-56 shrink-0 flex-col overflow-hidden border-r bg-surface md:flex">
           <div className="flex h-16 items-center border-b px-4">
             <AppMark />
           </div>
-          <SidebarNav pathname={pathname} />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <SidebarNav pathname={pathname} />
+          </div>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b bg-background px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-2 md:hidden">
               <MobileNav pathname={pathname} />
@@ -224,7 +226,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Button>
             </div>
           </header>
-          <main className="min-w-0 flex-1 overflow-auto bg-background">
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain bg-background">
             <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-6 md:py-6">
               {children}
             </div>

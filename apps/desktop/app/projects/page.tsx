@@ -147,7 +147,7 @@ export default function ProjectsPage() {
         </div>
 
         {projectList.length ? (
-          <div className="overflow-hidden rounded-lg border bg-surface/70">
+          <div className="overflow-x-auto overflow-y-hidden rounded-lg border bg-surface/70">
             <Table className="min-w-[880px] table-fixed">
               <TableHeader>
                 <TableRow>
