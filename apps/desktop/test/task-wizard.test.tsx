@@ -23,6 +23,7 @@ describe("TaskWizard cron validation", () => {
     };
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
+    await user.click(screen.getByRole("tab", { name: "スケジュール" }));
 
     const cronInput = screen.getByLabelText("カスタム cron 式");
     await user.clear(cronInput);
@@ -35,7 +36,8 @@ describe("TaskWizard cron validation", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the next five cron preview entries", () => {
+  it("renders the next five cron preview entries", async () => {
+    const user = userEvent.setup();
     const draft = {
       ...defaultTaskDraft(),
       name: "Cron task",
@@ -45,16 +47,19 @@ describe("TaskWizard cron validation", () => {
     };
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
+    await user.click(screen.getByRole("tab", { name: "スケジュール" }));
 
     const preview = screen.getByTestId("cron-preview");
     expect(preview).toHaveTextContent("次の5回");
     expect(preview.querySelectorAll("span")).toHaveLength(5);
   });
 
-  it("shows the default cron cadence as the matching schedule preset", () => {
+  it("shows the default cron cadence as the matching schedule preset", async () => {
+    const user = userEvent.setup();
     const draft = defaultTaskDraft();
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
+    await user.click(screen.getByRole("tab", { name: "スケジュール" }));
 
     expect(draft.scheduleMode).toBe("preset");
     expect(draft.presetMode).toBe("weekdays");
@@ -101,12 +106,13 @@ describe("TaskWizard cron validation", () => {
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
 
-    await user.click(screen.getByText("詳細設定"));
+    await user.click(screen.getByRole("tab", { name: "詳細" }));
 
     expect(
       screen.getByLabelText("ファイルシステムのフルアクセスのリスクを理解しています"),
     ).toBeInTheDocument();
     expect(screen.getByText("任意のスケジュールを更新できます")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "実行先" }));
     expect(screen.getByRole("button", { name: "フォルダを選択" })).toBeInTheDocument();
   });
 

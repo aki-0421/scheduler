@@ -1,7 +1,7 @@
 ---
 title: S001 Tasks
 description: Tasks screen の archived list、task detail、task run history、tabbed operations、lock behavior を定義する。
-updated: 2026-07-08
+updated: 2026-07-09
 read_when:
   - Tasks page、archived task list、task detail、task action、edit dialog、duplicate flow、lock behavior、audit display を変更するとき。
 ---
@@ -27,16 +27,16 @@ read_when:
 レイアウト領域:
 
 - `/tasks?view=archived`: archived task list。completed one-shot、paused / stopped、deleted task を execution newest-first で表示する。
-- `/tasks?task=<taskId>`: task detail page。left / main column に task run history と tabbed content、right column に actions を置く。
+- `/tasks?task=<taskId>`: task detail page。`概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作` の tabs で 1 機能ずつ表示する。常時表示の right action panel は置かない。
 - detail header: task name、status、lock state、target、next run。
-- tabs: `実行履歴`、`プロンプト`、`設定`、`監査ログ`。タスクに対してできる操作は tab ではなく right column action として表示する。
+- tabs: `概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作`。タスク操作は `操作` tab に集約する。
 - run history row は status、trigger、scheduled/start time、duration、result summary を表示し、押すと `/runs?run=<runId>` へ遷移する。
 - edit / duplicate flow は right column action から開始する。
 
 フィールドとコントロール:
 
 - Archived sort: 実行の新しい順。実行がない archived task は updatedAt または createdAt の新しい順で末尾に置く。
-- Detail actions: run now、pause / resume、edit、duplicate、lock / unlock、delete。
+- Detail actions: `操作` tab 内の run now、pause / resume、edit、duplicate、lock / unlock、delete。
 - Lock: locked task は AI / scheduled-run actor からの edit、delete、pause、resume を拒否する。user actor は unlock 後に変更できる。
 - Delete confirmation: run history を保持し、active schedule から task を削除する。
 - Prompt and path copy buttons は tab content 内に置く。
@@ -46,7 +46,7 @@ read_when:
 - Loading route fallback: `Loading tasks...`。
 - Empty archived list: `アーカイブ済みタスクはありません` と active task creation action。
 - Selected task loading: page skeleton。
-- Selected task populated: summary、session history、tabbed prompt / settings / audit log、right actions。
+- Selected task populated: summary、session history、prompt、settings、audit log、actions を tabs で切り替える。
 - Full filesystem access: row と detail に warning badge が表示される。
 - Locked task: lock badge、edit / delete disabled state、unlock action を表示する。
 
@@ -60,7 +60,7 @@ read_when:
 
 - tablist は keyboard navigation を持つ。
 - run history row は task-session link として識別できる accessible name を持つ。
-- right column actions は task-specific label を持つ。
+- `操作` tab の actions は task-specific label を持つ。
 - delete confirmation は明確な cancel label と destructive action label を持つ。
 
 セキュリティと安全性:

@@ -1,7 +1,7 @@
 ---
 title: S002 Task Wizard
 description: Task Wizard の create、follow-up、edit、duplicate flow、field、validation、lock、safety requirement を定義する。
-updated: 2026-07-08
+updated: 2026-07-09
 read_when:
   - task creation、task editing、task duplication、follow-up task prefill、schedule control、target selection、advanced policy、lock behavior、wizard validation を変更するとき。
 ---
@@ -35,10 +35,11 @@ read_when:
 - page または dialog header。
 - wizard purpose copy を持つ card header。
 - validation failure 時の error summary alert。
-- main prompt and identity column。
-- target and schedule side column。
-- advanced settings details panel。
-- lock control を含む safety section。
+- tabs: `基本`、`実行先`、`スケジュール`、`詳細`。
+- `基本` tab: required main flow。prompt、task name、任意の description を同じ画面にまとめる。
+- `実行先` tab: target mode、project selector、folder picker、base ref、local modification warning。
+- `スケジュール` tab: schedule selector、schedule-specific fields、timezone、preview。
+- `詳細` tab: Codex model、permission、retry、cleanup、scheduler CLI、lock / pause safety controls。
 - cancel、save paused、save active の footer action。
 
 フィールドとコントロール:
@@ -50,7 +51,7 @@ read_when:
 - base ref。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
 - once date and time、preset time、weekly day、custom 5-field cron、timezone、next-five-runs preview。
-- advanced settings: Codex path display、model、reasoning effort、sandbox、approval policy、max runtime、retries、overlap、missed runs、cleanup、schedule CLI switch、scheduler instruction switch、capability checkbox、max created schedules、start paused switch。
+- advanced settings: Codex path display、model、reasoning effort、sandbox、approval policy、max runtime、retries、overlap、missed runs、cleanup、schedule CLI switch、scheduler instruction switch、capability checkbox、max created schedules、start paused switch。通常は default のままでよいため `詳細` tab に置き、main flow から外す。
 - full filesystem access confirmation checkbox は `danger-full-access` の場合にのみ表示される。
 - lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
 
@@ -80,7 +81,7 @@ read_when:
 - max created schedules は 1 through 100。
 - locked task の edit は unlock されるまで blocked される。
 - full filesystem access には explicit confirmation が必要。
-- validation failure は clickable field link を含む destructive summary を表示し、first error に focus する。
+- validation failure は clickable field link を含む destructive summary を表示し、first error がある tab へ切り替えてから focus する。
 
 状態:
 
@@ -89,7 +90,7 @@ read_when:
 - existing repository かつ workspace-write の場合、local change が変更され得る warning を表示する。
 - locked task edit は lock badge と unlock guidance を表示する。
 - cron preview は valid な場合に next five runs、once schedule の場合に once preview、manual task の場合に manual guidance、invalid な場合に fix-schedule guidance を表示する。
-- advanced field に validation error がある場合、advanced panel は自動で開く。
+- hidden tab の field に validation error がある場合、対象 tab は自動で選択される。
 
 アクセシビリティ:
 
@@ -108,7 +109,8 @@ read_when:
 
 受け入れ条件:
 
-- prompt または name が empty の場合、save は error summary を表示し、最初の invalid field に focus する。
+- prompt または name が empty の場合、save は error summary を表示し、`基本` tab 内の最初の invalid field に focus する。
+- repository、schedule、advanced field に error がある場合、save は対象 tab を開いて field に focus する。
 - repository target に project がない場合、save は blocked される。
 - locked task を edit しようとした場合、unlock なしでは save できない。
 - `danger-full-access` に confirmation がない場合、save は blocked される。

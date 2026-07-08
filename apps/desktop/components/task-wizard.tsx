@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CalendarClock,
-  ChevronDown,
   FileText,
   FolderOpen,
 } from "lucide-react";
@@ -32,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { getCronPreview } from "@/lib/cron";
 import { formatDateTime } from "@/lib/format";
@@ -70,6 +70,7 @@ type TaskWizardProps = {
 };
 
 type ScheduleChoice = "manual" | "once" | PresetMode | "cron";
+type WizardTab = "basics" | "target" | "schedule" | "advanced";
 
 const capabilityOptions = [
   { value: "schedule:create", label: "スケジュールを作成" },
@@ -176,6 +177,15 @@ const advancedErrorKeys = new Set([
   "dangerConfirmed",
 ]);
 
+const targetErrorKeys = new Set(["repoPath", "projectId", "targetMode"]);
+
+const scheduleErrorKeys = new Set([
+  "onceDate",
+  "onceTime",
+  "cronPreview",
+  "timezone",
+]);
+
 const errorFieldOrder = [
   "prompt",
   "name",
@@ -223,6 +233,19 @@ const errorTargetIds: Record<string, string[]> = {
   dangerConfirmed: ["danger-confirmed"],
   maxCreatedSchedulesPerRun: ["max-created-schedules"],
 };
+
+function getTabForErrorKey(key: string): WizardTab {
+  if (advancedErrorKeys.has(key)) {
+    return "advanced";
+  }
+  if (targetErrorKeys.has(key)) {
+    return "target";
+  }
+  if (scheduleErrorKeys.has(key)) {
+    return "schedule";
+  }
+  return "basics";
+}
 
 function formatCronError(message?: string) {
   if (!message) {
@@ -449,30 +472,6 @@ function SwitchRow({
   );
 }
 
-function Panel({
-  title,
-  description,
-  children,
-  className,
-}: {
-  title: string;
-  description?: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={cn("grid gap-4 rounded-lg border p-4", className)}>
-      <div className="grid gap-1">
-        <h3 className="text-sm font-semibold text-balance">{title}</h3>
-        {description ? (
-          <p className="text-sm text-muted-foreground text-pretty">{description}</p>
-        ) : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 export function TaskWizard({
   task,
   initialDraft,
@@ -484,7 +483,7 @@ export function TaskWizard({
     () => initialDraft ?? (task ? taskToDraft(task) : defaultTaskDraft()),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<WizardTab>("basics");
   const [isImportingPrompt, setIsImportingPrompt] = useState(false);
   const [isPickingRepo, setIsPickingRepo] = useState(false);
   const projects = useProjects();
@@ -608,8 +607,9 @@ export function TaskWizard({
       );
 
     setErrors(allErrors);
-    if (Object.keys(allErrors).some((key) => advancedErrorKeys.has(key))) {
-      setAdvancedOpen(true);
+    const [firstError] = getOrderedErrorEntries(allErrors);
+    if (firstError) {
+      setActiveTab(getTabForErrorKey(firstError.key));
     }
     return allErrors;
   }
@@ -635,6 +635,7 @@ export function TaskWizard({
       return;
     }
 
+    setActiveTab(getTabForErrorKey(firstError.key));
     window.setTimeout(() => focusErrorField(firstError.key), 0);
   }
 
@@ -750,7 +751,10 @@ export function TaskWizard({
                     <button
                       type="button"
                       className="text-left underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
-                      onClick={() => focusErrorField(key)}
+                      onClick={() => {
+                        setActiveTab(getTabForErrorKey(key));
+                        window.setTimeout(() => focusErrorField(key), 0);
+                      }}
                     >
                       <span className="font-medium">{label}:</span> {message}
                     </button>
@@ -761,8 +765,15 @@ export function TaskWizard({
           </Alert>
         ) : null}
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="grid content-start gap-4">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as WizardTab)}>
+          <TabsList className="w-full justify-start overflow-x-auto">
+            <TabsTrigger value="basics">基本</TabsTrigger>
+            <TabsTrigger value="target">実行先</TabsTrigger>
+            <TabsTrigger value="schedule">スケジュール</TabsTrigger>
+            <TabsTrigger value="advanced">詳細</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="basics" className="grid gap-4">
             <Field
               label="プロンプト"
               htmlFor="task-prompt"
@@ -772,7 +783,7 @@ export function TaskWizard({
               <div className="grid gap-2">
                 <Textarea
                   id="task-prompt"
-                  className="min-h-[320px] resize-y font-mono text-sm leading-6"
+                  className="min-h-[360px] resize-y font-mono text-sm leading-6"
                   value={draft.prompt}
                   placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"
                   onChange={(event) => update("prompt", event.currentTarget.value)}
@@ -812,13 +823,16 @@ export function TaskWizard({
                 />
               </Field>
             </div>
-          </section>
+          </TabsContent>
 
-          <aside className="grid content-start gap-4">
-            <Panel
-              title="実行先"
-              description="Codex が使用するワークスペースを選びます。"
-            >
+          <TabsContent value="target" className="grid gap-4">
+            <div className="grid gap-1">
+              <h3 className="text-sm font-semibold text-balance">実行先</h3>
+              <p className="text-sm text-muted-foreground text-pretty">
+                Codex が使用するワークスペースを選びます。通常はチャットワークスペースのままで構いません。
+              </p>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
               <SelectField
                 id="target-mode"
                 label="実行先"
@@ -834,6 +848,7 @@ export function TaskWizard({
                 onChange={selectProject}
                 description="登録済みプロジェクトを選ぶか、フォルダを選択して追加します。"
               />
+            </div>
               {isRepoTarget ? (
                 <div className="grid gap-4">
                   <Field
@@ -884,12 +899,15 @@ export function TaskWizard({
                   </AlertDescription>
                 </Alert>
               ) : null}
-            </Panel>
+          </TabsContent>
 
-            <Panel
-              title="スケジュール"
-              description="読みやすい実行間隔を選びます。cron はカスタムスケジュールでのみ表示します。"
-            >
+          <TabsContent value="schedule" className="grid gap-4">
+            <div className="grid gap-1">
+              <h3 className="text-sm font-semibold text-balance">スケジュール</h3>
+              <p className="text-sm text-muted-foreground text-pretty">
+                読みやすい実行間隔を選びます。cron はカスタムスケジュールでのみ表示します。
+              </p>
+            </div>
               <SelectField
                 id="schedule"
                 label="実行タイミング"
@@ -1011,33 +1029,18 @@ export function TaskWizard({
                   </div>
                 </div>
               </div>
-            </Panel>
-          </aside>
-        </div>
+          </TabsContent>
 
-        <details
-          className="group rounded-lg border"
-          open={advancedOpen}
-          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-        >
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 [&::-webkit-details-marker]:hidden">
-            <span className="grid gap-1">
-              <span className="text-sm font-semibold">詳細設定</span>
-              <span className="text-sm text-muted-foreground text-pretty">
-                Codex モデル、サンドボックス、承認、再試行、scheduler CLI アクセスを設定します。
-              </span>
-            </span>
-            <span className="flex items-center gap-2">
-              {isDangerFullAccess ? (
-                <Badge variant="warning">フルアクセス</Badge>
-              ) : null}
-              <ChevronDown
-                className="size-4 text-muted-foreground transition-transform duration-150 group-open:rotate-180"
-                aria-hidden="true"
-              />
-            </span>
-          </summary>
-          <div className="grid gap-4 border-t p-4">
+          <TabsContent value="advanced" className="grid gap-4">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div className="grid gap-1">
+                <h3 className="text-sm font-semibold text-balance">詳細設定</h3>
+                <p className="text-sm text-muted-foreground text-pretty">
+                  Codex モデル、サンドボックス、承認、再試行、scheduler CLI アクセスを設定します。
+                </p>
+              </div>
+              {isDangerFullAccess ? <Badge variant="warning">フルアクセス</Badge> : null}
+            </div>
             <div className="grid gap-4 lg:grid-cols-3">
               <Field
                 label="Codex バイナリパス"
@@ -1223,8 +1226,8 @@ export function TaskWizard({
                 />
               </div>
             </div>
-          </div>
-        </details>
+          </TabsContent>
+        </Tabs>
 
         <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
           {onCancel ? (
