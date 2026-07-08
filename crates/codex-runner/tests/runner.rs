@@ -100,9 +100,11 @@ async fn success_run_captures_logs_last_message_and_exit_code() {
     assert!(fs::read_to_string(outcome.log_paths.events_jsonl)
         .unwrap()
         .contains("sess_dummy_success"));
-    assert!(fs::read_to_string(outcome.log_paths.command_json)
-        .unwrap()
-        .contains("--json"));
+    let command_json = fs::read_to_string(outcome.log_paths.command_json).unwrap();
+    assert!(command_json.contains("--json"));
+    assert!(command_json.contains("--config"));
+    assert!(command_json.contains("approval_policy=\\\"never\\\""));
+    assert!(!command_json.contains("--ask-for-approval"));
     let env_json = fs::read_to_string(outcome.log_paths.environment_redacted_json).unwrap();
     assert!(env_json.contains("CODEX_SCHEDULER_RUN_TOKEN"));
     assert!(env_json.contains("***REDACTED***"));

@@ -17,14 +17,15 @@ codex exec \
   --color never \
   --model "$MODEL" \
   --sandbox "$SANDBOX_MODE" \
-  --ask-for-approval never \
+  --config 'approval_policy="never"' \
   --output-last-message "$LAST_MESSAGE_PATH" \
   -
 ```
 
 - 最後の `-` は stdin から prompt を渡す指定。
 - `--json` が使用可能な場合、events を `events.jsonl` に保存する。
-- `--ask-for-approval never` を default にし、scheduled run が承認待ちで無期限停止しないようにする。
+- `--config 'approval_policy="never"'` を default にし、scheduled run が承認待ちで無期限停止しないようにする。
+- 旧 Codex CLI で `codex exec --help` が `--ask-for-approval` を直接サポートする場合のみ、互換 fallback として `--ask-for-approval never` を使える。
 - `--dangerously-bypass-approvals-and-sandbox` / `--yolo` は isolated runner 以外では使用しない。
 - Codex CLI の flag はバージョン差分がありうるため、起動前に `codex --version` と `codex exec --help` を cache し、未対応 flag は warning にする。
 
@@ -244,7 +245,7 @@ printf '%s' "$PROMPT" | codex exec \
   --cd "$CHAT_WORKSPACE" \
   --json \
   --sandbox read-only \
-  --ask-for-approval never \
+  --config 'approval_policy="never"' \
   --output-last-message "$LAST_MESSAGE" \
   -
 ```
@@ -256,7 +257,7 @@ printf '%s' "$PROMPT" | codex exec \
   --cd "$WORKTREE_PATH" \
   --json \
   --sandbox workspace-write \
-  --ask-for-approval never \
+  --config 'approval_policy="never"' \
   --model "$MODEL" \
   --output-last-message "$LAST_MESSAGE" \
   -
