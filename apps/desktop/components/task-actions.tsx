@@ -1,6 +1,8 @@
 "use client";
 
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -12,9 +14,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   useDeleteTask,
   usePauseTask,
@@ -31,6 +32,11 @@ type TaskRowActionsProps = {
 };
 
 export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const runNow = useRunTaskNow();
   const pause = usePauseTask();
   const resume = useResumeTask();
@@ -47,6 +53,65 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
             error instanceof Error ? error.message : "The scheduler command failed.",
         }),
       );
+  }
+
+  function updateMenuPosition() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    setMenuPosition({
+      top: rect.bottom + 8,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+  }
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [menuOpen]);
+
+  function closeMenu() {
+    setMenuOpen(false);
+  }
+
+  function pauseTask() {
+    closeMenu();
+    withToast(
+      pause.mutateAsync(task.id),
+      "Task paused",
+      "Could not pause task",
+    );
+  }
+
+  function resumeTask() {
+    closeMenu();
+    withToast(
+      resume.mutateAsync(task.id),
+      "Task resumed",
+      "Could not resume task",
+    );
+  }
+
+  function editTask() {
+    closeMenu();
+    onEdit?.(task);
+  }
+
+  function requestDelete() {
+    closeMenu();
+    setDeleteDialogOpen(true);
   }
 
   return (
@@ -67,32 +132,54 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
         <Play className="size-4" aria-hidden="true" />
         Run now
       </Button>
-      <details className="group relative">
-        <summary
-          aria-label={`More actions for ${task.name}`}
-          className={cn(
-            buttonVariants({ variant: "ghost", size: "icon" }),
-            "list-none [&::-webkit-details-marker]:hidden",
-          )}
-        >
-          <MoreHorizontal className="size-4" aria-hidden="true" />
-        </summary>
-        <div className="absolute right-0 z-20 mt-2 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+      <DialogPrimitive.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
+        <DialogPrimitive.Trigger asChild>
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={`More actions for ${task.name}`}
+            onClick={updateMenuPosition}
+          >
+            <MoreHorizontal className="size-4" aria-hidden="true" />
+          </Button>
+        </DialogPrimitive.Trigger>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Content
+            ref={menuRef}
+            role="menu"
+            aria-label={`More actions for ${task.name}`}
+            className="fixed z-20 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            style={{ top: menuPosition.top, right: menuPosition.right }}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              window.requestAnimationFrame(() => {
+                menuRef.current
+                  ?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')
+                  ?.focus();
+              });
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              triggerRef.current?.focus();
+            }}
+          >
+            <DialogPrimitive.Title className="sr-only">
+              More actions for {task.name}
+            </DialogPrimitive.Title>
           {canPause ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="w-full justify-start"
+              role="menuitem"
               aria-label={`Pause ${task.name}`}
               disabled={pause.isPending}
-              onClick={() =>
-                withToast(
-                  pause.mutateAsync(task.id),
-                  "Task paused",
-                  "Could not pause task",
-                )
-              }
+              onClick={pauseTask}
             >
               <Pause className="size-4" aria-hidden="true" />
               Pause
@@ -103,15 +190,10 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
               variant="ghost"
               size="sm"
               className="w-full justify-start"
+              role="menuitem"
               aria-label={`Resume ${task.name}`}
               disabled={!canResume || resume.isPending}
-              onClick={() =>
-                withToast(
-                  resume.mutateAsync(task.id),
-                  "Task resumed",
-                  "Could not resume task",
-                )
-              }
+              onClick={resumeTask}
             >
               <RotateCcw className="size-4" aria-hidden="true" />
               Resume
@@ -122,52 +204,54 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
             variant="ghost"
             size="sm"
             className="w-full justify-start"
+            role="menuitem"
             aria-label={`Edit ${task.name}`}
-            onClick={() => onEdit?.(task)}
+            onClick={editTask}
           >
             <Pencil className="size-4" aria-hidden="true" />
             Edit
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start text-destructive hover:text-destructive"
-                aria-label={`Delete ${task.name}`}
-              >
-                <Trash2 className="size-4" aria-hidden="true" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete this task?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {task.name} will be removed from active schedules. Existing run
-                  history will remain available.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={() =>
-                    withToast(
-                      deleteTask.mutateAsync(task.id),
-                      "Task deleted",
-                      "Could not delete task",
-                    )
-                  }
-                >
-                  Delete task
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </details>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-destructive hover:text-destructive"
+            role="menuitem"
+            aria-label={`Delete ${task.name}`}
+            onClick={requestDelete}
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+            Delete
+          </Button>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {task.name} will be removed from active schedules. Existing run
+              history will remain available.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() =>
+                withToast(
+                  deleteTask.mutateAsync(task.id),
+                  "Task deleted",
+                  "Could not delete task",
+                )
+              }
+            >
+              Delete task
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
