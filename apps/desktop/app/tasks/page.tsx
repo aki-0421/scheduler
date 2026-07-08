@@ -211,7 +211,7 @@ function TasksPageContent() {
       </div>
 
       <Dialog open={Boolean(editingTask)} onOpenChange={(open) => !open && setEditingTask(undefined)}>
-        <DialogContent className="max-h-[90dvh] overflow-auto">
+        <DialogContent className="max-h-[90dvh] w-[min(96vw,1100px)] overflow-auto">
           <DialogHeader>
             <DialogTitle>Edit task</DialogTitle>
           </DialogHeader>
@@ -219,6 +219,7 @@ function TasksPageContent() {
             <TaskWizard
               task={editingTask}
               cancelHref="/tasks"
+              onCancel={() => setEditingTask(undefined)}
               onSaved={() => setEditingTask(undefined)}
             />
           ) : null}

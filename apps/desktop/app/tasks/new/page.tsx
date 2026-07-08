@@ -14,8 +14,8 @@ function NewTaskLoading() {
   return (
     <div className="grid gap-5">
       <PageHeader
-        title="新規タスク"
-        description="Codex に任せる作業、実行先、スケジュール、安全ポリシーを設定します。"
+        title="New task"
+        description="Describe the work, choose where Codex should run, and set the schedule."
       />
       <div className="grid gap-4">
         <Skeleton className="h-24" />
@@ -41,8 +41,8 @@ function NewTaskPageContent() {
       ...draft,
       id: undefined,
       slug: undefined,
-      name: `フォローアップ: ${sourceTask.data.name}`,
-      description: sourceRun ? `run ${sourceRun} のフォローアップ` : draft.description,
+      name: `Follow-up: ${sourceTask.data.name}`,
+      description: sourceRun ? `Follow-up for run ${sourceRun}` : draft.description,
       scheduleMode: "manual" as const,
       forcePaused: false,
     };
@@ -59,8 +59,8 @@ function NewTaskPageContent() {
   return (
     <div className="grid gap-5">
       <PageHeader
-        title={prefillFromTask ? "フォローアップタスク" : "新規タスク"}
-        description="Codex に任せる作業、実行先、スケジュール、安全ポリシーを設定します。"
+        title={prefillFromTask ? "Follow-up task" : "New task"}
+        description="Describe the work, choose where Codex should run, and set the schedule."
       />
       <TaskWizard
         key={prefillFromTask ?? "blank"}
