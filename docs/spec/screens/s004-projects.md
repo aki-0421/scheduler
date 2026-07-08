@@ -35,7 +35,8 @@ read_when:
 - `プロジェクトを追加`: file browser UI から directory を選択する。直接 path input は表示しない。
 - Project display name: GitHub remote を検出できる場合は `user(org)/repo` を既定表示にする。GitHub ではない folder project は任意の project name を編集できる。
 - Project metadata: kind、local path、Git root、default branch、GitHub remote。
-- Active tasks count: project を対象にする active task count。
+- Project kind、active task count、default branch は icon と semantic color を持つ compact token で表示する。文字だけの cell にしない。
+- Active tasks count: project を対象にする active task count。zero は muted、active count は success tone で表示する。
 - Actions: edit name、open in Finder、remove project。
 
 状態:

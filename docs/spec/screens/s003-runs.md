@@ -43,6 +43,8 @@ read_when:
 - Status filter: all run statuses。
 - Task filter: all tasks または specific task。
 - Session actions: open workspace、create follow-up task、cancel active run、retry、export logs、copy prompt / output / logs、show artifact in Finder。
+- Run list row の trigger、scheduled time、duration、exit code は icon と semantic color を持つ compact token で表示する。exit code `0` は success、non-zero は error、未記録は muted とする。
+- Run status と review state は text だけでなく icon と color tone で区別できる。
 - Chat transcript: prompt bubble、assistant message bubble、tool call row、tool output disclosure、daemon event row。
 - Logs tabs: stdout、stderr、events。
 

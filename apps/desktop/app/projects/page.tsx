@@ -1,11 +1,19 @@
 "use client";
 
-import { FolderGit2, FolderOpen, Pencil } from "lucide-react";
+import {
+  Folder,
+  FolderGit2,
+  FolderOpen,
+  GitBranch,
+  ListChecks,
+  Pencil,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { ValueBadge } from "@/components/value-badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +25,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,6 +48,41 @@ const PROJECT_NAME_STORAGE_KEY = "codex-scheduler.project-display-names";
 
 function formatProjectKind(kind: ProjectDto["kind"]) {
   return kind === "git" ? "Git" : "フォルダ";
+}
+
+function ProjectKindBadge({ kind }: { kind: ProjectDto["kind"] }) {
+  const isGit = kind === "git";
+  return (
+    <ValueBadge
+      icon={isGit ? GitBranch : Folder}
+      label={formatProjectKind(kind)}
+      variant={isGit ? "info" : "muted"}
+    />
+  );
+}
+
+function ActiveTaskCountBadge({ count }: { count: number }) {
+  return (
+    <ValueBadge
+      icon={ListChecks}
+      label={count.toLocaleString("ja-JP")}
+      variant={count > 0 ? "success" : "muted"}
+      title={`${count.toLocaleString("ja-JP")} 件の有効なタスク`}
+      className="justify-center"
+    />
+  );
+}
+
+function BranchBadge({ branch }: { branch?: string }) {
+  return (
+    <ValueBadge
+      icon={GitBranch}
+      label={branch ?? "未設定"}
+      variant={branch ? "outline" : "muted"}
+      title={branch ? `既定ブランチ ${branch}` : "既定ブランチ未設定"}
+      className="max-w-full"
+    />
+  );
 }
 
 function githubRepositoryName(remoteUrl?: string) {
@@ -240,15 +282,13 @@ export default function ProjectsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">
-                          {formatProjectKind(project.kind)}
-                        </Badge>
+                        <ProjectKindBadge kind={project.kind} />
                       </TableCell>
-                      <TableCell className="tabular-nums">
-                        {affectedTaskCount.toLocaleString("ja-JP")}
+                      <TableCell>
+                        <ActiveTaskCountBadge count={affectedTaskCount} />
                       </TableCell>
-                      <TableCell className="truncate">
-                        {project.defaultBranch ?? "未設定"}
+                      <TableCell className="min-w-0">
+                        <BranchBadge branch={project.defaultBranch} />
                       </TableCell>
                       <TableCell className="text-right">
                         <AlertDialog>

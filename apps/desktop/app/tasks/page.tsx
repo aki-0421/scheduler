@@ -2,7 +2,17 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Folder } from "lucide-react";
+import {
+  CalendarClock,
+  CircleSlash,
+  Folder,
+  FolderGit2,
+  GitBranch,
+  MessageSquare,
+  Play,
+  Repeat,
+  Timer,
+} from "lucide-react";
 import { Suspense, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
@@ -16,7 +26,6 @@ import {
   formatAbsoluteDateTime,
   formatRunDuration,
 } from "@/components/task-run-display";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ValueBadge } from "@/components/value-badge";
 import { taskLastRun } from "@/lib/format";
 import { useRuns, useTask, useTaskAudits, useTasks } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
@@ -35,6 +45,30 @@ function isArchivedTask(task: TaskDto) {
     task.kind === "once" ||
     !task.nextRunAt
   );
+}
+
+function taskTargetIcon(task: TaskDto) {
+  switch (task.target.mode) {
+    case "chat":
+      return MessageSquare;
+    case "repo-worktree":
+      return GitBranch;
+    case "repo-local":
+      return FolderGit2;
+    default:
+      return Folder;
+  }
+}
+
+function taskScheduleIcon(task: TaskDto) {
+  switch (task.kind) {
+    case "manual":
+      return Play;
+    case "once":
+      return CalendarClock;
+    default:
+      return Repeat;
+  }
 }
 
 function TaskScreen({ taskId }: { taskId: string }) {
@@ -143,7 +177,14 @@ function TasksPageContent() {
                           {task.name}
                         </p>
                         <TaskStatusBadge status={task.status} />
-                        <Badge variant="outline">{target.label}</Badge>
+                        <ValueBadge
+                          icon={taskTargetIcon(task)}
+                          label={target.label}
+                          title={target.detail ?? target.label}
+                          variant={
+                            task.target.mode === "chat" ? "muted" : "info"
+                          }
+                        />
                       </div>
                       <p className="mt-1 line-clamp-1 max-w-3xl text-xs text-muted-foreground">
                         {task.description || target.detail}
@@ -164,8 +205,13 @@ function TasksPageContent() {
                       <dt className="text-xs text-muted-foreground">
                         スケジュール
                       </dt>
-                      <dd className="mt-1 truncate font-medium">
-                        {schedule.label}
+                      <dd className="mt-1">
+                        <ValueBadge
+                          icon={taskScheduleIcon(task)}
+                          label={schedule.label}
+                          title={schedule.detail ?? schedule.label}
+                          variant={task.kind === "cron" ? "info" : "muted"}
+                        />
                       </dd>
                     </div>
                     <div className="min-w-0">
@@ -176,7 +222,12 @@ function TasksPageContent() {
                         {lastRun ? (
                           <RunStatusBadge status={lastRun.status} />
                         ) : (
-                          "実行履歴なし"
+                          <ValueBadge
+                            icon={CircleSlash}
+                            label="なし"
+                            variant="muted"
+                            title="実行履歴なし"
+                          />
                         )}
                       </dd>
                     </div>
@@ -184,8 +235,15 @@ function TasksPageContent() {
                       <dt className="text-xs text-muted-foreground">
                         所要時間
                       </dt>
-                      <dd className="mt-1 font-medium tabular-nums">
-                        {lastRun ? formatRunDuration(lastRun) : "—"}
+                      <dd className="mt-1">
+                        <ValueBadge
+                          icon={Timer}
+                          label={lastRun ? formatRunDuration(lastRun) : "—"}
+                          variant={lastRun ? "outline" : "muted"}
+                          title={
+                            lastRun ? "前回実行の所要時間" : "所要時間未記録"
+                          }
+                        />
                       </dd>
                     </div>
                   </dl>

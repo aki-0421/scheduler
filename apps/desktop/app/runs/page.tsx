@@ -2,7 +2,19 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Activity } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  CalendarClock,
+  CheckCircle2,
+  CircleSlash,
+  History,
+  Play,
+  RotateCcw,
+  TerminalSquare,
+  Timer,
+  XCircle,
+} from "lucide-react";
 import { Suspense, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
@@ -15,6 +27,7 @@ import {
   formatRelativeDateTime,
   formatRunDuration,
 } from "@/components/task-run-display";
+import { ValueBadge } from "@/components/value-badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -27,6 +40,46 @@ import { useRun, useRuns, useTasks } from "@/lib/queries";
 import { runStatuses, type RunDto, type RunStatus } from "@/lib/types";
 
 type RunPreset = "recent" | "failed" | "needs_attention";
+
+function runTriggerIcon(triggerType: RunDto["triggerType"]) {
+  switch (triggerType) {
+    case "manual":
+      return Play;
+    case "schedule":
+      return CalendarClock;
+    case "cli":
+      return TerminalSquare;
+    case "catchup":
+      return History;
+    case "retry":
+      return RotateCcw;
+    default:
+      return Activity;
+  }
+}
+
+function ExitCodeBadge({ exitCode }: { exitCode?: number }) {
+  if (exitCode === undefined || exitCode === null) {
+    return (
+      <ValueBadge
+        icon={CircleSlash}
+        label="未記録"
+        variant="muted"
+        title="終了コード未記録"
+      />
+    );
+  }
+
+  const ok = exitCode === 0;
+  return (
+    <ValueBadge
+      icon={ok ? CheckCircle2 : XCircle}
+      label={String(exitCode)}
+      variant={ok ? "success" : "destructive"}
+      title={`終了コード ${exitCode}`}
+    />
+  );
+}
 
 function RunPresetButton({
   value,
@@ -78,9 +131,11 @@ function RunRow({
             <p className="truncate text-sm font-medium">{taskName}</p>
             <RunStatusBadge status={run.status} />
             {needsAttention ? (
-              <span className="rounded-md bg-status-warning-muted px-2 py-0.5 text-xs font-medium text-status-warning-muted-foreground">
-                要確認
-              </span>
+              <ValueBadge
+                icon={AlertTriangle}
+                label="要確認"
+                variant="warning"
+              />
             ) : null}
           </div>
           <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
@@ -100,26 +155,38 @@ function RunRow({
       <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">トリガー</dt>
-          <dd className="mt-1 truncate font-medium">
-            {formatReadableEnum(run.triggerType)}
+          <dd className="mt-1">
+            <ValueBadge
+              icon={runTriggerIcon(run.triggerType)}
+              label={formatReadableEnum(run.triggerType)}
+              variant={run.triggerType === "schedule" ? "info" : "outline"}
+            />
           </dd>
         </div>
         <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">予定時刻</dt>
-          <dd className="mt-1 truncate tabular-nums">
-            {formatAbsoluteDateTime(run.scheduledFor)}
+          <dd className="mt-1">
+            <ValueBadge
+              icon={CalendarClock}
+              label={formatAbsoluteDateTime(run.scheduledFor)}
+              variant="muted"
+            />
           </dd>
         </div>
         <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">所要時間</dt>
-          <dd className="mt-1 font-medium tabular-nums">
-            {formatRunDuration(run)}
+          <dd className="mt-1">
+            <ValueBadge
+              icon={Timer}
+              label={formatRunDuration(run)}
+              variant="outline"
+            />
           </dd>
         </div>
         <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">終了コード</dt>
-          <dd className="mt-1 font-medium tabular-nums">
-            {run.exitCode ?? "—"}
+          <dd className="mt-1">
+            <ExitCodeBadge exitCode={run.exitCode} />
           </dd>
         </div>
       </dl>
