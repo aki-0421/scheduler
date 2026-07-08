@@ -54,7 +54,7 @@ function HealthIndicator() {
       <Badge variant={variant}>{status}</Badge>
       <span className="hidden text-xs text-muted-foreground tabular-nums md:inline">
         {health.data
-          ? `${health.data.runningCount.toLocaleString("ja-JP")} running · ${health.data.queuedCount.toLocaleString("ja-JP")} queued`
+          ? `${health.data.runningCount.toLocaleString("en-US")} running · ${health.data.queuedCount.toLocaleString("en-US")} queued`
           : "Daemon status"}
       </span>
     </div>
