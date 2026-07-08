@@ -14,16 +14,17 @@ import {
 } from "@/components/status-badge";
 import { TaskDetail } from "@/components/task-detail";
 import { TaskRowActions } from "@/components/task-actions";
+import {
+  describeTaskSchedule,
+  describeTaskTarget,
+  formatAbsoluteDateTime,
+  formatCount,
+  formatRelativeDateTime,
+  formatRunDuration,
+} from "@/components/task-run-display";
 import { TaskWizard } from "@/components/task-wizard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -37,23 +38,107 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  formatDateTime,
-  formatTaskKind,
-  formatTaskSchedule,
-  formatTargetMode,
-  taskLastRun,
-} from "@/lib/format";
+import { taskLastRun } from "@/lib/format";
 import { useRuns, useTask, useTaskAudits, useTasks } from "@/lib/queries";
 import { taskStatuses, type TaskDto, type TaskStatus } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+function TaskRow({
+  task,
+  lastRun,
+  isSelected,
+  onEdit,
+}: {
+  task: TaskDto;
+  lastRun?: ReturnType<typeof taskLastRun>;
+  isSelected: boolean;
+  onEdit: (task: TaskDto) => void;
+}) {
+  const schedule = describeTaskSchedule(task);
+  const target = describeTaskTarget(task);
+  const hasFullAccess = task.codex.sandboxMode === "danger-full-access";
+
+  return (
+    <div
+      data-state={isSelected ? "selected" : undefined}
+      className="grid gap-3 border-b p-4 transition-colors duration-150 last:border-b-0 hover:bg-muted/50 data-[state=selected]:bg-accent data-[state=selected]:text-accent-foreground"
+    >
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Link
+              href={`/tasks?task=${task.id}`}
+              className="truncate text-sm font-medium hover:underline"
+            >
+              {task.name}
+            </Link>
+            <Badge variant="outline">{target.label}</Badge>
+            {hasFullAccess ? (
+              <Badge variant="warning">
+                <AlertTriangle className="size-3" aria-hidden="true" />
+                Full access
+              </Badge>
+            ) : null}
+          </div>
+          <p
+            className="mt-1 line-clamp-1 max-w-3xl text-xs text-muted-foreground"
+            title={target.detail}
+          >
+            {task.description || target.detail}
+          </p>
+        </div>
+        <TaskRowActions task={task} onEdit={onEdit} className="shrink-0 justify-start sm:justify-end" />
+      </div>
+
+      <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Schedule</dt>
+          <dd className="mt-1 truncate font-medium">{schedule.label}</dd>
+          {schedule.detail ? (
+            <dd className="mt-0.5 truncate text-xs text-muted-foreground">
+              {schedule.detail}
+            </dd>
+          ) : null}
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Status</dt>
+          <dd className="mt-1">
+            <TaskStatusBadge status={task.status} />
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Next run</dt>
+          <dd className="mt-1 truncate font-medium tabular-nums">
+            {formatRelativeDateTime(task.nextRunAt)}
+          </dd>
+          <dd className="mt-0.5 truncate text-xs text-muted-foreground tabular-nums">
+            {formatAbsoluteDateTime(task.nextRunAt)}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Last run</dt>
+          <dd className="mt-1 flex min-w-0 items-center gap-2">
+            {lastRun ? (
+              <>
+                <RunStatusBadge status={lastRun.status} />
+                <span className="truncate text-xs text-muted-foreground">
+                  {formatRunDuration(lastRun)}
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">No runs yet</span>
+            )}
+          </dd>
+          {lastRun ? (
+            <dd className="mt-0.5 truncate text-xs text-muted-foreground tabular-nums">
+              {formatAbsoluteDateTime(lastRun.startedAt ?? lastRun.scheduledFor)}
+            </dd>
+          ) : null}
+        </div>
+      </dl>
+    </div>
+  );
+}
 
 function TasksPageContent() {
   const searchParams = useSearchParams();
@@ -100,80 +185,37 @@ function TasksPageContent() {
         }
       />
 
-      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.2fr)_minmax(400px,0.8fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Task list</CardTitle>
-            <CardDescription>
-              {taskList.length.toLocaleString("ja-JP")} tasks
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+      <div
+        className={cn(
+          "grid gap-4",
+          selectedTaskId
+            ? "xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.75fr)]"
+            : undefined,
+        )}
+      >
+        <section className="grid min-w-0 gap-3">
+          <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
+            <div>
+              <h2 className="text-base font-semibold text-balance">Task list</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {formatCount(taskList.length)}{" "}
+                {taskList.length === 1 ? "task" : "tasks"} available. Select a task
+                to inspect its prompt, policies, runs, and audit events.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-visible rounded-lg border bg-surface/70">
             {taskList.length ? (
-              <Table className="min-w-[960px] table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[250px]">Name</TableHead>
-                    <TableHead className="w-[88px]">Kind</TableHead>
-                    <TableHead className="w-[150px]">Schedule</TableHead>
-                    <TableHead className="w-[140px]">Next run</TableHead>
-                    <TableHead className="w-[116px]">Last result</TableHead>
-                    <TableHead className="w-[104px]">Status</TableHead>
-                    <TableHead className="w-[112px] text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {taskList.map((task) => {
-                    const lastRun = taskLastRun(task, runList);
-                    return (
-                      <TableRow
-                        key={task.id}
-                        data-state={selectedTaskId === task.id ? "selected" : undefined}
-                      >
-                        <TableCell className="w-[250px]">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <Link
-                              href={`/tasks?task=${task.id}`}
-                              className="truncate font-medium hover:underline"
-                            >
-                              {task.name}
-                            </Link>
-                            {task.codex.sandboxMode === "danger-full-access" ? (
-                              <Badge variant="warning">
-                                <AlertTriangle className="size-3" aria-hidden="true" />
-                                Full access
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                            {task.description || formatTargetMode(task.target.mode)}
-                          </p>
-                        </TableCell>
-                        <TableCell className="w-[88px]">{formatTaskKind(task.kind)}</TableCell>
-                        <TableCell className="w-[150px] truncate">
-                          {formatTaskSchedule(task)}
-                        </TableCell>
-                        <TableCell className="w-[140px] tabular-nums">
-                          {formatDateTime(task.nextRunAt)}
-                        </TableCell>
-                        <TableCell className="w-[116px]">
-                          {lastRun ? (
-                            <RunStatusBadge status={lastRun.status} />
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="w-[104px]">
-                          <TaskStatusBadge status={task.status} />
-                        </TableCell>
-                        <TableCell className="w-[112px] text-right">
-                          <TaskRowActions task={task} onEdit={setEditingTask} />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              taskList.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  lastRun={taskLastRun(task, runList)}
+                  isSelected={selectedTaskId === task.id}
+                  onEdit={setEditingTask}
+                />
+              ))
             ) : (
               <EmptyState
                 icon={ListTodo}
@@ -182,8 +224,8 @@ function TasksPageContent() {
                 action={{ label: "New task", href: "/tasks/new" }}
               />
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         {selectedTaskId ? (
           selectedTask.data ? (
@@ -194,20 +236,11 @@ function TasksPageContent() {
               onEdit={setEditingTask}
             />
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Task detail</CardTitle>
-                <CardDescription>Loading the selected task.</CardDescription>
-              </CardHeader>
-            </Card>
+            <div className="rounded-lg border bg-surface/70 p-4 text-sm text-muted-foreground">
+              Loading the selected task.
+            </div>
           )
-        ) : (
-          <EmptyState
-            icon={ListTodo}
-            title="Select a task"
-            description="Select a task to inspect its prompt, policies, runs, and audit events."
-          />
-        )}
+        ) : null}
       </div>
 
       <Dialog open={Boolean(editingTask)} onOpenChange={(open) => !open && setEditingTask(undefined)}>
