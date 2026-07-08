@@ -349,12 +349,12 @@ export function RunDetail({ run, task }: RunDetailProps) {
               <TabsTrigger value="events">events JSONL</TabsTrigger>
             </TabsList>
             <TabsContent value="stdout">
-              <pre className="min-h-64 overflow-auto rounded-md bg-muted p-3 text-xs text-pretty">
+              <pre className="min-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
                 {logs.stdout || run.stdoutTail || "stdout はまだありません。"}
               </pre>
             </TabsContent>
             <TabsContent value="stderr">
-              <pre className="min-h-64 overflow-auto rounded-md bg-muted p-3 text-xs text-pretty">
+              <pre className="min-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
                 {logs.stderr || run.stderrTail || "stderr はまだありません。"}
               </pre>
             </TabsContent>
@@ -372,7 +372,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
                           <summary className="cursor-pointer text-muted-foreground">
                             未加工 JSON
                           </summary>
-                          <pre className="mt-2 overflow-auto rounded bg-muted p-2">
+                          <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 font-mono">
                             {event.raw}
                           </pre>
                         </details>

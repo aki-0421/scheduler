@@ -5,6 +5,7 @@ import { Download, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Field } from "@/components/field";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -87,18 +88,16 @@ export default function SettingsPage() {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-2xl font-semibold text-balance">設定</h1>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            スケジューラー、デーモン並列数、Codex 既定値、通知、クリーンアップを設定します。
-          </p>
-        </div>
-        <Button disabled={setSetting.isPending} onClick={() => void save()}>
-          <Save className="size-4" aria-hidden="true" />
-          保存
-        </Button>
-      </div>
+      <PageHeader
+        title="設定"
+        description="スケジューラー、デーモン並列数、Codex 既定値、通知、クリーンアップを設定します。"
+        actions={
+          <Button disabled={setSetting.isPending} onClick={() => void save()}>
+            <Save className="size-4" aria-hidden="true" />
+            保存
+          </Button>
+        }
+      />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>

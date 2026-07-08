@@ -3,10 +3,27 @@
 import { Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { TaskWizard } from "@/components/task-wizard";
+import { Skeleton } from "@/components/ui/skeleton";
 import { taskToDraft } from "@/lib/task-draft";
 import { useTask } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
+
+function NewTaskLoading() {
+  return (
+    <div className="grid gap-5">
+      <PageHeader
+        title="新規タスク"
+        description="Codex に任せる作業、実行先、スケジュール、安全ポリシーを設定します。"
+      />
+      <div className="grid gap-4">
+        <Skeleton className="h-24" />
+        <Skeleton className="h-72" />
+      </div>
+    </div>
+  );
+}
 
 function NewTaskPageContent() {
   const router = useRouter();
@@ -36,22 +53,28 @@ function NewTaskPageContent() {
   }
 
   if (prefillFromTask && sourceTask.isLoading) {
-    return <div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>;
+    return <NewTaskLoading />;
   }
 
   return (
-    <TaskWizard
-      key={prefillFromTask ?? "blank"}
-      initialDraft={initialDraft}
-      onSaved={handleSaved}
-      cancelHref="/tasks"
-    />
+    <div className="grid gap-5">
+      <PageHeader
+        title={prefillFromTask ? "フォローアップタスク" : "新規タスク"}
+        description="Codex に任せる作業、実行先、スケジュール、安全ポリシーを設定します。"
+      />
+      <TaskWizard
+        key={prefillFromTask ?? "blank"}
+        initialDraft={initialDraft}
+        onSaved={handleSaved}
+        cancelHref="/tasks"
+      />
+    </div>
   );
 }
 
 export default function NewTaskPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">タスクを読み込んでいます...</div>}>
+    <Suspense fallback={<NewTaskLoading />}>
       <NewTaskPageContent />
     </Suspense>
   );

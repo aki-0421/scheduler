@@ -63,7 +63,7 @@ function AuditPayloadDetails({
       <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
         {label}
       </summary>
-      <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-3 text-xs">
+      <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-3 font-mono text-xs">
         {formatted}
       </pre>
     </details>
@@ -235,7 +235,7 @@ export function TaskDetail({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="max-h-48 overflow-auto rounded-md bg-muted p-3 text-xs text-pretty">
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
               {task.prompt.body}
             </pre>
           </CardContent>
@@ -251,7 +251,7 @@ export function TaskDetail({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>status</TableHead>
+                <TableHead>状態</TableHead>
                 <TableHead>予定時刻</TableHead>
                 <TableHead>所要時間</TableHead>
                 <TableHead>終了コード</TableHead>

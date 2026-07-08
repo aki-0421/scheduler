@@ -6,7 +6,12 @@ import { AlertTriangle, ListTodo, Plus } from "lucide-react";
 import { Suspense, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
-import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
+import { PageHeader } from "@/components/page-header";
+import {
+  formatTaskStatus,
+  RunStatusBadge,
+  TaskStatusBadge,
+} from "@/components/status-badge";
 import { TaskDetail } from "@/components/task-detail";
 import { TaskRowActions } from "@/components/task-actions";
 import { TaskWizard } from "@/components/task-wizard";
@@ -42,6 +47,7 @@ import {
 } from "@/components/ui/table";
 import {
   formatDateTime,
+  formatTaskKind,
   formatTaskSchedule,
   formatTargetMode,
   taskLastRun,
@@ -63,38 +69,36 @@ function TasksPageContent() {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-2xl font-semibold text-balance">タスク</h1>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Codex のスケジュール、実行先、安全ポリシーを管理します。
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value as TaskStatus | "all")}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">すべての status</SelectItem>
-              {taskStatuses.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button asChild>
-            <Link href="/tasks/new">
-              <Plus className="size-4" aria-hidden="true" />
-              新規タスク
-            </Link>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="タスク"
+        description="Codex のスケジュール、実行先、安全ポリシーを管理します。"
+        actions={
+          <>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value as TaskStatus | "all")}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべての状態</SelectItem>
+                {taskStatuses.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {formatTaskStatus(status)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button asChild>
+              <Link href="/tasks/new">
+                <Plus className="size-4" aria-hidden="true" />
+                新規タスク
+              </Link>
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <Card>
@@ -110,11 +114,11 @@ function TasksPageContent() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>名前</TableHead>
-                    <TableHead>kind</TableHead>
+                    <TableHead>種別</TableHead>
                     <TableHead>スケジュール</TableHead>
                     <TableHead>次回実行</TableHead>
                     <TableHead>直近結果</TableHead>
-                    <TableHead>status</TableHead>
+                    <TableHead>状態</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -122,7 +126,10 @@ function TasksPageContent() {
                   {taskList.map((task) => {
                     const lastRun = taskLastRun(task, runList);
                     return (
-                      <TableRow key={task.id}>
+                      <TableRow
+                        key={task.id}
+                        data-state={selectedTaskId === task.id ? "selected" : undefined}
+                      >
                         <TableCell className="min-w-56">
                           <div className="flex flex-wrap items-center gap-2">
                             <Link
@@ -142,7 +149,7 @@ function TasksPageContent() {
                             {task.description || formatTargetMode(task.target.mode)}
                           </p>
                         </TableCell>
-                        <TableCell>{task.kind}</TableCell>
+                        <TableCell>{formatTaskKind(task.kind)}</TableCell>
                         <TableCell className="max-w-56 truncate">
                           {formatTaskSchedule(task)}
                         </TableCell>
@@ -195,14 +202,11 @@ function TasksPageContent() {
             </Card>
           )
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>タスク詳細</CardTitle>
-              <CardDescription>
-                テーブルからタスクを選択すると、prompt、ポリシー、run、監査イベントを確認できます。
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          <EmptyState
+            icon={ListTodo}
+            title="タスクを選択"
+            description="テーブルからタスクを選択すると、prompt、ポリシー、run、監査イベントを確認できます。"
+          />
         )}
       </div>
 

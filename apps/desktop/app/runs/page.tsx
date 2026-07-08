@@ -6,8 +6,9 @@ import { Activity } from "lucide-react";
 import { Suspense, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import { RunDetail } from "@/components/run-detail";
-import { RunStatusBadge } from "@/components/status-badge";
+import { formatRunStatus, RunStatusBadge } from "@/components/status-badge";
 import {
   Card,
   CardContent,
@@ -82,76 +83,74 @@ function RunsPageContent() {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-2xl font-semibold text-balance">実行履歴</h1>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            実行履歴、失敗の triage、ログ末尾を確認します。
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant={preset === "failed" ? "default" : "outline"}
-            onClick={() => applyPreset("failed")}
-          >
-            failed
-          </Button>
-          <Button
-            type="button"
-            variant={preset === "needs_attention" ? "default" : "outline"}
-            onClick={() => applyPreset("needs_attention")}
-          >
-            要確認
-          </Button>
-          <Button
-            type="button"
-            variant={preset === "recent" ? "default" : "outline"}
-            onClick={() => applyPreset("recent")}
-          >
-            最近
-          </Button>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => {
-              setPreset("recent");
-              setStatusFilter(value as RunStatus | "all");
-            }}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">すべての status</SelectItem>
-              {runStatuses.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={taskFilter} onValueChange={setTaskFilter}>
-            <SelectTrigger className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">すべてのタスク</SelectItem>
-              {taskList.map((task) => (
-                <SelectItem key={task.id} value={task.id}>
-                  {task.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <PageHeader
+        title="実行履歴"
+        description="実行履歴、失敗の triage、ログ末尾を確認します。"
+        actions={
+          <>
+            <Button
+              type="button"
+              variant={preset === "failed" ? "default" : "outline"}
+              onClick={() => applyPreset("failed")}
+            >
+              失敗
+            </Button>
+            <Button
+              type="button"
+              variant={preset === "needs_attention" ? "default" : "outline"}
+              onClick={() => applyPreset("needs_attention")}
+            >
+              要確認
+            </Button>
+            <Button
+              type="button"
+              variant={preset === "recent" ? "default" : "outline"}
+              onClick={() => applyPreset("recent")}
+            >
+              最近
+            </Button>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => {
+                setPreset("recent");
+                setStatusFilter(value as RunStatus | "all");
+              }}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべての状態</SelectItem>
+                {runStatuses.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {formatRunStatus(status)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={taskFilter} onValueChange={setTaskFilter}>
+              <SelectTrigger className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべてのタスク</SelectItem>
+                {taskList.map((task) => (
+                  <SelectItem key={task.id} value={task.id}>
+                    {task.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+      />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.9fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>run 履歴</CardTitle>
+            <CardTitle>実行履歴</CardTitle>
             <CardDescription>
-              {displayedRunList.length.toLocaleString("ja-JP")} 件の run
+              {displayedRunList.length.toLocaleString("ja-JP")} 件の実行
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -160,7 +159,7 @@ function RunsPageContent() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>タスク</TableHead>
-                    <TableHead>status</TableHead>
+                    <TableHead>状態</TableHead>
                     <TableHead>予定時刻</TableHead>
                     <TableHead>開始</TableHead>
                     <TableHead>所要時間</TableHead>
@@ -169,7 +168,10 @@ function RunsPageContent() {
                 </TableHeader>
                 <TableBody>
                   {displayedRunList.map((run) => (
-                    <TableRow key={run.id}>
+                    <TableRow
+                      key={run.id}
+                      data-state={selectedRunId === run.id ? "selected" : undefined}
+                    >
                       <TableCell>
                         <Link
                           href={`/runs?run=${run.id}`}
@@ -217,20 +219,17 @@ function RunsPageContent() {
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>run 詳細</CardTitle>
-                <CardDescription>選択した run を読み込んでいます。</CardDescription>
+              <CardTitle>実行詳細</CardTitle>
+              <CardDescription>選択した実行を読み込んでいます。</CardDescription>
               </CardHeader>
             </Card>
           )
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>run 詳細</CardTitle>
-              <CardDescription>
-                run を選択すると、メタデータ、ログ、最終メッセージ、再実行操作を確認できます。
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          <EmptyState
+            icon={Activity}
+            title="実行を選択"
+            description="実行を選択すると、メタデータ、ログ、最終メッセージ、再実行操作を確認できます。"
+          />
         )}
       </div>
     </div>
@@ -239,7 +238,7 @@ function RunsPageContent() {
 
 export default function RunsPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-muted-foreground">run を読み込んでいます...</div>}>
+    <Suspense fallback={<div className="text-sm text-muted-foreground">実行を読み込んでいます...</div>}>
       <RunsPageContent />
     </Suspense>
   );

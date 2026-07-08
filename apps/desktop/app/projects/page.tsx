@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,10 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { useProjects, useTasks, useTrustProject, useUntrustProject } from "@/lib/queries";
 import type { ProjectDto } from "@/lib/types";
+
+function formatProjectKind(kind: ProjectDto["kind"]) {
+  return kind === "git" ? "Git" : "フォルダー";
+}
 
 export default function ProjectsPage() {
   const [path, setPath] = useState("");
@@ -94,12 +99,10 @@ export default function ProjectsPage() {
 
   return (
     <div className="grid gap-5">
-      <div>
-        <h1 className="text-2xl font-semibold text-balance">プロジェクト</h1>
-        <p className="mt-1 text-sm text-muted-foreground text-pretty">
-          スケジュール実行で使うローカルフォルダーとリポジトリの信頼状態を管理します。
-        </p>
-      </div>
+      <PageHeader
+        title="プロジェクト"
+        description="スケジュール実行で使うローカルフォルダーとリポジトリの信頼状態を管理します。"
+      />
 
       <Card>
         <CardHeader>
@@ -136,10 +139,10 @@ export default function ProjectsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>名前</TableHead>
-                  <TableHead>kind</TableHead>
+                  <TableHead>種別</TableHead>
                   <TableHead>パス</TableHead>
-                  <TableHead>active タスク</TableHead>
-                  <TableHead>default branch</TableHead>
+                  <TableHead>有効タスク</TableHead>
+                  <TableHead>既定 branch</TableHead>
                   <TableHead>信頼状態</TableHead>
                   <TableHead>信頼日時</TableHead>
                   <TableHead className="text-right">操作</TableHead>
@@ -152,7 +155,7 @@ export default function ProjectsPage() {
                     <TableRow key={project.id}>
                       <TableCell className="font-medium">{project.name}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{project.kind}</Badge>
+                        <Badge variant="outline">{formatProjectKind(project.kind)}</Badge>
                       </TableCell>
                       <TableCell className="max-w-xl truncate font-mono text-xs">
                         {project.path}

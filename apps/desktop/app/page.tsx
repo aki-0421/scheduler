@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,71 +84,69 @@ export default function DashboardPage() {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-2xl font-semibold text-balance">ダッシュボード</h1>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            スケジューラーの状態、今後の実行予定、最近の Codex 実行を確認します。
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            disabled={tickNow.isPending}
-            onClick={() =>
-              tickNow.mutate(undefined, {
-                onSuccess: (result) =>
-                  toast.success(
-                    result.triggered
-                      ? "期限チェックを開始しました"
-                      : "デーモンが tick 要求を受け付けました",
-                  ),
-                onError: (error) =>
-                  toast.error("期限チェックを開始できませんでした", {
-                    description:
-                      error instanceof Error
-                        ? error.message
-                        : "デーモンコマンドに失敗しました。",
-                  }),
-              })
-            }
-          >
-            <Clock className="size-4" aria-hidden="true" />
-            期限チェックを実行
-          </Button>
-          <Button
-            variant="outline"
-            disabled={setSetting.isPending}
-            onClick={() =>
-              setSetting.mutate(
-                { key: "scheduler.enabled", value: false },
-                {
-                  onSuccess: () => toast.success("スケジュールを一時停止しました"),
+      <PageHeader
+        title="ダッシュボード"
+        description="スケジューラーの状態、今後の実行予定、最近の Codex 実行を確認します。"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={tickNow.isPending}
+              onClick={() =>
+                tickNow.mutate(undefined, {
+                  onSuccess: (result) =>
+                    toast.success(
+                      result.triggered
+                        ? "期限チェックを開始しました"
+                        : "デーモンが tick 要求を受け付けました",
+                    ),
                   onError: (error) =>
-                    toast.error("スケジュールを一時停止できませんでした", {
+                    toast.error("期限チェックを開始できませんでした", {
                       description:
                         error instanceof Error
                           ? error.message
-                          : "設定コマンドに失敗しました。",
+                          : "デーモンコマンドに失敗しました。",
                     }),
-                },
-              )
-            }
-          >
-            <PauseCircle className="size-4" aria-hidden="true" />
-            全スケジュールを一時停止
-          </Button>
-          <Button asChild>
-            <Link href="/tasks/new">
-              <Plus className="size-4" aria-hidden="true" />
-              新規タスク
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/runs">診断を開く</Link>
-          </Button>
-        </div>
-      </div>
+                })
+              }
+            >
+              <Clock className="size-4" aria-hidden="true" />
+              期限チェック
+            </Button>
+            <Button
+              variant="outline"
+              disabled={setSetting.isPending}
+              onClick={() =>
+                setSetting.mutate(
+                  { key: "scheduler.enabled", value: false },
+                  {
+                    onSuccess: () => toast.success("スケジュールを一時停止しました"),
+                    onError: (error) =>
+                      toast.error("スケジュールを一時停止できませんでした", {
+                        description:
+                          error instanceof Error
+                            ? error.message
+                            : "設定コマンドに失敗しました。",
+                      }),
+                  },
+                )
+              }
+            >
+              <PauseCircle className="size-4" aria-hidden="true" />
+              全体停止
+            </Button>
+            <Button asChild>
+              <Link href="/tasks/new">
+                <Plus className="size-4" aria-hidden="true" />
+                新規タスク
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/runs">診断</Link>
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card>
@@ -159,7 +158,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <Badge variant={health.data?.schedulerEnabled ? "success" : "muted"}>
-              {health.data?.schedulerEnabled ? "Running" : "Paused"}
+              {health.data?.schedulerEnabled ? "稼働中" : "一時停止"}
             </Badge>
             <p className="mt-2 text-xs text-muted-foreground">
               デーモン {health.data?.version ?? "確認中"}
@@ -253,7 +252,7 @@ export default function DashboardPage() {
                     <TableHead>タスク</TableHead>
                     <TableHead>スケジュール</TableHead>
                     <TableHead>次回実行</TableHead>
-                    <TableHead>status</TableHead>
+                    <TableHead>状態</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -296,8 +295,8 @@ export default function DashboardPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>status</TableHead>
-                    <TableHead>run</TableHead>
+                    <TableHead>状態</TableHead>
+                    <TableHead>実行</TableHead>
                     <TableHead>開始</TableHead>
                     <TableHead>所要時間</TableHead>
                   </TableRow>
