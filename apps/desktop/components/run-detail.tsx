@@ -115,7 +115,11 @@ function DetailSection({
             </p>
           ) : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
+        {actions ? (
+          <div className="flex w-full shrink-0 flex-wrap gap-2 sm:w-auto sm:justify-end">
+            {actions}
+          </div>
+        ) : null}
       </div>
       {children}
     </section>
@@ -155,7 +159,7 @@ function PathValue({
 
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <span className="truncate font-mono text-xs" title={value}>
+      <span className="min-w-0 flex-1 truncate font-mono text-xs" title={value}>
         {value}
       </span>
       <CopyButton
@@ -316,7 +320,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
   return (
     <div className="grid gap-4">
       <section className="grid gap-4 rounded-lg border bg-surface/70 p-4">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="truncate text-base font-semibold text-balance">
@@ -329,7 +333,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
               {run.id}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full min-w-0 flex-wrap gap-2 xl:w-auto xl:justify-end">
             {workspaceToOpen ? (
               <Button
                 type="button"
@@ -548,7 +552,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
             {artifacts.map((artifact) => (
               <div
                 key={artifact.id}
-                className="flex flex-col justify-between gap-3 rounded-md border p-3 md:flex-row md:items-center"
+                className="flex flex-col justify-between gap-3 rounded-md border p-3 xl:flex-row xl:items-center"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -569,6 +573,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="w-full sm:w-auto xl:shrink-0"
                   onClick={() => openPath(artifact.path, "artifact")}
                 >
                   <FolderOpen className="size-4" aria-hidden="true" />

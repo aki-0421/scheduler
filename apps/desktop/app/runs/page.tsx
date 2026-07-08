@@ -172,6 +172,7 @@ function RunsPageContent() {
       <PageHeader
         title="Runs"
         description="Review run history, failure triage, and log tails."
+        className="md:flex-col md:items-stretch xl:flex-row xl:items-start"
         actions={
           <>
             <Select
@@ -181,7 +182,7 @@ function RunsPageContent() {
                 setStatusFilter(value as RunStatus | "all");
               }}
             >
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full sm:w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -194,7 +195,7 @@ function RunsPageContent() {
               </SelectContent>
             </Select>
             <Select value={taskFilter} onValueChange={setTaskFilter}>
-              <SelectTrigger className="w-56">
+              <SelectTrigger className="w-full sm:w-56">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

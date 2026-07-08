@@ -6,7 +6,7 @@ import type {
   TargetMode,
 } from "@/lib/types";
 
-const dateTimeFormatter = new Intl.DateTimeFormat("ja-JP", {
+const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
 });
