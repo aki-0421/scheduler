@@ -1,19 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Download, Save } from "lucide-react";
 import { toast } from "sonner";
 
-import { Field } from "@/components/field";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -33,6 +25,69 @@ import {
   sandboxModes,
   type SchedulerSettings,
 } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+function SettingsSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="grid gap-3 border-t pt-5 first:border-t-0">
+      <div className="grid gap-1 md:grid-cols-[11rem_minmax(0,1fr)]">
+        <h2 className="text-base font-semibold text-balance">{title}</h2>
+        <p className="max-w-3xl text-sm text-muted-foreground text-pretty">
+          {description}
+        </p>
+      </div>
+      <div className="overflow-hidden rounded-lg border bg-surface/70 px-4">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function SettingRow({
+  label,
+  description,
+  htmlFor,
+  children,
+  controlClassName,
+}: {
+  label: string;
+  description: string;
+  htmlFor?: string;
+  children: ReactNode;
+  controlClassName?: string;
+}) {
+  return (
+    <div className="grid gap-3 border-b py-4 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(14rem,20rem)] md:items-center">
+      <div className="min-w-0">
+        <Label htmlFor={htmlFor} className="text-sm font-medium">
+          {label}
+        </Label>
+        <p className="mt-1 text-sm text-muted-foreground text-pretty">
+          {description}
+        </p>
+      </div>
+      <div className={cn("min-w-0 md:justify-self-end md:w-80", controlClassName)}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ReadOnlyCode({ value }: { value: string }) {
+  return (
+    <code className="block truncate rounded-md bg-muted px-2 py-1 font-mono text-xs">
+      {value}
+    </code>
+  );
+}
 
 export default function SettingsPage() {
   const settings = useSettings();
@@ -59,11 +114,11 @@ export default function SettingsPage() {
           setSetting.mutateAsync({ key, value: form[key] }),
         ),
       );
-      toast.success("設定を保存しました");
+      toast.success("Settings saved");
     } catch (error) {
-      toast.error("設定を保存できませんでした", {
+      toast.error("Could not save settings", {
         description:
-          error instanceof Error ? error.message : "設定コマンドに失敗しました。",
+          error instanceof Error ? error.message : "The settings command failed.",
       });
     }
   }
@@ -73,14 +128,14 @@ export default function SettingsPage() {
     try {
       const path = await ipcClient.diagnosticsExport();
       if (path) {
-        toast.success("診断情報を書き出しました", { description: path });
+        toast.success("Diagnostics exported", { description: path });
       } else {
-        toast.info("診断情報の書き出しをキャンセルしました");
+        toast.info("Diagnostics export canceled");
       }
     } catch (error) {
-      toast.error("診断情報を書き出せませんでした", {
+      toast.error("Could not export diagnostics", {
         description:
-          error instanceof Error ? error.message : "診断コマンドに失敗しました。",
+          error instanceof Error ? error.message : "The diagnostics command failed.",
       });
     } finally {
       setIsExportingDiagnostics(false);
@@ -88,224 +143,221 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <PageHeader
-        title="設定"
-        description="スケジューラー、デーモン並列数、Codex 既定値、通知、クリーンアップを設定します。"
-        actions={
-          <Button disabled={setSetting.isPending} onClick={() => void save()}>
-            <Save className="size-4" aria-hidden="true" />
-            保存
-          </Button>
-        }
+        title="Settings"
+        description="Configure scheduler behavior, default Codex execution, notifications, and diagnostics."
       />
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>スケジューラー</CardTitle>
-            <CardDescription>全体のスケジュール動作とデーモン容量です。</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="flex items-center justify-between rounded-md border p-3">
-              <div>
-                <Label htmlFor="settings-scheduler-enabled">スケジューラーを有効化</Label>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  キュー投入されるスケジュール全体のスイッチです。
-                </p>
-              </div>
-              <Switch
-                id="settings-scheduler-enabled"
-                checked={form["scheduler.enabled"]}
-                onCheckedChange={(checked) => update("scheduler.enabled", checked)}
-              />
-            </div>
-            <Field label="全体の並列数" htmlFor="global-concurrency">
-              <Input
-                id="global-concurrency"
-                type="number"
-                min={1}
-                value={form["daemon.global_concurrency"]}
-                onChange={(event) =>
-                  update(
-                    "daemon.global_concurrency",
-                    Number(event.currentTarget.value),
-                  )
-                }
-              />
-            </Field>
-          </CardContent>
-        </Card>
+      <SettingsSection
+        title="General"
+        description="Global switches that decide whether scheduled work runs and when you are notified."
+      >
+        <SettingRow
+          label="Scheduler"
+          description="Controls whether scheduled tasks are queued automatically."
+          htmlFor="settings-scheduler-enabled"
+          controlClassName="md:w-auto"
+        >
+          <Switch
+            id="settings-scheduler-enabled"
+            checked={form["scheduler.enabled"]}
+            onCheckedChange={(checked) => update("scheduler.enabled", checked)}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Notifications"
+          description="Send desktop notifications when a run fails or times out."
+          htmlFor="notifications-enabled"
+          controlClassName="md:w-auto"
+        >
+          <Switch
+            id="notifications-enabled"
+            checked={form["notifications.enabled"]}
+            onCheckedChange={(checked) => update("notifications.enabled", checked)}
+          />
+        </SettingRow>
+      </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>runner 既定値</CardTitle>
-            <CardDescription>新規タスクへコピーされる既定値です。</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <Field label="Codex path" htmlFor="codex-path">
-              <Input
-                id="codex-path"
-                value={form["runner.codex_path"]}
-                onChange={(event) =>
-                  update("runner.codex_path", event.currentTarget.value)
-                }
-              />
-            </Field>
-            <Field label="既定 model" htmlFor="default-model">
-              <Input
-                id="default-model"
-                value={form["runner.default_model"]}
-                onChange={(event) =>
-                  update("runner.default_model", event.currentTarget.value)
-                }
-              />
-            </Field>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="既定 sandbox mode">
-                <Select
-                  value={form["runner.default_sandbox_mode"]}
-                  onValueChange={(value) =>
-                    update(
-                      "runner.default_sandbox_mode",
-                      value as SchedulerSettings["runner.default_sandbox_mode"],
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sandboxModes.map((mode) => (
-                      <SelectItem key={mode} value={mode}>
-                        {formatEnumLabel(mode)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="既定 approval policy">
-                <Select
-                  value={form["runner.default_approval_policy"]}
-                  onValueChange={(value) =>
-                    update(
-                      "runner.default_approval_policy",
-                      value as SchedulerSettings["runner.default_approval_policy"],
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {approvalPolicies.map((policy) => (
-                      <SelectItem key={policy} value={policy}>
-                        {formatEnumLabel(policy)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-          </CardContent>
-        </Card>
+      <SettingsSection
+        title="Execution"
+        description="Defaults copied into new tasks and limits used by the local daemon."
+      >
+        <SettingRow
+          label="Global concurrency"
+          description="Maximum number of scheduler runs the daemon may execute at once."
+          htmlFor="global-concurrency"
+        >
+          <Input
+            id="global-concurrency"
+            type="number"
+            min={1}
+            value={form["daemon.global_concurrency"]}
+            onChange={(event) =>
+              update("daemon.global_concurrency", Number(event.currentTarget.value))
+            }
+          />
+        </SettingRow>
+        <SettingRow
+          label="Codex path"
+          description="Command or absolute path used to launch the Codex CLI."
+          htmlFor="codex-path"
+        >
+          <Input
+            id="codex-path"
+            value={form["runner.codex_path"]}
+            onChange={(event) => update("runner.codex_path", event.currentTarget.value)}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Default model"
+          description="Model value copied into newly created tasks."
+          htmlFor="default-model"
+        >
+          <Input
+            id="default-model"
+            value={form["runner.default_model"]}
+            onChange={(event) =>
+              update("runner.default_model", event.currentTarget.value)
+            }
+          />
+        </SettingRow>
+      </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>通知</CardTitle>
-            <CardDescription>スケジューラーイベントのデスクトップ通知です。</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between rounded-md border p-3">
-              <div>
-                <Label htmlFor="notifications-enabled">通知を有効化</Label>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  run が新たに失敗またはタイムアウトしたときに通知します。
-                </p>
-              </div>
-              <Switch
-                id="notifications-enabled"
-                checked={form["notifications.enabled"]}
-                onCheckedChange={(checked) => update("notifications.enabled", checked)}
-              />
-            </div>
-          </CardContent>
-        </Card>
+      <SettingsSection
+        title="Permissions"
+        description="Default safety settings for new Codex runs and isolated worktree cleanup."
+      >
+        <SettingRow
+          label="Default sandbox"
+          description="Filesystem access mode copied into newly created tasks."
+          htmlFor="default-sandbox-mode"
+        >
+          <Select
+            value={form["runner.default_sandbox_mode"]}
+            onValueChange={(value) =>
+              update(
+                "runner.default_sandbox_mode",
+                value as SchedulerSettings["runner.default_sandbox_mode"],
+              )
+            }
+          >
+            <SelectTrigger id="default-sandbox-mode">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {sandboxModes.map((mode) => (
+                <SelectItem key={mode} value={mode}>
+                  {formatEnumLabel(mode)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          label="Default approval policy"
+          description="Approval behavior copied into newly created tasks."
+          htmlFor="default-approval-policy"
+        >
+          <Select
+            value={form["runner.default_approval_policy"]}
+            onValueChange={(value) =>
+              update(
+                "runner.default_approval_policy",
+                value as SchedulerSettings["runner.default_approval_policy"],
+              )
+            }
+          >
+            <SelectTrigger id="default-approval-policy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {approvalPolicies.map((policy) => (
+                <SelectItem key={policy} value={policy}>
+                  {formatEnumLabel(policy)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          label="Worktree cleanup"
+          description="Default cleanup policy for isolated worktree runs."
+          htmlFor="default-cleanup-policy"
+        >
+          <Select
+            value={form["worktree.default_cleanup_policy"]}
+            onValueChange={(value) =>
+              update(
+                "worktree.default_cleanup_policy",
+                value as SchedulerSettings["worktree.default_cleanup_policy"],
+              )
+            }
+          >
+            <SelectTrigger id="default-cleanup-policy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {cleanupPolicies.map((policy) => (
+                <SelectItem key={policy} value={policy}>
+                  {formatEnumLabel(policy)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+      </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>worktree</CardTitle>
-            <CardDescription>隔離 worktree run の既定クリーンアップポリシーです。</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Field label="既定 cleanup policy">
-              <Select
-                value={form["worktree.default_cleanup_policy"]}
-                onValueChange={(value) =>
-                  update(
-                    "worktree.default_cleanup_policy",
-                    value as SchedulerSettings["worktree.default_cleanup_policy"],
-                  )
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {cleanupPolicies.map((policy) => (
-                    <SelectItem key={policy} value={policy}>
-                      {formatEnumLabel(policy)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </CardContent>
-        </Card>
+      <SettingsSection
+        title="Diagnostics"
+        description="Read-only local paths and a diagnostic export for scheduler support work."
+      >
+        <SettingRow
+          label="Socket path"
+          description="Unix socket used by the desktop app to reach the scheduler daemon."
+          controlClassName="md:w-[28rem]"
+        >
+          <ReadOnlyCode value="~/Library/Application Support/Codex Scheduler/scheduler.sock" />
+        </SettingRow>
+        <SettingRow
+          label="Database path"
+          description="Local SQLite database used by Codex Scheduler."
+          controlClassName="md:w-[28rem]"
+        >
+          <ReadOnlyCode value="~/Library/Application Support/Codex Scheduler/scheduler.sqlite3" />
+        </SettingRow>
+        <SettingRow
+          label="Schema version"
+          description="Current database schema version reported by the daemon."
+        >
+          <span className="block text-sm tabular-nums">
+            {health.data?.dbSchemaVersion ?? "Unknown"}
+          </span>
+        </SettingRow>
+        <SettingRow
+          label="Export diagnostics"
+          description="Write daemon health, diagnostics, and redacted daemon log tails to a local file."
+          controlClassName="md:w-auto"
+        >
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isExportingDiagnostics}
+            onClick={() => void exportDiagnostics()}
+          >
+            <Download className="size-4" aria-hidden="true" />
+            Export diagnostics
+          </Button>
+        </SettingRow>
+      </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>実行時パス</CardTitle>
-            <CardDescription>ローカルスケジューラーが使う読み取り専用のデーモンパスです。</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm">
-            <div className="grid gap-1">
-              <span className="text-muted-foreground">socket path</span>
-              <code className="rounded-md bg-muted px-2 py-1 text-xs">
-                ~/Library/Application Support/Codex Scheduler/scheduler.sock
-              </code>
-            </div>
-            <div className="grid gap-1">
-              <span className="text-muted-foreground">database path</span>
-              <code className="rounded-md bg-muted px-2 py-1 text-xs">
-                ~/Library/Application Support/Codex Scheduler/scheduler.sqlite3
-              </code>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">schema version</span>
-              <span className="tabular-nums">
-                {health.data?.dbSchemaVersion ?? "unknown"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-md border p-3">
-              <div>
-                <p className="font-medium">診断情報</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  デーモン状態、診断情報、伏せ字化したデーモンログ末尾を書き出します。
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isExportingDiagnostics}
-                onClick={() => void exportDiagnostics()}
-              >
-                <Download className="size-4" aria-hidden="true" />
-                診断情報を書き出す
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="sticky bottom-0 z-10 border-t bg-background py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="flex justify-end">
+          <Button disabled={setSetting.isPending} onClick={() => void save()}>
+            <Save className="size-4" aria-hidden="true" />
+            Save settings
+          </Button>
+        </div>
       </div>
     </div>
   );
