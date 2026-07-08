@@ -54,7 +54,12 @@ export type TaskDraft = {
 };
 
 export type StepErrors = Partial<Record<keyof TaskDraft | "cronPreview", string>>;
+type PresetSchedule = Pick<
+  TaskDraft,
+  "scheduleMode" | "presetMode" | "presetTime" | "weeklyDay"
+>;
 
+const defaultCronExpr = "0 9 * * 1-5";
 const today = new Date();
 const tomorrow = new Date(today.valueOf() + 24 * 60 * 60 * 1000);
 
@@ -103,6 +108,88 @@ function presetExpression(draft: TaskDraft) {
   return `${normalizedMinute} ${normalizedHour} * * ${draft.weeklyDay}`;
 }
 
+function toTimeValue(hour: number, minute: number) {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function parseCronNumber(value: string, min: number, max: number) {
+  if (!/^\d{1,2}$/.test(value)) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return parsed >= min && parsed <= max ? parsed : undefined;
+}
+
+function inferPresetFromCron(expression: string): PresetSchedule | undefined {
+  const [minuteValue, hourValue, dayOfMonth, month, dayOfWeek, ...extra] = expression
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ");
+
+  if (
+    extra.length > 0 ||
+    !minuteValue ||
+    !hourValue ||
+    !dayOfMonth ||
+    !month ||
+    !dayOfWeek
+  ) {
+    return undefined;
+  }
+
+  const minute = parseCronNumber(minuteValue, 0, 59);
+  if (minute === undefined || dayOfMonth !== "*" || month !== "*") {
+    return undefined;
+  }
+
+  if (hourValue === "*" && minute === 0 && dayOfWeek === "*") {
+    return {
+      scheduleMode: "preset",
+      presetMode: "hourly",
+      presetTime: "09:00",
+      weeklyDay: "1",
+    };
+  }
+
+  const hour = parseCronNumber(hourValue, 0, 23);
+  if (hour === undefined) {
+    return undefined;
+  }
+
+  const presetTime = toTimeValue(hour, minute);
+
+  if (dayOfWeek === "*") {
+    return {
+      scheduleMode: "preset",
+      presetMode: "daily",
+      presetTime,
+      weeklyDay: "1",
+    };
+  }
+
+  if (dayOfWeek === "1-5") {
+    return {
+      scheduleMode: "preset",
+      presetMode: "weekdays",
+      presetTime,
+      weeklyDay: "1",
+    };
+  }
+
+  const weeklyDay = parseCronNumber(dayOfWeek, 0, 6);
+  if (weeklyDay === undefined) {
+    return undefined;
+  }
+
+  return {
+    scheduleMode: "preset",
+    presetMode: "weekly",
+    presetTime,
+    weeklyDay: String(weeklyDay),
+  };
+}
+
 export function getDraftCronExpression(draft: TaskDraft) {
   if (draft.scheduleMode === "preset") {
     return presetExpression(draft);
@@ -116,6 +203,8 @@ export function getDraftCronExpression(draft: TaskDraft) {
 }
 
 export function defaultTaskDraft(): TaskDraft {
+  const presetSchedule = inferPresetFromCron(defaultCronExpr);
+
   return {
     name: "",
     description: "",
@@ -125,14 +214,14 @@ export function defaultTaskDraft(): TaskDraft {
     projectId: "",
     repoPath: "",
     baseRef: "main",
-    scheduleMode: "cron",
+    scheduleMode: presetSchedule?.scheduleMode ?? "cron",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Tokyo",
     onceDate: dateInputValue(tomorrow),
     onceTime: "09:00",
-    presetMode: "daily",
-    presetTime: "09:00",
-    weeklyDay: "1",
-    cronExpr: "0 9 * * 1-5",
+    presetMode: presetSchedule?.presetMode ?? "daily",
+    presetTime: presetSchedule?.presetTime ?? "09:00",
+    weeklyDay: presetSchedule?.weeklyDay ?? "1",
+    cronExpr: defaultCronExpr,
     model: "gpt-5-codex",
     reasoningEffort: "default",
     sandboxMode: "read-only",
@@ -151,9 +240,13 @@ export function defaultTaskDraft(): TaskDraft {
 }
 
 export function taskToDraft(task: TaskDto): TaskDraft {
+  const baseDraft = defaultTaskDraft();
   const once = splitTime(task.runAt, task.timezone);
+  const cronExpr = task.cronExpr ?? defaultCronExpr;
+  const presetSchedule = task.kind === "cron" ? inferPresetFromCron(cronExpr) : undefined;
+
   return {
-    ...defaultTaskDraft(),
+    ...baseDraft,
     id: task.id,
     slug: task.slug,
     name: task.name,
@@ -164,11 +257,14 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     projectId: task.target.projectId ?? "",
     repoPath: task.target.repoPath ?? "",
     baseRef: task.target.baseRef ?? "main",
-    scheduleMode: task.kind,
+    scheduleMode: presetSchedule?.scheduleMode ?? task.kind,
     timezone: task.timezone,
     onceDate: once.date,
     onceTime: once.time,
-    cronExpr: task.cronExpr ?? "0 9 * * 1-5",
+    presetMode: presetSchedule?.presetMode ?? baseDraft.presetMode,
+    presetTime: presetSchedule?.presetTime ?? baseDraft.presetTime,
+    weeklyDay: presetSchedule?.weeklyDay ?? baseDraft.weeklyDay,
+    cronExpr,
     model: task.codex.model ?? "gpt-5-codex",
     reasoningEffort: task.codex.reasoningEffort ?? "default",
     sandboxMode: task.codex.sandboxMode,
@@ -186,8 +282,8 @@ export function taskToDraft(task: TaskDto): TaskDraft {
 }
 
 const basicsSchema = z.object({
-  name: z.string().trim().min(1, "名前は必須です。"),
-  prompt: z.string().trim().min(1, "prompt は必須です。"),
+  name: z.string().trim().min(1, "Task name is required."),
+  prompt: z.string().trim().min(1, "Prompt is required."),
 });
 
 const targetSchema = z
@@ -200,7 +296,7 @@ const targetSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["repoPath"],
-        message: "リポジトリパスは必須です。",
+        message: "Repository path is required for repository targets.",
       });
     }
   });
@@ -208,7 +304,7 @@ const targetSchema = z
 const scheduleSchema = z
   .object({
     scheduleMode: z.enum(scheduleModes),
-    timezone: z.string().trim().min(1, "timezone は必須です。"),
+    timezone: z.string().trim().min(1, "Timezone is required."),
     onceDate: z.string(),
     onceTime: z.string(),
     cronExpr: z.string(),
@@ -218,7 +314,7 @@ const scheduleSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["onceDate"],
-        message: "日付と時刻は必須です。",
+        message: "Date and time are required.",
       });
     }
 
@@ -232,7 +328,7 @@ const scheduleSchema = z
           message:
             error instanceof Error
               ? error.message
-              : "timezone に対して日時が不正です。",
+              : "The date and time are invalid for this timezone.",
         });
       }
     }
@@ -251,12 +347,12 @@ const scheduleSchema = z
 
 const codexSchema = z
   .object({
-    model: z.string().trim().min(1, "model は必須です。"),
-    reasoningEffort: z.string().trim().min(1, "reasoning effort は必須です。"),
+    model: z.string().trim().min(1, "Model is required."),
+    reasoningEffort: z.string().trim().min(1, "Reasoning effort is required."),
     sandboxMode: sandboxModeSchema,
     approvalPolicy: approvalPolicySchema,
-    maxRuntimeSec: z.coerce.number().int().min(60, "60 秒以上を指定してください。"),
-    maxRetries: z.coerce.number().int().min(0, "retry 回数に負の値は指定できません。"),
+    maxRuntimeSec: z.coerce.number().int().min(60, "Use at least 60 seconds."),
+    maxRetries: z.coerce.number().int().min(0, "Retries cannot be negative."),
     missedPolicy: missedPolicySchema,
     overlapPolicy: overlapPolicySchema,
     cleanupPolicy: cleanupPolicySchema,
@@ -267,7 +363,7 @@ const codexSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["dangerConfirmed"],
-        message: "続行する前に danger-full-access を確認してください。",
+        message: "Confirm danger-full-access before continuing.",
       });
     }
   });
@@ -276,8 +372,8 @@ const permissionsSchema = z.object({
   maxCreatedSchedulesPerRun: z.coerce
     .number()
     .int()
-    .min(1, "1 件以上のスケジュールを指定してください。")
-    .max(100, "スケジュールは 100 件以下にしてください。"),
+    .min(1, "Use at least 1 schedule.")
+    .max(100, "Use 100 schedules or fewer."),
 });
 
 export function validateTaskDraftStep(draft: TaskDraft, step: number): StepErrors {

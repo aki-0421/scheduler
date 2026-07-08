@@ -15,12 +15,12 @@ export function getCronPreview(
   if (fields.length === 6) {
     return {
       ok: false,
-      error: "秒 field はサポートしていません。5-field cron を使ってください。",
+      error: "Seconds are not supported. Use a 5-field cron expression.",
     };
   }
 
   if (fields.length !== 5) {
-    return { ok: false, error: "5-field cron 式を入力してください。" };
+    return { ok: false, error: "Enter a 5-field cron expression." };
   }
 
   try {
@@ -36,7 +36,7 @@ export function getCronPreview(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "cron 式が不正です。",
+      error: error instanceof Error ? error.message : "Invalid cron expression.",
     };
   }
 }

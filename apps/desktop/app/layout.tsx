@@ -7,12 +7,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Codex Scheduler",
-  description: "macOS で Codex CLI の自動実行を管理するローカルスケジューラー。",
+  description: "A local macOS scheduler for managing automated Codex CLI runs.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ja" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body>
         <Providers>
           <AppShell>{children}</AppShell>

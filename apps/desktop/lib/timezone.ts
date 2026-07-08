@@ -20,7 +20,7 @@ function parseLocalDateTime(dateValue: string, timeValue: string): DateTimeParts
     minute == null ||
     Number.isNaN(minute)
   ) {
-    throw new Error("ローカル日時が不正です。");
+    throw new Error("Invalid local date and time.");
   }
 
   return { year, month, day, hour, minute, second: 0 };
@@ -102,7 +102,7 @@ export function localDateTimeToUtcIso(
   const utcDate = new Date(utcMs);
   const resolvedParts = getPartsInTimeZone(utcDate, timeZone);
   if (!sameParts(localParts, resolvedParts)) {
-    throw new Error("選択したローカル時刻はこの timezone に存在しません。");
+    throw new Error("The selected local time does not exist in this timezone.");
   }
 
   return utcDate.toISOString();
@@ -111,7 +111,7 @@ export function localDateTimeToUtcIso(
 export function utcIsoToLocalDateTime(isoValue: string, timeZone: string) {
   const date = new Date(isoValue);
   if (Number.isNaN(date.valueOf())) {
-    throw new Error("UTC 日時が不正です。");
+    throw new Error("Invalid UTC date and time.");
   }
 
   const parts = getPartsInTimeZone(date, timeZone);
