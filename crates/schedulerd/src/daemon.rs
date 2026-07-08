@@ -1653,6 +1653,35 @@ fn ensure_capability(
     }
 }
 
+fn ensure_task_unlocked_for_actor(
+    task: &Task,
+    actor_type: AuditActorType,
+    operation: &str,
+) -> Result<(), JsonRpcError> {
+    if task.locked && actor_type != AuditActorType::User {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            format!("{operation} is blocked because task `{}` is locked", task.id),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_lock_change_allowed(
+    before: &Task,
+    after: &Task,
+    actor_type: AuditActorType,
+    operation: &str,
+) -> Result<(), JsonRpcError> {
+    if before.locked != after.locked && actor_type != AuditActorType::User {
+        return Err(JsonRpcError::new(
+            JsonRpcErrorCode::PermissionDenied,
+            format!("{operation} cannot change lock state for task `{}`", before.id),
+        ));
+    }
+    Ok(())
+}
+
 async fn reserve_token_create_slot(
     db: &SchedulerDb,
     token: &ScheduleCapabilityToken,
@@ -1842,8 +1871,10 @@ async fn rpc_task_update(
         .await
         .map_err(map_core_error)?
         .ok_or_else(task_not_found)?;
+    ensure_task_unlocked_for_actor(&before, actor.actor_type, "task.update")?;
     let before_json = serde_json::to_value(TaskDto::from(&before)).map_err(map_json_error)?;
     let mut task = Task::try_from(params.task).map_err(map_core_error)?;
+    ensure_lock_change_allowed(&before, &task, actor.actor_type, "task.update")?;
     task.created_at = before.created_at.clone();
     task.created_by = before.created_by.clone();
     task.created_by_run_id = before.created_by_run_id.clone();
@@ -1886,6 +1917,7 @@ async fn rpc_task_delete(
         .await
         .map_err(map_core_error)?
         .ok_or_else(task_not_found)?;
+    ensure_task_unlocked_for_actor(&before, actor.actor_type, "task.delete")?;
     let deleted = state
         .db
         .delete_task(&params.id, &now_rfc3339())
@@ -1935,6 +1967,7 @@ async fn rpc_task_status(
         .await
         .map_err(map_core_error)?
         .ok_or_else(task_not_found)?;
+    ensure_task_unlocked_for_actor(&task, actor.actor_type, action)?;
     let before_json = serde_json::to_value(TaskDto::from(&task)).map_err(map_json_error)?;
     task.status = status;
     if status == TaskStatus::Active && task.next_run_at.is_none() {

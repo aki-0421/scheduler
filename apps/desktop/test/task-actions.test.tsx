@@ -57,7 +57,7 @@ describe("TaskRowActions", () => {
 
     renderWithClient(<TaskRowActions task={activeTask} />);
 
-    await user.click(screen.getByRole("button", { name: "Run Task Test now" }));
+    await user.click(screen.getByRole("button", { name: "Task Testを今すぐ実行" }));
 
     await waitFor(() => expect(runSpy).toHaveBeenCalledWith("task_test"));
   });
@@ -70,8 +70,8 @@ describe("TaskRowActions", () => {
 
     renderWithClient(<TaskRowActions task={activeTask} />);
 
-    await user.click(screen.getByRole("button", { name: "More actions for Task Test" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Pause Task Test" }));
+    await user.click(screen.getByRole("button", { name: "Task Testのその他の操作" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Task Testを一時停止" }));
 
     await waitFor(() => expect(pauseSpy).toHaveBeenCalledWith("task_test"));
   });
@@ -84,8 +84,8 @@ describe("TaskRowActions", () => {
 
     renderWithClient(<TaskRowActions task={pausedTask} />);
 
-    await user.click(screen.getByRole("button", { name: "More actions for Task Test" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Resume Task Test" }));
+    await user.click(screen.getByRole("button", { name: "Task Testのその他の操作" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Task Testを再開" }));
 
     await waitFor(() => expect(resumeSpy).toHaveBeenCalledWith("task_test"));
   });
@@ -96,8 +96,8 @@ describe("TaskRowActions", () => {
 
     renderWithClient(<TaskRowActions task={activeTask} onEdit={onEdit} />);
 
-    await user.click(screen.getByRole("button", { name: "More actions for Task Test" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Edit Task Test" }));
+    await user.click(screen.getByRole("button", { name: "Task Testのその他の操作" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Task Testを編集" }));
 
     expect(onEdit).toHaveBeenCalledWith(activeTask);
   });
@@ -108,9 +108,9 @@ describe("TaskRowActions", () => {
 
     renderWithClient(<TaskRowActions task={activeTask} />);
 
-    await user.click(screen.getByRole("button", { name: "More actions for Task Test" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Delete Task Test" }));
-    await user.click(await screen.findByRole("button", { name: "Delete task" }));
+    await user.click(screen.getByRole("button", { name: "Task Testのその他の操作" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Task Testを削除" }));
+    await user.click(await screen.findByRole("button", { name: "タスクを削除" }));
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("task_test"));
   });

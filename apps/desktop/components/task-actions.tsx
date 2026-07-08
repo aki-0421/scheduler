@@ -1,7 +1,7 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import { LockKeyhole, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -41,8 +41,8 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
   const pause = usePauseTask();
   const resume = useResumeTask();
   const deleteTask = useDeleteTask();
-  const canPause = task.status === "active";
-  const canResume = task.status === "paused" || task.status === "completed";
+  const canPause = task.status === "active" && !task.locked;
+  const canResume = (task.status === "paused" || task.status === "completed") && !task.locked;
 
   function withToast<T>(promise: Promise<T>, success: string, failure: string) {
     promise
@@ -50,7 +50,7 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
       .catch((error) =>
         toast.error(failure, {
           description:
-            error instanceof Error ? error.message : "The scheduler command failed.",
+            error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
         }),
       );
   }
@@ -90,8 +90,8 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
     closeMenu();
     withToast(
       pause.mutateAsync(task.id),
-      "Task paused",
-      "Could not pause task",
+      "タスクを一時停止しました",
+      "タスクを一時停止できませんでした",
     );
   }
 
@@ -99,17 +99,29 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
     closeMenu();
     withToast(
       resume.mutateAsync(task.id),
-      "Task resumed",
-      "Could not resume task",
+      "タスクを再開しました",
+      "タスクを再開できませんでした",
     );
   }
 
   function editTask() {
+    if (task.locked) {
+      toast.info("ロック済みタスクです", {
+        description: "編集するにはタスク詳細でロックを解除してください。",
+      });
+      return;
+    }
     closeMenu();
     onEdit?.(task);
   }
 
   function requestDelete() {
+    if (task.locked) {
+      toast.info("ロック済みタスクです", {
+        description: "削除するにはタスク詳細でロックを解除してください。",
+      });
+      return;
+    }
     closeMenu();
     setDeleteDialogOpen(true);
   }
@@ -119,18 +131,18 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
       <Button
         variant="outline"
         size="sm"
-        aria-label={`Run ${task.name} now`}
+        aria-label={`${task.name}を今すぐ実行`}
         disabled={runNow.isPending || task.status === "deleted"}
         onClick={() =>
           withToast(
             runNow.mutateAsync(task.id),
-            "Run queued",
-            "Could not queue run",
+            "実行をキューに追加しました",
+            "実行をキューに追加できませんでした",
           )
         }
       >
         <Play className="size-4" aria-hidden="true" />
-        Run now
+        今すぐ実行
       </Button>
       <DialogPrimitive.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
         <DialogPrimitive.Trigger asChild>
@@ -141,7 +153,7 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
             size="icon"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            aria-label={`More actions for ${task.name}`}
+            aria-label={`${task.name}のその他の操作`}
             onClick={updateMenuPosition}
           >
             <MoreHorizontal className="size-4" aria-hidden="true" />
@@ -151,7 +163,7 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
           <DialogPrimitive.Content
             ref={menuRef}
             role="menu"
-            aria-label={`More actions for ${task.name}`}
+            aria-label={`${task.name}のその他の操作`}
             className="fixed z-20 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             style={{ top: menuPosition.top, right: menuPosition.right }}
             onOpenAutoFocus={(event) => {
@@ -168,7 +180,7 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
             }}
           >
             <DialogPrimitive.Title className="sr-only">
-              More actions for {task.name}
+              {task.name}のその他の操作
             </DialogPrimitive.Title>
           {canPause ? (
             <Button
@@ -177,12 +189,16 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
               size="sm"
               className="w-full justify-start"
               role="menuitem"
-              aria-label={`Pause ${task.name}`}
+              aria-label={`${task.name}を一時停止`}
               disabled={pause.isPending}
               onClick={pauseTask}
-            >
-              <Pause className="size-4" aria-hidden="true" />
-              Pause
+          >
+              {task.locked ? (
+                <LockKeyhole className="size-4" aria-hidden="true" />
+              ) : (
+                <Pause className="size-4" aria-hidden="true" />
+              )}
+              {task.locked ? "ロック済み" : "一時停止"}
             </Button>
           ) : (
             <Button
@@ -191,12 +207,16 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
               size="sm"
               className="w-full justify-start"
               role="menuitem"
-              aria-label={`Resume ${task.name}`}
+              aria-label={`${task.name}を再開`}
               disabled={!canResume || resume.isPending}
               onClick={resumeTask}
             >
-              <RotateCcw className="size-4" aria-hidden="true" />
-              Resume
+              {task.locked ? (
+                <LockKeyhole className="size-4" aria-hidden="true" />
+              ) : (
+                <RotateCcw className="size-4" aria-hidden="true" />
+              )}
+              {task.locked ? "ロック済み" : "再開"}
             </Button>
           )}
           <Button
@@ -205,11 +225,12 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
             size="sm"
             className="w-full justify-start"
             role="menuitem"
-            aria-label={`Edit ${task.name}`}
+            aria-label={`${task.name}を編集`}
+            disabled={task.locked}
             onClick={editTask}
           >
             <Pencil className="size-4" aria-hidden="true" />
-            Edit
+            編集
           </Button>
           <Button
             type="button"
@@ -217,11 +238,12 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
             size="sm"
             className="w-full justify-start text-destructive hover:text-destructive"
             role="menuitem"
-            aria-label={`Delete ${task.name}`}
+            aria-label={`${task.name}を削除`}
+            disabled={task.locked}
             onClick={requestDelete}
           >
             <Trash2 className="size-4" aria-hidden="true" />
-            Delete
+            削除
           </Button>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
@@ -229,25 +251,24 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+            <AlertDialogTitle>このタスクを削除しますか？</AlertDialogTitle>
             <AlertDialogDescription>
-              {task.name} will be removed from active schedules. Existing run
-              history will remain available.
+              {task.name} は有効なスケジュールから削除されます。既存の実行履歴は引き続き利用できます。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() =>
                 withToast(
                   deleteTask.mutateAsync(task.id),
-                  "Task deleted",
-                  "Could not delete task",
+                  "タスクを削除しました",
+                  "タスクを削除できませんでした",
                 )
               }
             >
-              Delete task
+              タスクを削除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

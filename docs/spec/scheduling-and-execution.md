@@ -71,11 +71,11 @@ runner は configured path または `PATH` で Codex CLI を検出し、canonic
 
 `chat` は app data 配下に scheduler-owned chat workspace を作成し、project を必要としない。
 
-`repo-local` は trusted repository path で直接実行する。
+`repo-local` は registered project path で直接実行する。
 
 `repo-worktree` は scheduler worktree root 配下に isolated Git worktree を作成し、task または project default から base ref を選択し、scheduler branch を作成し、execution 前後の Git state を capture し、task cleanup policy を適用する。
 
-repository mode には trusted root が必要である。worktree directory 配下の symlink escape attempt は rejected される。
+repository mode には registered project root が必要である。worktree directory 配下の symlink escape attempt は rejected される。
 
 ## Prompt composition
 

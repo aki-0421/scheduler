@@ -1,15 +1,15 @@
 ---
 title: セキュリティと運用
-description: local trust boundary、project trust、capability token、sandbox policy、diagnostics、cleanup、release operations を定義する。
+description: local trust boundary、project scope、task lock、capability token、sandbox policy、diagnostics、cleanup、release operations を定義する。
 updated: 2026-07-08
 read_when:
-  - project trust、path opening、scheduler token、sandbox default、diagnostics export、cleanup、signing、sidecar release flow を変更するとき。
+  - project scope、task lock、path opening、scheduler token、sandbox default、diagnostics export、cleanup、signing、sidecar release flow を変更するとき。
   - scheduled Codex run の local execution risk を review するとき。
 ---
 
 # セキュリティと運用
 
-Codex Scheduler は local file に対して local AI work を実行する。実装は scheduling、path trust、capability token、sandbox configuration、audit log を product-visible safety control として扱う。
+Codex Scheduler は local file に対して local AI work を実行する。実装は scheduling、project scope、task lock、capability token、sandbox configuration、audit log を product-visible safety control として扱う。
 
 ## 信頼境界
 
@@ -21,9 +21,9 @@ trusted component:
 - bundled `codex-schedule` sidecar。
 - app data directory 配下の SQLite database。
 
-conditionally trusted component:
+user-approved component:
 
-- user-trusted project path。
+- user-added project path。
 - configured Codex binary。
 - Git。
 
@@ -33,17 +33,25 @@ untrusted input:
 - scheduled Codex session が生成した CLI argument。
 - run 中に消費される repository content、command output、external data。
 
-## Project trust
+## Project scope
 
-repository-backed task は trusted project root 配下でのみ許可される。Project trust は canonical path information、利用可能な場合の Git metadata、detect 可能な場合の default branch、`trustedAt` timestamp を保存する。
+repository-backed task は registered project root 配下でのみ許可される。project は canonical path information、利用可能な場合の Git metadata、detect 可能な場合の GitHub `user(org)/repo` display、default branch を保存する。
 
-trust を削除すると project trust timestamp が clear され、audit event が記録される。既存 task は削除も自動 pause もされないが、有効な trusted path が再び存在するまで fail する可能性がある。
+project を削除すると project record が inactive になり、audit event が記録される。既存 task は削除も自動 pause もされないが、有効な project が再び存在するまで fail する可能性がある。
 
-scheduled Codex session は project を trust / untrust できない。
+scheduled Codex session は project を add / update / remove できない。
+
+## Task lock
+
+user は task を lock できる。lock は AI / scheduled-run actor が task を編集、削除、一時停止、再開することを防ぐための persisted safety control である。
+
+lock が有効な task に対して、daemon は scheduled-run actor または AI-originated CLI action からの `task.update`、`task.delete`、`task.pause`、`task.resume` を拒否する。user actor は UI から unlock してから変更できる。
+
+lock / unlock は audit event として記録する。lock は sandbox や approval policy を置き換えるものではなく、スケジュール自体の破壊的変更を止める control である。
 
 ## Path opening policy
 
-desktop backend は `open_path` を scheduler-owned log、scheduler-owned worktree、scheduler-owned chat workspace、trusted project root に制限する。これにより、UI-provided string から任意 path を開くことを防ぐ。
+desktop backend は `open_path` を scheduler-owned log、scheduler-owned worktree、scheduler-owned chat workspace、registered project root に制限する。これにより、UI-provided string から任意 path を開くことを防ぐ。
 
 ## Capability token
 
@@ -79,7 +87,7 @@ frontend default は read-only と never-ask approval である。scheduled run 
 
 ## Audit
 
-task create / update / delete / pause / resume / run-now と project untrust action は、actor type、任意の actor ID、action name、reason、該当する場合の before / after JSON を持つ audit event を記録する。
+task create / update / duplicate / delete / pause / resume / lock / unlock / run-now と project add / update / remove action は、actor type、任意の actor ID、action name、reason、該当する場合の before / after JSON を持つ audit event を記録する。
 
 actor type は user、daemon、CLI、scheduled-run action を区別する。
 

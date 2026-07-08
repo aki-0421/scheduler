@@ -147,6 +147,7 @@ export const taskDtoSchema = z
     name: z.string(),
     description: optionalString,
     status: taskStatusSchema,
+    locked: z.boolean().optional().default(false),
     kind: taskKindSchema,
     cronExpr: optionalString,
     runAt: optionalString,

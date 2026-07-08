@@ -9,13 +9,13 @@ read_when:
 
 # データモデル
 
-schema version は `1` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
+schema version は `2` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
 
 ## 主要エンティティ
 
-`projects` は scheduler が使える local folder または Git repository を記録する。project は stable ID、display name、canonical path、`git` または `folder` kind、任意の Git root、任意の remote URL、任意の default branch、trust timestamp、timestamp を含む。
+`projects` は scheduler task の実行先としてユーザーが追加した local folder または Git repository を記録する。project は stable ID、display name、canonical path、`git` または `folder` kind、任意の Git root、任意の remote URL、任意の GitHub owner/repository display、任意の default branch、timestamp を含む。project は追加された時点でユーザーが編集を許可した scope とみなし、UI と DTO は `Trusted Project` という別状態を持たない。
 
-`tasks` は scheduled work を記録する。task は identity、schedule kind and state、prompt、target、Codex configuration、scheduler CLI permission、missed / overlap / retry / runtime / cleanup policy、creator metadata、soft-delete metadata を保存する。
+`tasks` は scheduled work を記録する。task は identity、schedule kind and state、prompt、target、Codex configuration、scheduler CLI permission、missed / overlap / retry / runtime / cleanup policy、lock state、creator metadata、soft-delete metadata を保存する。
 
 `runs` は 1 回の execution attempt を記録する。run は task ID、trigger type、scheduled time、attempt number、status、queue / start / end timestamp、duration、target mode、workspace / worktree / branch / base information、Git snapshot、command metadata、process metadata、log path、output tail、summary、findings count、created schedule count、timestamp を保存する。
 
@@ -40,6 +40,7 @@ Task DTO は camelCase field を使う。
 - `codex`: model、reasoning effort、sandbox mode、approval policy
 - `prompt`: prompt body、scheduler-instruction injection flag
 - `policies`: schedule CLI access、missed-run policy、overlap policy、runtime limit、create limit、capability list、retry setting、cleanup setting
+- `locked`: AI / scheduled-run actor による edit、delete、pause、resume を拒否する user-controlled lock flag
 
 DTO が stored task になるとき、空の ID は generated task ID に置き換えられ、prompt hash は prompt body から計算され、省略された policy field は implementation default を受け取る。
 
@@ -84,6 +85,19 @@ Run history は start、schedule、queue timestamp で sort できる。active s
 - Run event sources: `daemon`, `codex-jsonl`, `stdout`, `stderr`
 - Run artifact kinds: `file`, `diff`, `patch`, `log`, `last-message`, `worktree`
 - Audit actor types: `user`, `daemon`, `cli`, `scheduled-run`
+
+## Lock behavior
+
+task lock は task 自体の persisted boolean として保存する。lock は user-facing safety control であり、AI が `codex-schedule` または scheduled-run capability token を使ってタスクを削除・編集・停止できないようにする。
+
+lock が有効な task に対し、actor type が `scheduled-run` または AI-originated CLI action の場合、daemon は次を拒否する。
+
+- task update
+- task delete
+- task pause
+- task resume
+
+user actor は UI から unlock してから変更できる。lock / unlock は `task_audit_events` に記録し、before / after JSON に lock state を含める。
 
 ## Settings
 

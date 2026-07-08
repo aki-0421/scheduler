@@ -1,73 +1,80 @@
 ---
 title: S004 Projects
-description: Projects screen の trust path entry、trusted project list、untrust confirmation、active task impact requirement を定義する。
+description: Projects screen の file-browser-based project registration、GitHub repository display、editable folder project name を定義する。
 updated: 2026-07-08
 read_when:
-  - Projects page、project trust、project untrust、trusted path display、active task impact messaging を変更するとき。
+  - Projects page、project registration、folder picker、project naming、repository display、project task impact messaging を変更するとき。
 ---
 
 # S004 Projects
 
 ルート: `/projects`
 
-目的: repository-backed scheduled run を実行できるようにする前に、local folder または Git repository を明示的に trust / untrust できるようにする。
+目的: scheduled task の実行先として使う local folder または Git repository を登録、確認、編集できるようにする。project は追加された時点でユーザーが自由に編集してよい scope とみなし、`Trusted Project` という別概念は UI から排除する。
 
-入口: `Projects` navigation item と task wizard trust guidance。
+入口: sidebar 先頭の `プロジェクト` item、task wizard の project selector、root route redirect。
 
-出口: trusted path list、inline empty-state focus action、untrust confirmation。
+出口: project list、project edit action、task wizard、project removal confirmation。
 
 データ依存:
 
-- trusted path record には `useProjects()` を使う。
-- trust change で影響を受ける active task count には `useTasks()` を使う。
-- mutation には `useTrustProject()` と `useUntrustProject()` を使う。
+- project record には `useProjects()` を使う。
+- project add は desktop folder picker command を呼び出し、選択された directory を project として登録する。
+- project update は display name と project metadata を保存する。
+- project remove で影響を受ける active task count には `useTasks()` を使う。
 
 レイアウト領域:
 
-- page purpose を持つ header。
-- trust project path form。
-- trusted paths table または empty state。
-- remove-trust confirmation dialog。
+- page purpose と `プロジェクトを追加` action を持つ header。
+- registered project cards または table。
+- project edit inline row または dialog。
+- remove project confirmation dialog。
 
 フィールドとコントロール:
 
-- placeholder `/Users/alice/src/my-app` を持つ project path input。
-- `Trust path` submit button。
-- table columns: project、path、trust、active tasks、default branch、actions。
-- `Remove trust` action は project がすでに untrusted の場合、または mutation pending の場合 disabled になる。
+- `プロジェクトを追加`: file browser UI から directory を選択する。直接 path input は表示しない。
+- Project display name: GitHub remote を検出できる場合は `user(org)/repo` を既定表示にする。GitHub ではない folder project は任意の project name を編集できる。
+- Project metadata: kind、local path、Git root、default branch、GitHub remote。
+- Active tasks count: project を対象にする active task count。
+- Actions: edit name、open in Finder、remove project。
 
 状態:
 
-- empty input submit は `Enter a project path.` toast を表示し、path input に focus する。
-- empty project list は `No trusted projects` を表示し、action 使用時に path input に focus する。
-- trusted / untrusted badge は trust status と timestamp、または `Not trusted` を表示する。
-- remove-trust success toast は affected active task count を含む。
+- folder picker canceled は error ではなく neutral toast または no-op とする。
+- empty project list は `プロジェクトがまだありません` を表示し、file browser action を提供する。
+- GitHub remote detected: name は `owner/repo` または `org/repo` として表示する。
+- Non-GitHub folder: editable project name を表示し、未設定時は folder basename を使う。
+- project remove success toast は affected active task count を含む。
 
 バリデーションとエラー:
 
-- path は trust mutation 前に trim 後 non-empty でなければならない。
-- trust / untrust failure は利用可能な detail を含む error toast を表示する。
-- untrust は confirmation を必要とし、trust が restored されるか task が移動されるまで active task が fail し得ることを説明する。
+- selected directory が取得できない場合、mutation は送信しない。
+- project display name は non-GitHub project では empty にできない。GitHub project は remote-derived display name を既定値に戻せる。
+- add / update / remove failure は利用可能な detail を含む error toast を表示する。
+- remove は confirmation を必要とし、project を参照する active task が実行できなくなる可能性を説明する。
 
 アクセシビリティ:
 
-- path input は `aria-label="Project path"` を持つ。
-- remove-trust button は project-specific `aria-label` を含む。
+- folder picker trigger は project-specific ではない明確な label を持つ。
+- edit name control は project-specific `aria-label` を含む。
+- remove project button は project-specific `aria-label` を含む。
 - confirmation dialog は clear cancel action と destructive action を持つ。
 
 セキュリティと安全性:
 
-- trust は explicit かつ local-path based である。
-- trust 削除は local file や run history を削除しない。
-- active task impact は untrust 前に計算・表示される。
+- project 追加は explicit かつ file browser selection based である。
+- project 追加後は、その directory 配下を scheduler task が編集可能な user-owned scope とみなす。別途 `Trusted Project` badge や trust timestamp を表示しない。
+- project removal は local file や run history を削除しない。
+- active task impact は removal 前に計算・表示される。
 
 受け入れ条件:
 
-- blank path の場合、trust mutation は送信されず、focus は input に戻る。
-- trust が成功した場合、input は clear され、project list は refresh する。
-- untrust が confirmed された場合、affected active task count が success toast に表示される。
-- project に active task がある場合、confirmation は failure risk を説明する。
+- Projects page に path text input が表示されず、directory selection は file browser UI から開始される。
+- GitHub remote がある project は `user(org)/repo` 形式で表示される。
+- GitHub remote がない project は display name を編集できる。
+- project が追加された後、別途 trust / untrust action または `信頼済み` badge が表示されない。
+- project removal が confirmed された場合、affected active task count が success toast に表示される。
 
 既知の gap:
 
-- Projects page は typed path を受け付ける。folder picking は task wizard でのみ exposed される。
+- GitHub 以外の remote hosting service は folder project として扱い、display name は user-editable にする。

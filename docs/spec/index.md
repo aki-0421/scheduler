@@ -19,7 +19,7 @@ read_when:
 - [スケジューリングと実行](scheduling-and-execution.md): schedule calculation、daemon tick、run lifecycle、Codex runner behavior、log、retry、cleanup。
 - [インターフェース](interfaces.md): desktop UI、Tauri command、daemon JSON-RPC、`codex-schedule` CLI surface。
 - [画面仕様](screens.md): desktop screen ID、screen-level requirement、state、control、validation、accessibility、acceptance criteria。
-- [セキュリティと運用](security-and-operations.md): local trust boundary、project trust、capability token、sandbox policy、diagnostics、release artifact、verification。
+- [セキュリティと運用](security-and-operations.md): local trust boundary、project scope、task lock、capability token、sandbox policy、diagnostics、release artifact、verification。
 
 ## 読む順序
 

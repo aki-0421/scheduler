@@ -51,6 +51,7 @@ export type TaskDraft = {
   capabilities: string[];
   forcePaused: boolean;
   dangerConfirmed: boolean;
+  locked: boolean;
 };
 
 export type StepErrors = Partial<Record<keyof TaskDraft | "cronPreview", string>>;
@@ -236,6 +237,7 @@ export function defaultTaskDraft(): TaskDraft {
     capabilities: ["schedule:create", "schedule:update-current", "schedule:list"],
     forcePaused: false,
     dangerConfirmed: false,
+    locked: false,
   };
 }
 
@@ -278,12 +280,13 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     maxCreatedSchedulesPerRun: task.policies.maxCreatedSchedulesPerRun ?? 5,
     capabilities: task.policies.scheduleCliCapabilities ?? [],
     forcePaused: task.status === "paused",
+    locked: task.locked,
   };
 }
 
 const basicsSchema = z.object({
-  name: z.string().trim().min(1, "Task name is required."),
-  prompt: z.string().trim().min(1, "Prompt is required."),
+  name: z.string().trim().min(1, "タスク名は必須です。"),
+  prompt: z.string().trim().min(1, "プロンプトは必須です。"),
 });
 
 const targetSchema = z
@@ -296,7 +299,7 @@ const targetSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["repoPath"],
-        message: "Repository path is required for repository targets.",
+        message: "リポジトリ実行先にはリポジトリパスが必要です。",
       });
     }
   });
@@ -304,7 +307,7 @@ const targetSchema = z
 const scheduleSchema = z
   .object({
     scheduleMode: z.enum(scheduleModes),
-    timezone: z.string().trim().min(1, "Timezone is required."),
+    timezone: z.string().trim().min(1, "タイムゾーンは必須です。"),
     onceDate: z.string(),
     onceTime: z.string(),
     cronExpr: z.string(),
@@ -314,7 +317,7 @@ const scheduleSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["onceDate"],
-        message: "Date and time are required.",
+        message: "日付と時刻は必須です。",
       });
     }
 
@@ -328,7 +331,7 @@ const scheduleSchema = z
           message:
             error instanceof Error
               ? error.message
-              : "The date and time are invalid for this timezone.",
+              : "このタイムゾーンでは日付と時刻が無効です。",
         });
       }
     }
@@ -347,12 +350,12 @@ const scheduleSchema = z
 
 const codexSchema = z
   .object({
-    model: z.string().trim().min(1, "Model is required."),
-    reasoningEffort: z.string().trim().min(1, "Reasoning effort is required."),
+    model: z.string().trim().min(1, "モデルは必須です。"),
+    reasoningEffort: z.string().trim().min(1, "推論 effort は必須です。"),
     sandboxMode: sandboxModeSchema,
     approvalPolicy: approvalPolicySchema,
-    maxRuntimeSec: z.coerce.number().int().min(60, "Use at least 60 seconds."),
-    maxRetries: z.coerce.number().int().min(0, "Retries cannot be negative."),
+    maxRuntimeSec: z.coerce.number().int().min(60, "60秒以上を指定してください。"),
+    maxRetries: z.coerce.number().int().min(0, "再試行回数は 0 以上にしてください。"),
     missedPolicy: missedPolicySchema,
     overlapPolicy: overlapPolicySchema,
     cleanupPolicy: cleanupPolicySchema,
@@ -363,7 +366,7 @@ const codexSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["dangerConfirmed"],
-        message: "Confirm danger-full-access before continuing.",
+        message: "続行する前に danger-full-access を確認してください。",
       });
     }
   });
@@ -372,8 +375,8 @@ const permissionsSchema = z.object({
   maxCreatedSchedulesPerRun: z.coerce
     .number()
     .int()
-    .min(1, "Use at least 1 schedule.")
-    .max(100, "Use 100 schedules or fewer."),
+    .min(1, "1件以上のスケジュールを指定してください。")
+    .max(100, "スケジュールは 100 件以下にしてください。"),
 });
 
 export function validateTaskDraftStep(draft: TaskDraft, step: number): StepErrors {
@@ -422,6 +425,7 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
     name: draft.name.trim(),
     description: draft.description.trim() || undefined,
     status: paused || draft.forcePaused ? "paused" : "active",
+    locked: draft.locked,
     kind,
     cronExpr,
     runAt,

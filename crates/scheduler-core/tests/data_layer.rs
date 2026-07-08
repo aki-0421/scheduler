@@ -24,6 +24,7 @@ fn sample_task(slug: &str) -> Task {
         name: "Status Summary".to_owned(),
         description: None,
         status: TaskStatus::Active,
+        locked: false,
         kind: TaskKind::Manual,
         cron_expr: None,
         run_at: None,
@@ -104,14 +105,14 @@ fn sample_run(task_id: &str, scheduled_for: &str) -> Run {
 }
 
 #[tokio::test]
-async fn migration_creates_v1_schema() {
+async fn migration_creates_v2_schema() {
     let (_temp_dir, db) = temp_db().await;
 
     let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(db.pool())
         .await
         .expect("user_version");
-    assert_eq!(user_version, 1);
+    assert_eq!(user_version, 2);
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master

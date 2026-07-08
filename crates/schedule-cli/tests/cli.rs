@@ -130,6 +130,7 @@ fn sample_task_dto() -> TaskDto {
         name: "fallback task".to_owned(),
         description: None,
         status: TaskStatus::Active,
+        locked: false,
         kind: TaskKind::Manual,
         cron_expr: None,
         run_at: None,

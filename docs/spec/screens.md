@@ -27,7 +27,7 @@ read_when:
 - States: loading、empty、populated、selected、filtered、active-running、success、warning、error、disabled state。
 - Validation and errors: inline field validation、summary error、toast failure、confirmation text、retry path。
 - Accessibility: keyboard order、focus management、ARIA label、visible focus、color-independent status、reduced-motion expectation。
-- Security and safety: execution permission、path trust、destructive confirmation、local filesystem access、audit expectation。
+- Security and safety: execution permission、project scope、task lock、destructive confirmation、local filesystem access、audit expectation。
 - Acceptance criteria: 実装済み behavior の concise で testable な check。
 - Known gaps: 意図的に未実装の behavior または schema-backed limitation。
 
@@ -37,9 +37,9 @@ read_when:
 
 | ID | Screen | Route or Surface | Spec |
 | --- | --- | --- | --- |
-| S000 | Today | `/` | [S000 Today](screens/s000-today.md) |
-| S001 | Tasks | `/tasks` | [S001 Tasks](screens/s001-tasks.md) |
+| S000 | App Shell | global shell、`/` redirect | [S000 App Shell](screens/s000-app-shell.md) |
+| S001 | Tasks | `/tasks`, `/tasks?task=<taskId>`, `/tasks?view=archived` | [S001 Tasks](screens/s001-tasks.md) |
 | S002 | Task Wizard | `/tasks/new`, follow-up mode, edit dialog body | [S002 Task Wizard](screens/s002-task-wizard.md) |
-| S003 | Runs | `/runs` | [S003 Runs](screens/s003-runs.md) |
+| S003 | Task Sessions | `/runs`, `/runs?run=<runId>` | [S003 Task Sessions](screens/s003-runs.md) |
 | S004 | Projects | `/projects` | [S004 Projects](screens/s004-projects.md) |
 | S005 | Settings | `/settings` | [S005 Settings](screens/s005-settings.md) |

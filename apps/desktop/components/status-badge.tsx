@@ -4,22 +4,22 @@ import type { RunStatus, TaskStatus } from "@/lib/types";
 type StatusTone = NonNullable<BadgeProps["variant"]>;
 
 const runStatusConfig: Record<RunStatus, { label: string; variant: StatusTone }> = {
-  succeeded: { label: "Succeeded", variant: "success" },
-  failed: { label: "Failed", variant: "destructive" },
-  running: { label: "Running", variant: "info" },
-  starting: { label: "Starting", variant: "info" },
-  queued: { label: "Queued", variant: "muted" },
-  timed_out: { label: "Timed out", variant: "warning" },
-  canceled: { label: "Canceled", variant: "muted" },
-  skipped: { label: "Skipped", variant: "muted" },
-  interrupted: { label: "Interrupted", variant: "warning" },
+  succeeded: { label: "成功", variant: "success" },
+  failed: { label: "失敗", variant: "destructive" },
+  running: { label: "実行中", variant: "info" },
+  starting: { label: "開始中", variant: "info" },
+  queued: { label: "待機中", variant: "muted" },
+  timed_out: { label: "タイムアウト", variant: "warning" },
+  canceled: { label: "キャンセル済み", variant: "muted" },
+  skipped: { label: "スキップ", variant: "muted" },
+  interrupted: { label: "中断", variant: "warning" },
 };
 
 const taskStatusConfig: Record<TaskStatus, { label: string; variant: StatusTone }> = {
-  active: { label: "Active", variant: "success" },
-  paused: { label: "Paused", variant: "muted" },
-  completed: { label: "Completed", variant: "secondary" },
-  deleted: { label: "Deleted", variant: "destructive" },
+  active: { label: "有効", variant: "success" },
+  paused: { label: "一時停止", variant: "muted" },
+  completed: { label: "完了", variant: "secondary" },
+  deleted: { label: "削除済み", variant: "destructive" },
 };
 
 type StatusBadgeProps =

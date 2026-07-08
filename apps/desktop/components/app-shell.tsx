@@ -1,21 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Activity,
-  CalendarClock,
+  Folder,
   FolderGit2,
-  LayoutDashboard,
-  ListTodo,
+  Loader2,
   Menu,
   Plus,
   Settings,
+  Timer,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import { toast } from "sonner";
+import { Suspense, type ReactNode } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,18 +22,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
+import { Separator } from "@/components/ui/separator";
+import { isRunActive } from "@/lib/format";
+import { useHealth, useRuns, useTasks } from "@/lib/queries";
+import type { TaskDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Tasks", href: "/tasks", icon: ListTodo },
-  { label: "Runs", href: "/runs", icon: Activity },
-  { label: "Projects", href: "/projects", icon: FolderGit2 },
-  { label: "Settings", href: "/settings", icon: Settings },
-];
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") {
@@ -44,150 +35,262 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function HealthIndicator() {
+function isTaskRoute(pathname: string, selectedTaskId: string | undefined, taskId: string) {
+  return pathname === "/tasks" && selectedTaskId === taskId;
+}
+
+function formatTaskTime(task: TaskDto, running: boolean) {
+  if (running) {
+    return "実行中";
+  }
+  if (!task.nextRunAt) {
+    return "未定";
+  }
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(task.nextRunAt));
+}
+
+function HeaderCounts() {
   const health = useHealth();
-  const status = health.data?.ok ? "Running" : health.isLoading ? "Checking" : "Error";
-  const variant = health.data?.ok ? "success" : health.isLoading ? "muted" : "destructive";
+  const running = health.data?.runningCount ?? 0;
+  const queued = health.data?.queuedCount ?? 0;
 
   return (
-    <div className="flex items-center gap-2">
-      <Badge variant={variant}>{status}</Badge>
-      <span className="hidden text-xs text-muted-foreground tabular-nums md:inline">
-        {health.data
-          ? `${health.data.runningCount.toLocaleString("en-US")} running · ${health.data.queuedCount.toLocaleString("en-US")} queued`
-          : "Daemon status"}
+    <div className="flex items-center gap-1.5 text-sm text-muted-foreground" aria-label="実行状態">
+      <span className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-surface px-2 tabular-nums">
+        <Activity className="size-4" aria-hidden="true" />
+        {running.toLocaleString("ja-JP")}
+      </span>
+      <span className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-surface px-2 tabular-nums">
+        <Timer className="size-4" aria-hidden="true" />
+        {queued.toLocaleString("ja-JP")}
       </span>
     </div>
   );
 }
 
-function SchedulerEnabledToggle() {
-  const settings = useSettings();
-  const setSetting = useSetSetting();
-  const enabled = settings.data["scheduler.enabled"];
-
-  return (
-    <div className="flex items-center gap-2">
-      <Label htmlFor="global-scheduler-enabled" className="hidden text-xs md:block">
-        Scheduler
-      </Label>
-      <Switch
-        id="global-scheduler-enabled"
-        checked={enabled}
-        disabled={setSetting.isPending}
-        onCheckedChange={(checked) =>
-          setSetting.mutate(
-            { key: "scheduler.enabled", value: checked },
-            {
-              onError: (error) => {
-                toast.error("Could not update scheduler setting", {
-                  description:
-                    error instanceof Error ? error.message : "Settings command failed.",
-                });
-              },
-            },
-          )
-        }
-        aria-label="Toggle scheduler"
-      />
-    </div>
-  );
-}
-
-function AppMark() {
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-md border bg-background shadow-sm shadow-foreground/[0.02]">
-        <CalendarClock className="size-5" aria-hidden="true" />
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold leading-5">Codex Scheduler</p>
-        <p className="truncate text-xs text-muted-foreground">Local automation</p>
-      </div>
-    </div>
-  );
-}
-
-function NavLink({
-  item,
-  active,
-}: {
-  item: (typeof navItems)[number];
-  active: boolean;
-}) {
-  const Icon = item.icon;
-
-  return (
+function ProjectLink({ pathname, close }: { pathname: string; close?: boolean }) {
+  const active = isActivePath(pathname, "/projects");
+  const content = (
     <Link
-      href={item.href}
+      href="/projects"
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
         active && "bg-accent text-accent-foreground",
       )}
     >
-      <Icon className="size-4 shrink-0" aria-hidden="true" />
-      <span className="truncate">{item.label}</span>
+      <FolderGit2 className="size-4 shrink-0" aria-hidden="true" />
+      <span className="truncate">プロジェクト</span>
     </Link>
   );
+
+  return close ? <DialogClose asChild>{content}</DialogClose> : content;
 }
 
-function SidebarNav({ pathname }: { pathname: string }) {
+function TaskLink({
+  task,
+  running,
+  active,
+  close,
+}: {
+  task: TaskDto;
+  running: boolean;
+  active: boolean;
+  close?: boolean;
+}) {
+  const content = (
+    <Link
+      href={`/tasks?task=${encodeURIComponent(task.id)}`}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "group grid min-h-11 grid-cols-[1rem_minmax(0,1fr)] gap-x-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+        active && "bg-accent text-accent-foreground",
+      )}
+    >
+      <span className="pt-0.5">
+        {running ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <Timer className="size-4" aria-hidden="true" />
+        )}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{task.name}</span>
+        <span className="mt-0.5 block truncate text-xs opacity-75">
+          {formatTaskTime(task, running)}
+        </span>
+      </span>
+    </Link>
+  );
+
+  return close ? <DialogClose asChild>{content}</DialogClose> : content;
+}
+
+function ArchivedLink({
+  count,
+  active,
+  close,
+}: {
+  count: number;
+  active: boolean;
+  close?: boolean;
+}) {
+  const content = (
+    <Link
+      href="/tasks?view=archived"
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+        active && "bg-accent text-accent-foreground",
+      )}
+    >
+      <Folder className="size-4 shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">アーカイブ済み</span>
+      <span className="text-xs tabular-nums opacity-75">{count.toLocaleString("ja-JP")}</span>
+    </Link>
+  );
+
+  return close ? <DialogClose asChild>{content}</DialogClose> : content;
+}
+
+function SettingsTool({ active, close }: { active: boolean; close?: boolean }) {
+  const content = (
+    <Link
+      href="/settings"
+      aria-current={active ? "page" : undefined}
+      aria-label="設定"
+      title="設定"
+      className={cn(
+        "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+        active && "bg-accent text-accent-foreground",
+      )}
+    >
+      <Settings className="size-4" aria-hidden="true" />
+    </Link>
+  );
+
+  return close ? <DialogClose asChild>{content}</DialogClose> : content;
+}
+
+function SidebarContent({
+  pathname,
+  selectedTaskId,
+  close,
+}: {
+  pathname: string;
+  selectedTaskId?: string;
+  close?: boolean;
+}) {
+  const tasks = useTasks();
+  const runs = useRuns();
+  const runningTaskIds = new Set(
+    (runs.data ?? [])
+      .filter((run) => isRunActive(run.status))
+      .map((run) => run.taskId),
+  );
+  const taskList = tasks.data ?? [];
+  const scheduledTasks = taskList
+    .filter(
+      (task) =>
+        (task.status === "active" && task.kind === "cron" && task.nextRunAt) ||
+        runningTaskIds.has(task.id),
+    )
+    .sort((left, right) => {
+      const leftRunning = runningTaskIds.has(left.id);
+      const rightRunning = runningTaskIds.has(right.id);
+      if (leftRunning !== rightRunning) {
+        return leftRunning ? -1 : 1;
+      }
+      return (left.nextRunAt ?? "").localeCompare(right.nextRunAt ?? "");
+    });
+  const archivedCount = taskList.filter(
+    (task) =>
+      task.status !== "active" ||
+      task.kind === "manual" ||
+      task.kind === "once" ||
+      !task.nextRunAt,
+  ).length;
+  const archiveActive = pathname === "/tasks" && !selectedTaskId;
+
   return (
-    <nav className="grid gap-1 p-3" aria-label="Main navigation">
-      {navItems.map((item) => (
-        <NavLink key={item.href} item={item} active={isActivePath(pathname, item.href)} />
-      ))}
-    </nav>
+    <div className="flex h-full min-h-0 flex-col select-none">
+      <div className="p-3">
+        <ProjectLink pathname={pathname} close={close} />
+      </div>
+      <Separator />
+      <nav className="min-h-0 flex-1 overflow-y-auto p-3" aria-label="実行予定タスク">
+        <div className="grid gap-1">
+          {tasks.isLoading ? (
+            <>
+              <div className="h-11 rounded-md bg-muted" />
+              <div className="h-11 rounded-md bg-muted" />
+            </>
+          ) : scheduledTasks.length ? (
+            scheduledTasks.map((task) => (
+              <TaskLink
+                key={task.id}
+                task={task}
+                running={runningTaskIds.has(task.id)}
+                active={isTaskRoute(pathname, selectedTaskId, task.id)}
+                close={close}
+              />
+            ))
+          ) : (
+            <div className="rounded-md px-3 py-2 text-sm text-muted-foreground">
+              予定されたタスクはありません
+            </div>
+          )}
+        </div>
+      </nav>
+      <Separator />
+      <div className="p-3">
+        <ArchivedLink count={archivedCount} active={archiveActive} close={close} />
+      </div>
+      <Separator />
+      <div className="flex h-14 shrink-0 items-center px-3">
+        <SettingsTool active={isActivePath(pathname, "/settings")} close={close} />
+      </div>
+    </div>
   );
 }
 
-function MobileNav({ pathname }: { pathname: string }) {
+function MobileNav({
+  pathname,
+  selectedTaskId,
+}: {
+  pathname: string;
+  selectedTaskId?: string;
+}) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Open navigation">
+        <Button variant="ghost" size="icon" aria-label="ナビゲーションを開く">
           <Menu className="size-5" aria-hidden="true" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="left-0 top-0 h-dvh w-[min(86vw,280px)] translate-x-0 translate-y-0 content-start rounded-none border-y-0 border-l-0 p-0 shadow-lg sm:max-w-none">
-        <DialogTitle className="sr-only">Navigation</DialogTitle>
-        <div className="border-b px-4 py-3">
-          <AppMark />
-        </div>
-        <nav className="grid gap-1 p-3" aria-label="Mobile navigation">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActivePath(pathname, item.href);
-            return (
-              <DialogClose key={item.href} asChild>
-                <Link
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                    active && "bg-accent text-accent-foreground",
-                  )}
-                >
-                  <Icon className="size-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{item.label}</span>
-                </Link>
-              </DialogClose>
-            );
-          })}
-        </nav>
+      <DialogContent className="left-0 top-0 h-dvh w-[min(86vw,300px)] translate-x-0 translate-y-0 content-start rounded-none border-y-0 border-l-0 p-0 shadow-lg sm:max-w-none">
+        <DialogTitle className="sr-only">ナビゲーション</DialogTitle>
+        <SidebarContent pathname={pathname} selectedTaskId={selectedTaskId} close />
       </DialogContent>
     </Dialog>
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+function AppShellContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const selectedTaskId = searchParams.get("task") ?? undefined;
 
   return (
-    <div className="min-h-dvh bg-surface text-foreground">
+    <div className="h-dvh overflow-hidden bg-surface text-foreground">
       <div
-        className="flex min-h-dvh"
+        className="flex h-full min-h-0 overflow-hidden"
         style={{
           paddingTop: "env(safe-area-inset-top)",
           paddingBottom: "env(safe-area-inset-bottom)",
@@ -195,36 +298,27 @@ export function AppShell({ children }: { children: ReactNode }) {
           paddingRight: "env(safe-area-inset-right)",
         }}
       >
-        <aside className="hidden w-56 shrink-0 border-r bg-surface md:block">
-          <div className="flex h-16 items-center border-b px-4">
-            <AppMark />
-          </div>
-          <SidebarNav pathname={pathname} />
+        <aside className="hidden h-full w-64 shrink-0 overflow-hidden border-r bg-surface md:block">
+          <SidebarContent pathname={pathname} selectedTaskId={selectedTaskId} />
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b bg-background px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-2 md:hidden">
-              <MobileNav pathname={pathname} />
-              <span className="truncate text-sm font-semibold">Codex Scheduler</span>
+              <MobileNav pathname={pathname} selectedTaskId={selectedTaskId} />
             </div>
-            <div className="hidden md:block">
-              <HealthIndicator />
-            </div>
+            <div className="min-w-0 flex-1" />
             <div className="ml-auto flex items-center gap-3">
-              <div className="md:hidden">
-                <HealthIndicator />
-              </div>
-              <SchedulerEnabledToggle />
+              <HeaderCounts />
               <Button asChild size="sm">
                 <Link href="/tasks/new">
                   <Plus className="size-4" aria-hidden="true" />
-                  New task
+                  新規タスク
                 </Link>
               </Button>
             </div>
           </header>
-          <main className="min-w-0 flex-1 overflow-auto bg-background">
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain bg-background">
             <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-6 md:py-6">
               {children}
             </div>
@@ -232,5 +326,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
     </div>
+  );
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<div className="h-dvh bg-background text-foreground">{children}</div>}>
+      <AppShellContent>{children}</AppShellContent>
+    </Suspense>
   );
 }

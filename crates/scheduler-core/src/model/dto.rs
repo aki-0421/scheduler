@@ -19,6 +19,8 @@ pub struct TaskDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub status: TaskStatus,
+    #[serde(default)]
+    pub locked: bool,
     pub kind: TaskKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cron_expr: Option<String>,
@@ -97,6 +99,7 @@ impl From<&Task> for TaskDto {
             name: task.name.clone(),
             description: task.description.clone(),
             status: task.status,
+            locked: task.locked,
             kind: task.kind,
             cron_expr: task.cron_expr.clone(),
             run_at: task.run_at.clone(),
@@ -158,6 +161,7 @@ impl TryFrom<TaskDto> for Task {
             name: dto.name,
             description: dto.description,
             status: dto.status,
+            locked: dto.locked,
             kind: dto.kind,
             cron_expr: dto.cron_expr,
             run_at: dto.run_at,

@@ -1,76 +1,84 @@
 ---
 title: S001 Tasks
-description: Tasks screen の list、filter、detail、row action、audit requirement を定義する。
+description: Tasks screen の archived list、task detail、task run history、tabbed operations、lock behavior を定義する。
 updated: 2026-07-08
 read_when:
-  - Tasks page、task list、task detail、task action、edit dialog、audit display を変更するとき。
+  - Tasks page、archived task list、task detail、task action、edit dialog、duplicate flow、lock behavior、audit display を変更するとき。
 ---
 
 # S001 Tasks
 
-ルート: `/tasks`
+ルート: `/tasks`、`/tasks?task=<taskId>`、`/tasks?view=archived`
 
-目的: scheduled Codex task を scan、filter、inspect、operate できるようにする。prompt、policy、recent run、audit context を含む。
+目的: sidebar から選択された scheduled Codex task の履歴と操作を inspect できるようにし、active sidebar から外れた task を archive として確認できるようにする。
 
-入口: `Tasks` navigation item、`View tasks` link、`?task=<taskId>` を持つ Today upcoming row、task wizard からの post-save redirect。
+入口: sidebar task item、sidebar `アーカイブ済み` item、task wizard からの post-save redirect、task session の task link。
 
-出口: `New task`、row action menu、selected run reference、edit dialog、delete confirmation。
+出口: `New task`、task edit、task duplicate、lock / unlock、session row、delete confirmation。
 
 データ依存:
 
-- status で filter された list には `useTasks(status?)` を使う。
-- last-run summary には `useRuns()` を使う。
-- selected detail には `useTask(taskId)` を使う。
+- archived list と sidebar ordering には `useTasks()` と `useRuns()` を使う。
+- selected task detail には `useTask(taskId)` を使う。
+- selected task history には `useRuns({ taskId })` を使い、newest-first で表示する。
 - audit log には `useTaskAudits(taskId)` を使う。
-- task row action は `task_run_now`、`task_pause`、`task_resume`、`task_delete` を呼び出す。
+- task action は `task_run_now`、`task_pause`、`task_resume`、`task_delete`、`task_update`、lock / unlock mutation を呼び出す。
 
 レイアウト領域:
 
-- status filter と `New task` action を持つ header。
-- count summary を持つ task list section。
-- task name、target badge、full-access warning、description または target detail、schedule、status、next run、last run を持つ row。
-- `task` query parameter がある場合、list の下に selected task detail を表示する。
-- task wizard を含む edit task dialog。
+- `/tasks?view=archived`: archived task list。completed one-shot、paused / stopped、deleted task を execution newest-first で表示する。
+- `/tasks?task=<taskId>`: task detail page。left / main column に task run history と tabbed content、right column に actions を置く。
+- detail header: task name、status、lock state、target、next run。
+- tabs: `実行履歴`、`プロンプト`、`設定`、`監査ログ`。タスクに対してできる操作は tab ではなく right column action として表示する。
+- run history row は status、trigger、scheduled/start time、duration、result summary を表示し、押すと `/runs?run=<runId>` へ遷移する。
+- edit / duplicate flow は right column action から開始する。
 
 フィールドとコントロール:
 
-- Status filter: `All statuses`、`Active`、`Paused`、`Completed`、`Deleted`。
-- Row primary action: `Run now`。
-- Row menu actions: pause または resume、edit、delete。
+- Archived sort: 実行の新しい順。実行がない archived task は updatedAt または createdAt の新しい順で末尾に置く。
+- Detail actions: run now、pause / resume、edit、duplicate、lock / unlock、delete。
+- Lock: locked task は AI / scheduled-run actor からの edit、delete、pause、resume を拒否する。user actor は unlock 後に変更できる。
 - Delete confirmation: run history を保持し、active schedule から task を削除する。
-- Task detail action は row action と同等で、prompt と path の copy button を公開する。
+- Prompt and path copy buttons は tab content 内に置く。
 
 状態:
 
 - Loading route fallback: `Loading tasks...`。
-- Empty list: `No tasks yet` と `New task`。
-- Selected task loading: inline loading panel。
-- Selected task populated: summary、prompt、schedule and target、execution and safety、recent runs、audit log。
+- Empty archived list: `アーカイブ済みタスクはありません` と active task creation action。
+- Selected task loading: page skeleton。
+- Selected task populated: summary、session history、tabbed prompt / settings / audit log、right actions。
 - Full filesystem access: row と detail に warning badge が表示される。
+- Locked task: lock badge、edit / delete disabled state、unlock action を表示する。
 
 バリデーションとエラー:
 
 - mutation は success / failure の toast feedback を使う。
 - delete は confirmation dialog で guard される。
+- locked task を編集または削除しようとした場合、UI は action を disabled にし、backend から denial が返った場合は lock reason を toast で表示する。
 
 アクセシビリティ:
 
-- row menu は `role="menu"` を使い、open 時に最初の enabled menu item に focus する。
-- menu trigger は `aria-haspopup`、`aria-expanded`、task-specific label を持つ。
+- tablist は keyboard navigation を持つ。
+- run history row は task-session link として識別できる accessible name を持つ。
+- right column actions は task-specific label を持つ。
 - delete confirmation は明確な cancel label と destructive action label を持つ。
 
 セキュリティと安全性:
 
 - `danger-full-access` task は `Full access` warning badge を表示する必要がある。
+- locked task は scheduled Codex session と CLI actor による destructive / mutating action を拒否する。lock / unlock は audit event に記録する。
 - audit event は actor、action、timestamp、任意の before / after JSON detail を表示する。
 
 受け入れ条件:
 
-- status filter がある場合、その status と一致する task だけが IPC layer から request される。
-- `?task=<id>` がある場合、selected row が視覚的に mark され、detail section がその task を load する。
+- sidebar task item を押すと `/tasks?task=<taskId>` が開き、その task の session history が表示される。
+- recurring task の session history には複数の run が newest-first で表示される。
+- session history row を押すと `/runs?run=<runId>` が開く。
+- archived list は completed one-shot と paused / stopped task を実行の新しい順に表示する。
 - `Run now` が成功した場合、app は scheduler data を invalidate し、`Run queued` toast を表示する。
+- locked task の edit / delete action は disabled で、unlock action が visible である。
 - delete が confirmed された場合、run history は Runs から引き続き discoverable である。
 
 既知の gap:
 
-- Task detail recent runs table は informational であり、各 run row は `/runs?run=<runId>` に link しない。
+- archive は derived view であり、独立した persisted archived flag は持たない。

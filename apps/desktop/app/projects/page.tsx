@@ -1,7 +1,7 @@
 "use client";
 
-import { FolderGit2, Plus } from "lucide-react";
-import { useRef, useState } from "react";
+import { FolderGit2, FolderOpen, Pencil } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
@@ -28,31 +28,61 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDateTime } from "@/lib/format";
+import { ipcClient } from "@/lib/ipc";
 import { useProjects, useTasks, useTrustProject, useUntrustProject } from "@/lib/queries";
 import type { ProjectDto } from "@/lib/types";
 
+const PROJECT_NAME_STORAGE_KEY = "codex-scheduler.project-display-names";
+
 function formatProjectKind(kind: ProjectDto["kind"]) {
-  return kind === "git" ? "Git" : "Folder";
+  return kind === "git" ? "Git" : "フォルダ";
 }
 
-function TrustBadge({ trustedAt }: { trustedAt?: string }) {
-  return (
-    <Badge variant={trustedAt ? "success" : "warning"}>
-      {trustedAt ? "Trusted" : "Untrusted"}
-    </Badge>
-  );
+function githubRepositoryName(remoteUrl?: string) {
+  if (!remoteUrl) {
+    return undefined;
+  }
+  const match = remoteUrl.match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?$/);
+  if (!match) {
+    return undefined;
+  }
+  return `${match[1]}/${match[2]}`;
+}
+
+function projectDisplayName(project: ProjectDto, localNames: Record<string, string>) {
+  return githubRepositoryName(project.gitRemoteUrl) ?? localNames[project.id] ?? project.name;
 }
 
 export default function ProjectsPage() {
-  const [path, setPath] = useState("");
-  const pathInputRef = useRef<HTMLInputElement>(null);
+  const [localNames, setLocalNames] = useState<Record<string, string>>(() => {
+    if (typeof window === "undefined") {
+      return {};
+    }
+    try {
+      return JSON.parse(window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY) ?? "{}") as Record<string, string>;
+    } catch {
+      return {};
+    }
+  });
+  const [isPickingFolder, setIsPickingFolder] = useState(false);
   const projects = useProjects();
   const tasks = useTasks();
   const trustProject = useTrustProject();
   const untrustProject = useUntrustProject();
-  const projectList = projects.data ?? [];
+  const projectList = useMemo(() => projects.data ?? [], [projects.data]);
   const taskList = tasks.data ?? [];
+  const sortedProjects = useMemo(
+    () =>
+      projectList
+        .slice()
+        .sort((left, right) =>
+          projectDisplayName(left, localNames).localeCompare(
+            projectDisplayName(right, localNames),
+            "ja-JP",
+          ),
+        ),
+    [localNames, projectList],
+  );
 
   function activeTaskCount(project: ProjectDto) {
     return taskList.filter(
@@ -64,112 +94,118 @@ export default function ProjectsPage() {
     ).length;
   }
 
-  function trust() {
-    const trimmed = path.trim();
-    if (!trimmed) {
-      toast.error("Enter a project path.");
-      pathInputRef.current?.focus();
-      return;
+  async function addProjectFromFolder() {
+    setIsPickingFolder(true);
+    try {
+      const selectedPath = await ipcClient.projectPickFolder();
+      if (!selectedPath) {
+        return;
+      }
+      trustProject.mutate(selectedPath, {
+        onSuccess: () => toast.success("プロジェクトを追加しました"),
+        onError: (error) =>
+          toast.error("プロジェクトを追加できませんでした", {
+            description:
+              error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
+          }),
+      });
+    } catch (error) {
+      toast.error("フォルダを選択できませんでした", {
+        description:
+          error instanceof Error ? error.message : "ファイルブラウザを開けませんでした。",
+      });
+    } finally {
+      setIsPickingFolder(false);
     }
+  }
 
-    trustProject.mutate(trimmed, {
-      onSuccess: () => {
-        setPath("");
-        toast.success("Project trusted");
+  function removeProject(project: ProjectDto) {
+    untrustProject.mutate(project.id, {
+      onSuccess: (result) => {
+        toast.success("プロジェクトを削除しました", {
+          description: `${result.affectedTaskCount.toLocaleString("ja-JP")}件の有効なタスクに影響します`,
+        });
       },
       onError: (error) =>
-        toast.error("Could not trust project", {
+        toast.error("プロジェクトを削除できませんでした", {
           description:
-            error instanceof Error ? error.message : "The project command failed.",
+            error instanceof Error ? error.message : "プロジェクトコマンドに失敗しました。",
         }),
     });
   }
 
-  function untrust(project: ProjectDto) {
-    untrustProject.mutate(project.id, {
-      onSuccess: (result) => {
-        toast.success("Project trust removed", {
-          description: `${result.affectedTaskCount.toLocaleString("en-US")} affected active tasks`,
-        });
-      },
-      onError: (error) =>
-        toast.error("Could not remove project trust", {
-          description:
-            error instanceof Error ? error.message : "The project command failed.",
-        }),
+  function updateProjectDisplayName(projectId: string, value: string) {
+    setLocalNames((current) => {
+      const next = { ...current, [projectId]: value };
+      window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, JSON.stringify(next));
+      return next;
     });
   }
 
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Projects"
-        description="Manage the local folders and repositories that scheduled Codex runs are allowed to use."
-      />
-
-      <section className="grid gap-3 rounded-lg border bg-surface/70 p-4">
-        <div>
-          <h2 className="text-base font-semibold text-balance">Trust a project path</h2>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Add an absolute local path before repository-based tasks can run against it.
-          </p>
-        </div>
-        <form
-          className="flex flex-col gap-2 md:flex-row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            trust();
-          }}
-        >
-          <Input
-            ref={pathInputRef}
-            value={path}
-            onChange={(event) => setPath(event.currentTarget.value)}
-            placeholder="/Users/alice/src/my-app"
-            aria-label="Project path"
-          />
-          <Button type="submit" disabled={trustProject.isPending}>
-            <Plus className="size-4" aria-hidden="true" />
-            Trust path
+        title="プロジェクト"
+        description="スケジュールされた Codex 実行で使うローカルフォルダとリポジトリを管理します。"
+        actions={
+          <Button
+            type="button"
+            disabled={isPickingFolder || trustProject.isPending}
+            onClick={() => void addProjectFromFolder()}
+          >
+            <FolderOpen className="size-4" aria-hidden="true" />
+            プロジェクトを追加
           </Button>
-        </form>
-      </section>
+        }
+      />
 
       <section className="grid gap-3">
         <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
           <div>
-            <h2 className="text-base font-semibold text-balance">Trusted paths</h2>
+            <h2 className="text-base font-semibold text-balance">プロジェクト一覧</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {projectList.length.toLocaleString("en-US")}{" "}
-              {projectList.length === 1 ? "project" : "projects"} available for scheduled runs.
+              スケジュール実行で利用できるプロジェクトが {projectList.length.toLocaleString("ja-JP")} 件あります。
             </p>
           </div>
         </div>
 
-        {projectList.length ? (
-          <div className="overflow-hidden rounded-lg border bg-surface/70">
-            <Table className="min-w-[880px] table-fixed">
+        {sortedProjects.length ? (
+          <div className="overflow-x-auto overflow-y-hidden rounded-lg border bg-surface/70">
+            <Table className="min-w-[860px] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[17rem]">Project</TableHead>
-                  <TableHead>Path</TableHead>
-                  <TableHead className="w-[10rem]">Trust</TableHead>
-                  <TableHead className="w-[8rem]">Active tasks</TableHead>
-                  <TableHead className="w-[9rem]">Default branch</TableHead>
-                  <TableHead className="w-[8rem] text-right">Actions</TableHead>
+                  <TableHead className="w-[18rem]">プロジェクト</TableHead>
+                  <TableHead>場所</TableHead>
+                  <TableHead className="w-[8rem]">種類</TableHead>
+                  <TableHead className="w-[8rem]">有効なタスク</TableHead>
+                  <TableHead className="w-[9rem]">既定ブランチ</TableHead>
+                  <TableHead className="w-[8rem] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projectList.map((project) => {
+                {sortedProjects.map((project) => {
+                  const githubName = githubRepositoryName(project.gitRemoteUrl);
                   const affectedTaskCount = activeTaskCount(project);
+                  const displayName = projectDisplayName(project, localNames);
                   return (
                     <TableRow key={project.id}>
                       <TableCell className="min-w-0">
-                        <div className="truncate font-medium">{project.name}</div>
-                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          <Badge variant="outline">{formatProjectKind(project.kind)}</Badge>
-                          {project.gitRoot ? <span className="truncate">Git root</span> : null}
-                        </div>
+                        {githubName ? (
+                          <div className="truncate font-medium">{displayName}</div>
+                        ) : (
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Pencil className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            <Input
+                              value={displayName}
+                              onChange={(event) =>
+                                updateProjectDisplayName(project.id, event.currentTarget.value)
+                              }
+                              onBlur={() => toast.success("表示名を更新しました")}
+                              aria-label={`${project.name} の表示名`}
+                              className="h-8"
+                            />
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="min-w-0">
                         <div
@@ -180,20 +216,13 @@ export default function ProjectsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="grid gap-1">
-                          <TrustBadge trustedAt={project.trustedAt} />
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {project.trustedAt
-                              ? formatDateTime(project.trustedAt)
-                              : "Not trusted"}
-                          </span>
-                        </div>
+                        <Badge variant="outline">{formatProjectKind(project.kind)}</Badge>
                       </TableCell>
                       <TableCell className="tabular-nums">
-                        {affectedTaskCount.toLocaleString("en-US")}
+                        {affectedTaskCount.toLocaleString("ja-JP")}
                       </TableCell>
                       <TableCell className="truncate">
-                        {project.defaultBranch ?? "Not set"}
+                        {project.defaultBranch ?? "未設定"}
                       </TableCell>
                       <TableCell className="text-right">
                         <AlertDialog>
@@ -201,32 +230,29 @@ export default function ProjectsPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={!project.trustedAt || untrustProject.isPending}
-                              aria-label={`Remove trust for ${project.name}`}
+                              disabled={untrustProject.isPending}
+                              aria-label={`${displayName} を削除`}
                             >
-                              Remove trust
+                              削除
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle>
-                                Remove trust for {project.name}?
+                                {displayName} を削除しますか？
                               </AlertDialogTitle>
                               <AlertDialogDescription>
-                                Scheduled tasks will no longer be allowed to use this path.{" "}
-                                {affectedTaskCount.toLocaleString("en-US")} active{" "}
-                                {affectedTaskCount === 1 ? "task" : "tasks"} may fail until
-                                you trust the path again or move them to another trusted
-                                project. Local files and run history are not deleted.
+                                このプロジェクトを参照するスケジュール済みタスクは実行できなくなる可能性があります。
+                                {affectedTaskCount.toLocaleString("ja-JP")} 件の有効なタスクに影響します。ローカルファイルと実行履歴は削除されません。
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Keep trusted</AlertDialogCancel>
+                              <AlertDialogCancel>キャンセル</AlertDialogCancel>
                               <AlertDialogAction
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => untrust(project)}
+                                onClick={() => removeProject(project)}
                               >
-                                Remove trust
+                                削除
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -241,11 +267,11 @@ export default function ProjectsPage() {
         ) : (
           <EmptyState
             icon={FolderGit2}
-            title="No trusted projects"
-            description="Trust a local path before creating repository-based scheduled tasks."
+            title="プロジェクトがまだありません"
+            description="Codex に任せるローカルフォルダまたはリポジトリを追加してください。"
             action={{
-              label: "Add a project path",
-              onClick: () => pathInputRef.current?.focus(),
+              label: "プロジェクトを追加",
+              onClick: () => void addProjectFromFolder(),
             }}
           />
         )}

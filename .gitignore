@@ -11,6 +11,7 @@ coverage/
 target/
 
 # Local data
+tmp/
 *.sqlite
 *.sqlite3
 *.db

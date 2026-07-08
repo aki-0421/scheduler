@@ -12,58 +12,58 @@ type DisplayText = {
   detail?: string;
 };
 
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+const dateTimeFormatter = new Intl.DateTimeFormat("ja-JP", {
   dateStyle: "medium",
   timeStyle: "short",
 });
 
-const timeFormatter = new Intl.DateTimeFormat("en-US", {
+const timeFormatter = new Intl.DateTimeFormat("ja-JP", {
   hour: "2-digit",
   minute: "2-digit",
 });
 
-const relativeFormatter = new Intl.RelativeTimeFormat("en-US", {
+const relativeFormatter = new Intl.RelativeTimeFormat("ja-JP", {
   numeric: "auto",
 });
 
-const countFormatter = new Intl.NumberFormat("en-US");
+const countFormatter = new Intl.NumberFormat("ja-JP");
 
 const dayLabels: Record<string, string> = {
-  "0": "Sunday",
-  "1": "Monday",
-  "2": "Tuesday",
-  "3": "Wednesday",
-  "4": "Thursday",
-  "5": "Friday",
-  "6": "Saturday",
-  "7": "Sunday",
+  "0": "日曜日",
+  "1": "月曜日",
+  "2": "火曜日",
+  "3": "水曜日",
+  "4": "木曜日",
+  "5": "金曜日",
+  "6": "土曜日",
+  "7": "日曜日",
 };
 
 const readableEnumLabels: Record<string, string> = {
-  chat: "Chat workspace",
-  "repo-local": "Local repository",
-  "repo-worktree": "Managed worktree",
-  manual: "Manual",
-  once: "One-time",
-  cron: "Scheduled",
-  schedule: "Scheduled",
+  chat: "チャットワークスペース",
+  "repo-local": "ローカルリポジトリ",
+  "repo-worktree": "管理ワークツリー",
+  manual: "手動",
+  once: "一度だけ",
+  cron: "スケジュール",
+  schedule: "スケジュール",
   cli: "CLI",
-  catchup: "Catch-up",
-  retry: "Retry",
-  skip: "Skip",
-  latest_within_window: "Run latest within window",
-  run_all_capped: "Run all, capped",
-  queue: "Queue",
-  cancel_previous: "Cancel previous",
-  keep: "Keep",
-  delete_on_success: "Delete on success",
-  delete_after_days: "Delete after retention",
-  never: "Never ask",
-  "on-request": "Ask when needed",
-  untrusted: "Ask for untrusted changes",
-  "read-only": "Read-only",
-  "workspace-write": "Workspace write",
-  "danger-full-access": "Full access",
+  catchup: "追いつき実行",
+  retry: "再試行",
+  skip: "スキップ",
+  latest_within_window: "期間内の最新のみ実行",
+  run_all_capped: "上限付きで全て実行",
+  queue: "キューに追加",
+  cancel_previous: "前回の実行をキャンセル",
+  keep: "保持",
+  delete_on_success: "成功時に削除",
+  delete_after_days: "保持期間後に削除",
+  never: "確認しない",
+  "on-request": "必要時に確認",
+  untrusted: "信頼されていない変更で確認",
+  "read-only": "読み取り専用",
+  "workspace-write": "ワークスペース書き込み",
+  "danger-full-access": "フルアクセス",
 };
 
 function parseDate(value?: string) {
@@ -102,16 +102,16 @@ function humanizeCron(expr: string) {
 
   const at = formatClock(hour, minute);
   if (dayOfWeek === "*") {
-    return `Daily at ${at}`;
+    return `毎日 ${at}`;
   }
   if (dayOfWeek === "1-5" || dayOfWeek === "MON-FRI") {
-    return `Weekdays at ${at}`;
+    return `平日 ${at}`;
   }
   if (dayOfWeek === "0,6" || dayOfWeek === "6,0") {
-    return `Weekends at ${at}`;
+    return `週末 ${at}`;
   }
   if (dayLabels[dayOfWeek]) {
-    return `Every ${dayLabels[dayOfWeek]} at ${at}`;
+    return `毎週${dayLabels[dayOfWeek]} ${at}`;
   }
 
   return undefined;
@@ -121,7 +121,7 @@ export function formatCount(value: number) {
   return countFormatter.format(value);
 }
 
-export function formatAbsoluteDateTime(value?: string, empty = "Not set") {
+export function formatAbsoluteDateTime(value?: string, empty = "未設定") {
   const date = parseDate(value);
   if (!value) {
     return empty;
@@ -133,7 +133,7 @@ export function formatAbsoluteDateTime(value?: string, empty = "Not set") {
   return dateTimeFormatter.format(date);
 }
 
-export function formatRelativeDateTime(value?: string, empty = "Not set") {
+export function formatRelativeDateTime(value?: string, empty = "未設定") {
   const date = parseDate(value);
   if (!value) {
     return empty;
@@ -145,7 +145,7 @@ export function formatRelativeDateTime(value?: string, empty = "Not set") {
   const seconds = Math.round((date.valueOf() - Date.now()) / 1000);
   const absoluteSeconds = Math.abs(seconds);
   if (absoluteSeconds < 45) {
-    return "just now";
+    return "たった今";
   }
 
   const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
@@ -173,41 +173,41 @@ export function formatRunDuration(run: RunDto) {
   }
 
   if (durationMs < 1_000) {
-    return "<1 sec";
+    return "1秒未満";
   }
   if (durationMs < 60_000) {
-    return `${Math.round(durationMs / 1_000)} sec`;
+    return `${Math.round(durationMs / 1_000)}秒`;
   }
   if (durationMs < 3_600_000) {
     const minutes = Math.floor(durationMs / 60_000);
     const seconds = Math.round((durationMs % 60_000) / 1_000);
-    return seconds ? `${minutes} min ${seconds} sec` : `${minutes} min`;
+    return seconds ? `${minutes}分 ${seconds}秒` : `${minutes}分`;
   }
 
   const hours = Math.floor(durationMs / 3_600_000);
   const minutes = Math.round((durationMs % 3_600_000) / 60_000);
-  return minutes ? `${hours} hr ${minutes} min` : `${hours} hr`;
+  return minutes ? `${hours}時間 ${minutes}分` : `${hours}時間`;
 }
 
 export function describeTaskSchedule(task: TaskDto): DisplayText {
   if (task.kind === "manual") {
-    return { label: "Manual", detail: "Run on demand" };
+    return { label: "手動", detail: "必要なときに実行" };
   }
 
   if (task.kind === "once") {
     return {
-      label: "One-time run",
+      label: "一度だけ実行",
       detail: formatAbsoluteDateTime(task.runAt),
     };
   }
 
   if (!task.cronExpr) {
-    return { label: "Scheduled", detail: task.timezone };
+    return { label: "スケジュール", detail: task.timezone };
   }
 
   const readableCron = humanizeCron(task.cronExpr);
   return {
-    label: readableCron ?? "Custom schedule",
+    label: readableCron ?? "カスタムスケジュール",
     detail: `${task.timezone} · cron ${task.cronExpr}`,
   };
 }
@@ -220,7 +220,7 @@ export function describeTaskTarget(task: TaskDto): DisplayText {
   if (task.target.projectId) {
     return { label, detail: task.target.projectId };
   }
-  return { label, detail: "App-managed workspace" };
+  return { label, detail: "アプリ管理ワークスペース" };
 }
 
 export function formatReadableEnum(value?: string) {
@@ -246,7 +246,7 @@ type CopyButtonProps = {
 
 export function CopyButton({
   value,
-  label = "Copy",
+  label = "コピー",
   toastLabel = label,
   className,
   size = "sm",
@@ -261,11 +261,11 @@ export function CopyButton({
 
     try {
       await navigator.clipboard.writeText(value);
-      toast.success(`${toastLabel} copied`);
+      toast.success(`${toastLabel}をコピーしました`);
     } catch (error) {
-      toast.error("Could not copy", {
+      toast.error("コピーできませんでした", {
         description:
-          error instanceof Error ? error.message : "Clipboard access failed.",
+          error instanceof Error ? error.message : "クリップボードへアクセスできませんでした。",
       });
     }
   }
