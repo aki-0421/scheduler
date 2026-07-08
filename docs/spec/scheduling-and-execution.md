@@ -1,121 +1,121 @@
 ---
-title: Scheduling And Execution
-description: Defines schedule calculation, daemon tick behavior, run lifecycle, Codex runner behavior, logs, retries, and cleanup.
+title: スケジューリングと実行
+description: schedule calculation、daemon tick behavior、run lifecycle、Codex runner behavior、log、retry、cleanup を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing cron behavior, missed-run handling, overlap handling, run execution, Codex invocation, logs, retries, or cleanup.
-  - Debugging why a task did or did not run.
+  - cron behavior、missed-run handling、overlap handling、run execution、Codex invocation、log、retry、cleanup を変更するとき。
+  - task が実行された理由、または実行されなかった理由を debug するとき。
 ---
 
-# Scheduling And Execution
+# スケジューリングと実行
 
-The scheduler daemon decides when to enqueue runs. The runner prepares a workspace, invokes Codex, records output, and returns normalized execution status to the daemon.
+scheduler daemon は run をいつ enqueue するか決定する。runner は workspace を準備し、Codex を呼び出し、output を記録し、normalized execution status を daemon に返す。
 
-## Schedule Kinds
+## スケジュール種別
 
-`manual` tasks do not receive automatic `nextRunAt` values and only run through explicit run-now actions.
+`manual` task は automatic `nextRunAt` value を受け取らず、明示的な run-now action でのみ実行される。
 
-`once` tasks require `runAt`. Their next run is the stored timestamp. After the daemon creates the scheduled run, the task is treated as completed for automatic scheduling purposes.
+`once` task は `runAt` を必要とする。next run は保存された timestamp である。daemon が scheduled run を作成した後、その task は automatic scheduling の目的では completed として扱われる。
 
-`cron` tasks require a 5-field cron expression and an IANA timezone. Seconds and year fields are rejected. Common cron syntax such as ranges, steps, and day-of-month/day-of-week OR semantics is supported through the Rust cron parser.
+`cron` task は 5-field cron expression と IANA timezone を必要とする。seconds field と year field は rejected される。range、step、day-of-month / day-of-week OR semantics などの一般的な cron syntax は Rust cron parser 経由でサポートされる。
 
-## Timezone And DST Rules
+## Timezone と DST ルール
 
-The schedule engine stores and compares instants as UTC RFC3339 timestamps while evaluating cron expressions in the task timezone.
+schedule engine は instant を UTC RFC3339 timestamp として保存・比較し、cron expression は task timezone で評価する。
 
-Tested cron behavior includes:
+test 済み cron behavior:
 
-- `* * * * *` can schedule at one-minute granularity.
-- Six-field cron expressions are rejected because seconds are not supported.
-- Invalid cron values and macro-style expressions such as `@daily` are rejected.
-- Spring-forward nonexistent local times roll forward to the next valid instant.
-- Fall-back ambiguous local times use the first wall-clock occurrence and skip the repeated wall-clock hour for recurring previews.
+- `* * * * *` は 1 分粒度で schedule できる。
+- seconds をサポートしないため、6-field cron expression は rejected される。
+- invalid cron value と `@daily` のような macro-style expression は rejected される。
+- spring-forward による存在しない local time は次の valid instant に roll forward する。
+- fall-back による ambiguous local time は最初の wall-clock occurrence を使い、recurring preview では繰り返された wall-clock hour を skip する。
 
-## Daemon Tick
+## Daemon tick
 
-The daemon performs an initial tick at startup, then sleeps until the next configured tick interval or an explicit tick notification. The default config aligns around minute-level scheduling, and tests can override the interval. `daemon.tickNow` wakes the scheduler loop for immediate due-run evaluation.
+daemon は startup 時に initial tick を実行し、その後は次の configured tick interval または explicit tick notification まで sleep する。default config は minute-level scheduling を基準にし、test は interval を override できる。`daemon.tickNow` は scheduler loop を起こし、due-run evaluation を即時実行させる。
 
-The daemon checks `scheduler.enabled` before queueing scheduled work. Disabled schedulers continue serving RPC requests but do not automatically enqueue due tasks.
+daemon は scheduled work を queue する前に `scheduler.enabled` を確認する。disabled scheduler は RPC request を処理し続けるが、due task を automatic enqueue しない。
 
-## Missed Runs
+## Missed run
 
-Cron missed-run handling is policy-driven:
+Cron missed-run handling は policy-driven である。
 
-- `skip`: do not enqueue catch-up runs.
-- `latest_within_window`: enqueue only the latest eligible missed occurrence within the task window.
-- `run_all_capped`: enqueue missed occurrences up to the configured cap.
+- `skip`: catch-up run を enqueue しない。
+- `latest_within_window`: task window 内の eligible missed occurrence のうち最新だけを enqueue する。
+- `run_all_capped`: configured cap まで missed occurrence を enqueue する。
 
-The implementation protects scans with occurrence limits and computes the following `nextRunAt` after handling missed runs.
+実装は occurrence limit で scan を保護し、missed run handling 後に次の `nextRunAt` を計算する。
 
-## Overlap Handling
+## Overlap handling
 
-When a task is due while a previous run is still active, the overlap policy decides the outcome:
+前の run が active のまま task が due になった場合、overlap policy が結果を決める。
 
-- `skip`: create or record a skipped run with reason `previous_run_still_running`.
-- `queue`: allow a later queued run.
-- `cancel_previous`: request cancellation for the active run and continue with the next one.
+- `skip`: reason `previous_run_still_running` で skipped run を作成または記録する。
+- `queue`: later queued run を許可する。
+- `cancel_previous`: active run の cancellation を要求し、次の run を継続する。
 
-## Retry Handling
+## Retry handling
 
-The scheduler can create retry attempts for transient failures when the task has retries remaining. Retry timing is based on `retry_backoff_sec` and the next attempt number. Permanent failures do not retry.
+task に retry 残数がある場合、scheduler は transient failure に対して retry attempt を作成できる。retry timing は `retry_backoff_sec` と次の attempt number に基づく。permanent failure は retry しない。
 
-## Codex Invocation
+## Codex invocation
 
-The runner detects the Codex CLI by configured path or `PATH`, caches capability data by canonical binary path, and verifies both `codex --version` and `codex exec --help`.
+runner は configured path または `PATH` で Codex CLI を検出し、canonical binary path ごとに capability data を cache し、`codex --version` と `codex exec --help` の両方を verify する。
 
-The generated command uses `codex exec` with JSON output, no color when supported, a working directory, optional model, optional reasoning effort, sandbox mode, `--output-last-message`, and stdin prompt input. Scheduled runs currently pass `approval_policy="never"` through `--config`; a task value other than `never` is recorded as a warning and overridden for execution. Unsupported critical flags cause a preflight failure rather than a partial unsafe run.
+生成される command は `codex exec` を使い、JSON output、supported な場合は no color、working directory、任意の model、任意の reasoning effort、sandbox mode、`--output-last-message`、stdin prompt input を指定する。scheduled run は現在 `approval_policy="never"` を `--config` 経由で渡す。task value が `never` 以外の場合は warning として記録され、execution では override される。unsupported critical flag は partial unsafe run ではなく preflight failure になる。
 
-`danger-full-access` requires the run request to set `allow_danger_full_access=true`.
+`danger-full-access` には run request の `allow_danger_full_access=true` が必要である。
 
-## Workspace Modes
+## Workspace mode
 
-`chat` creates a scheduler-owned chat workspace under app data and does not require a project.
+`chat` は app data 配下に scheduler-owned chat workspace を作成し、project を必要としない。
 
-`repo-local` runs directly in a trusted repository path.
+`repo-local` は trusted repository path で直接実行する。
 
-`repo-worktree` creates an isolated Git worktree under the scheduler worktree root, selects a base ref from task or project defaults, creates a scheduler branch, captures Git state before and after execution, and applies the task cleanup policy.
+`repo-worktree` は scheduler worktree root 配下に isolated Git worktree を作成し、task または project default から base ref を選択し、scheduler branch を作成し、execution 前後の Git state を capture し、task cleanup policy を適用する。
 
-Repository modes require trusted roots. Symlink escape attempts under the worktree directory are rejected.
+repository mode には trusted root が必要である。worktree directory 配下の symlink escape attempt は rejected される。
 
-## Prompt Composition
+## Prompt composition
 
-Every run prompt contains scheduler metadata and the user task instructions. Scheduler CLI instructions are injected only when all of these are true:
+すべての run prompt は scheduler metadata と user task instruction を含む。Scheduler CLI instruction は、次のすべてが true の場合にだけ inject される。
 
-- the task allows scheduler instruction injection,
-- the task allows schedule CLI access,
-- a run-scoped token is available.
+- task が scheduler instruction injection を許可している。
+- task が schedule CLI access を許可している。
+- run-scoped token が利用可能である。
 
-The injected instructions are capability-sensitive. For example, when a run only has `schedule:update-current`, the prompt describes update-current usage and omits schedule creation examples. The injection event is also persisted to the run events JSONL file.
+inject される instruction は capability-sensitive である。たとえば run が `schedule:update-current` だけを持つ場合、prompt は update-current usage を説明し、schedule creation example を省略する。injection event も run events JSONL file に persist される。
 
-## Run Environment
+## Run environment
 
-The runner adds scheduler environment variables such as current task ID, current run ID, socket path, timezone, app version, and run token. It prepends the app CLI directory to `PATH` when available so `codex-schedule` can be found from scheduled Codex sessions.
+runner は current task ID、current run ID、socket path、timezone、app version、run token などの scheduler environment variable を追加する。利用可能な場合は app CLI directory を `PATH` の先頭に追加し、scheduled Codex session から `codex-schedule` を見つけられるようにする。
 
-Redacted environment JSON preserves non-secret scheduler identifiers and masks tokens, API keys, passwords, and similar secrets.
+redacted environment JSON は secret ではない scheduler identifier を保持し、token、API key、password、類似 secret を mask する。
 
-## Logs And Results
+## Log と result
 
-Each run records:
+各 run は次を記録する。
 
-- full stdout log,
-- full stderr log,
-- valid Codex JSONL events extracted from stdout,
-- last-message file,
-- command JSON,
-- redacted environment JSON,
-- stdout and stderr tails,
-- optional Codex session ID,
-- optional summary truncated to 2,000 characters,
-- artifacts persisted from runner output.
+- full stdout log
+- full stderr log
+- stdout から抽出した valid Codex JSONL event
+- last-message file
+- command JSON
+- redacted environment JSON
+- stdout と stderr tail
+- 任意の Codex session ID
+- 2,000 characters に truncate された任意の summary
+- runner output から persist された artifact
 
-Non-JSON stdout lines are kept in stdout logs but excluded from `events.jsonl`; the run receives an `invalid_stdout_jsonl` warning.
+non-JSON stdout line は stdout log に保持されるが `events.jsonl` からは除外される。run は `invalid_stdout_jsonl` warning を受け取る。
 
-## Cancellation And Timeout
+## Cancellation と timeout
 
-The runner starts Codex in a process group. Cancellation and timeout terminate the group. Timeouts become `timed_out`; cancellations become `canceled`.
+runner は Codex を process group 内で起動する。cancellation と timeout は group を terminate する。timeout は `timed_out`、cancellation は `canceled` になる。
 
 ## Cleanup
 
-Retention cleanup runs after an initial delay and then hourly. It removes expired capability tokens, old terminal run history, old logs according to success/failure retention windows, and eligible `delete_after_days` worktrees.
+retention cleanup は initial delay の後に実行され、その後 hourly に実行される。expired capability token、古い terminal run history、success / failure retention window に従った古い log、eligible な `delete_after_days` worktree を削除する。
 
-Worktree cleanup refuses to delete dirty worktrees. `delete_on_success` cleanup removes successful isolated worktrees immediately after a successful run while preserving the created branch.
+Worktree cleanup は dirty worktree の削除を拒否する。`delete_on_success` cleanup は successful run の直後に successful isolated worktree を削除し、created branch は保持する。

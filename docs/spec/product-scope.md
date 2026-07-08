@@ -1,59 +1,58 @@
 ---
-title: Product Scope
-description: Defines the implemented product purpose, users, MVP boundary, and known implementation gaps for Codex Scheduler.
+title: プロダクトスコープ
+description: Codex Scheduler の実装済み product purpose、user、MVP boundary、既知の implementation gap を定義する。
 updated: 2026-07-08
 read_when:
-  - Changing product behavior, navigation, task creation, run history, or scheduler defaults.
-  - Checking what the current branch claims as implemented scope.
+  - product behavior、navigation、task creation、run history、scheduler default を変更するとき。
+  - 現在の branch が実装済み scope として何を主張しているか確認するとき。
 ---
 
-# Product Scope
+# プロダクトスコープ
 
-Codex Scheduler is a macOS-first desktop app for scheduling local Codex CLI work. It is built for users who already run Codex from local project folders and want recurring or delayed work to run with visible state, local logs, and explicit execution policies.
+Codex Scheduler は、ローカル Codex CLI 作業をスケジュールする macOS ファーストの desktop app である。すでにローカル project folder から Codex を実行しているユーザーが、visible state、local log、明示的な execution policy を持つ recurring または delayed work を実行したい場合を想定している。
 
-The app must feel like a local automation console for AI work, not a generic admin dashboard. The implemented UI uses compact task-first surfaces for health, upcoming work, failed runs, trusted projects, and execution settings.
+app は、汎用 admin dashboard ではなく、AI work の local automation console のように感じられる必要がある。実装済み UI は、health、upcoming work、failed run、trusted project、execution setting のために、compact で task-first な surface を使う。
 
-## Implemented User Value
+## 実装済みのユーザー価値
 
-The current branch supports these core flows:
+現在の branch は次の core flow をサポートする。
 
-- Create, edit, pause, resume, delete, and manually run scheduler tasks.
-- Create manual, once, and cron tasks.
-- Target either a chat workspace, a trusted repository path directly, or a fresh Git worktree.
-- Configure task prompt, timezone, model, reasoning effort, sandbox, approval policy, runtime limit, retry count, missed-run handling, overlap handling, schedule CLI capability scope, and worktree cleanup policy.
-- Inspect task lists, task details, run history, run details, log tails, artifacts, audit events, and daemon diagnostics.
-- Trust and untrust local folders or Git repositories before repository-backed runs are allowed to execute.
-- Use `codex-schedule` from a terminal or scheduled Codex session to manage tasks through the daemon.
+- scheduler task の作成、編集、一時停止、再開、削除、手動実行。
+- manual、once、cron task の作成。
+- chat workspace、trusted repository path の直接指定、または新しい Git worktree を対象にする。
+- task prompt、timezone、model、reasoning effort、sandbox、approval policy、runtime limit、retry count、missed-run handling、overlap handling、schedule CLI capability scope、worktree cleanup policy の設定。
+- task list、task detail、run history、run detail、log tail、artifact、audit event、daemon diagnostics の確認。
+- repository-backed run を許可する前に、local folder または Git repository を trust / untrust する。
+- terminal または scheduled Codex session から `codex-schedule` を使い、daemon 経由で task を管理する。
 
-## Current Product Shell
+## 現在のプロダクトシェル
 
-The desktop app has these top-level pages:
+desktop app には次の top-level page がある。
 
-- `Today`: scheduler health, running count, failed runs in the last day, review count, Codex CLI readiness, next runs, recent activity, and global pause/resume controls.
-- `Tasks`: filterable task list, selected task detail, edit dialog, prompt/policy/audit/run inspection, and row actions.
-- `Runs`: recent/failed/review presets, status and task filters, selected run detail, prompt/output/log/artifact inspection, and cancel support.
-- `Projects`: project trust entry, trusted path list, trust status, active task count, and untrust confirmation.
-- `Settings`: scheduler switch, notification switch, global concurrency, Codex path, default model, default sandbox, default approval policy, worktree cleanup default, schema version, fixed local paths, and diagnostics export.
+- `Today`: scheduler health、running count、過去 1 日の failed run、review count、Codex CLI readiness、next run、recent activity、global pause/resume control。
+- `Tasks`: filterable task list、selected task detail、edit dialog、prompt/policy/audit/run inspection、row action。
+- `Runs`: recent/failed/review preset、status と task filter、selected run detail、prompt/output/log/artifact inspection、cancel support。
+- `Projects`: project trust entry、trusted path list、trust status、active task count、untrust confirmation。
+- `Settings`: scheduler switch、notification switch、global concurrency、Codex path、default model、default sandbox、default approval policy、worktree cleanup default、schema version、固定 local path、diagnostics export。
 
-## MVP Boundary
+## MVP 境界
 
-The current implementation is local-only:
+現在の実装は local-only である。
 
-- The scheduler daemon runs on the same Mac as the desktop app.
-- The scheduler stores state in local SQLite.
-- Runs are launched through local `codex exec`.
-- Repository tasks require local path trust.
-- No cloud execution, multi-user sharing, team permissions, or hosted scheduler is implemented.
+- scheduler daemon は desktop app と同じ Mac で動作する。
+- scheduler は local SQLite に state を保存する。
+- run は local `codex exec` 経由で起動される。
+- repository task には local path trust が必要である。
+- cloud execution、multi-user sharing、team permission、hosted scheduler は実装されていない。
 
-The branch also includes sidecar packaging for `codex-schedulerd` and `codex-schedule`, plus release notes for macOS signing and notarization.
+この branch には `codex-schedulerd` と `codex-schedule` の sidecar packaging と、macOS signing / notarization の release note も含まれる。
 
-## Known Gaps And Constraints
+## 既知の gap と制約
 
-These are visible in the current branch:
+現在の branch では次が見えている。
 
-- Notifications are implemented as failure/timeout desktop notifications, not a complete event notification matrix.
-- Run triage state is derived from failed/timed-out/interrupted statuses, findings count, and created schedule count. There is no persisted reviewed/archive state.
-- Natural-language schedule parsing is not implemented; the UI uses presets plus explicit dates and 5-field cron.
-- The desktop Settings page exposes some default keys that are not all seeded by the initial SQL migration. The frontend supplies defaults until the daemon returns stored values.
-- The legacy `docs/RELEASE.md` is not yet an `agent-docs` managed document because it lacks front matter. This rewrite does not change it.
-
+- notification は failure / timeout の desktop notification として実装されており、完全な event notification matrix ではない。
+- run triage state は failed / timed-out / interrupted status、findings count、created schedule count から導出される。persisted reviewed/archive state はない。
+- natural-language schedule parsing は実装されていない。UI は preset と explicit date、5-field cron を使う。
+- desktop Settings page は、initial SQL migration で必ずしも seed されていない default key も表示する。daemon が stored value を返すまでは frontend が default を提供する。
+- legacy の `docs/RELEASE.md` は front matter を持つ managed document として管理される。
