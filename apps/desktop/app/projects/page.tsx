@@ -208,7 +208,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-6">
       <PageHeader
         title="プロジェクト"
         description="スケジュールされた Codex 実行で使うローカルフォルダとリポジトリを管理します。"
@@ -224,7 +224,7 @@ export default function ProjectsPage() {
         }
       />
 
-      <section className="grid gap-3">
+      <section className="flex min-h-0 flex-1 flex-col gap-3">
         {sortedProjects.length ? (
           <div className="overflow-x-auto overflow-y-hidden rounded-lg border bg-surface/70">
             <Table className="min-w-[860px] table-fixed">
@@ -336,6 +336,7 @@ export default function ProjectsPage() {
             icon={FolderGit2}
             title="プロジェクトがまだありません"
             description="Codex に任せるローカルフォルダまたはリポジトリを追加してください。"
+            className="flex-1"
             action={{
               label: "プロジェクトを追加",
               onClick: () => void addProjectFromFolder(),

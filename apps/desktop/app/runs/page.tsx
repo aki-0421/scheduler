@@ -243,7 +243,7 @@ function RunsPageContent() {
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-5">
       <PageHeader
         title="実行履歴"
         description="Codex 実行の状態、出力、ログ、成果物を確認します。"
@@ -286,8 +286,8 @@ function RunsPageContent() {
         }
       />
 
-      <div className="grid gap-4">
-        <section className="grid min-w-0 gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <div className="flex justify-end">
             <div className="flex w-full flex-wrap gap-2 md:w-auto md:justify-end">
               <div className="flex rounded-md border bg-background p-1">
@@ -316,7 +316,7 @@ function RunsPageContent() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-lg border bg-surface/70">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-surface/70">
             {displayedRunList.length ? (
               displayedRunList.map((run) => (
                 <RunRow
@@ -331,6 +331,7 @@ function RunsPageContent() {
                 icon={Activity}
                 title="一致する実行はありません"
                 description="フィルターを解除するか、タスクを手動実行すると履歴が表示されます。"
+                className="flex-1 border-0"
                 action={{ label: "タスクを開く", href: "/tasks" }}
               />
             )}

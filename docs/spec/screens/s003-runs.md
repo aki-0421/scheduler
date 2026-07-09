@@ -51,7 +51,7 @@ read_when:
 状態:
 
 - Loading route fallback: `Loading runs...`。
-- Empty filtered list: `No matching runs` と open-tasks action。
+- Empty filtered list: 表示領域を埋める高さで `No matching runs` と open-tasks action を表示する。
 - Selected session loading: page skeleton。
 - Review badge は failed、timed out、interrupted、findings、created schedules の場合に表示される。
 - Active run は 3 秒ごとに log を poll する。

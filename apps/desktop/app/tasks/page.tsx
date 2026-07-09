@@ -151,14 +151,14 @@ function TasksPageContent() {
   });
 
   return (
-    <div className="grid gap-5">
+    <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-5">
       <PageHeader
         title="アーカイブ済み"
         description="停止中、完了済み、1回きりのタスクを確認します。"
       />
 
-      <section className="grid min-w-0 gap-3">
-        <div className="overflow-hidden rounded-lg border bg-surface/70">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-surface/70">
           {archivedTasks.length ? (
             archivedTasks.map((task) => {
               const lastRun = taskLastRun(task, runList);
@@ -255,6 +255,7 @@ function TasksPageContent() {
               icon={Folder}
               title="アーカイブ済みタスクはありません"
               description="停止中、完了済み、1回きりのタスクがここに表示されます。"
+              className="flex-1 border-0"
               action={{ label: "新規タスク", href: "/tasks/new" }}
             />
           )}

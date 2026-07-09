@@ -42,7 +42,7 @@ read_when:
 状態:
 
 - folder picker canceled は error ではなく neutral toast または no-op とする。
-- empty project list は `プロジェクトがまだありません` を表示し、file browser action を提供する。
+- empty project list は表示領域を埋める高さで `プロジェクトがまだありません` を表示し、file browser action を提供する。
 - GitHub remote detected: name は `owner/repo` または `org/repo` として表示する。
 - Non-GitHub folder: editable project name を表示し、未設定時は folder basename を使う。
 - project remove success toast は affected active task count を含む。

@@ -47,7 +47,7 @@ read_when:
 状態:
 
 - Loading route fallback: `Loading tasks...`。
-- Empty archived list: `アーカイブ済みタスクはありません` と active task creation action。
+- Empty archived list: 表示領域を埋める高さで `アーカイブ済みタスクはありません` と active task creation action を表示する。
 - Selected task loading: page skeleton。
 - Selected task populated: summary、session history、prompt、settings、audit log、actions を tabs で切り替える。
 - Full filesystem access: row と detail に warning badge が表示される。
