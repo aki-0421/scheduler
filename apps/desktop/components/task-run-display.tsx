@@ -279,7 +279,7 @@ export function CopyButton({
       disabled={!canCopy}
       onClick={() => void copy()}
     >
-      <Clipboard className="size-4" aria-hidden="true" />
+      <Clipboard data-icon="inline-start" aria-hidden="true" />
       {label}
     </Button>
   );

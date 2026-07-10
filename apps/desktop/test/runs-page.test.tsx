@@ -15,7 +15,8 @@ describe("RunsPage selected session", () => {
     expect(
       await screen.findByRole("heading", { name: "毎日のリポジトリレビュー" }),
     ).toBeInTheDocument();
-    expect(await screen.findByText("最終出力")).toBeInTheDocument();
+    expect(await screen.findByLabelText("最終出力")).toBeInTheDocument();
+    expect(screen.queryByText("最終出力")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "タスク情報" }),
     ).toBeInTheDocument();

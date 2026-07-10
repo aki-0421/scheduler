@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunDetail } from "@/components/run-detail";
 import { ipcClient } from "@/lib/ipc";
+import { longCodexEventLog } from "@/lib/mock-long-codex-log";
 import type { RunDto, TaskDto } from "@/lib/types";
 import { renderWithClient } from "./test-utils";
 
@@ -39,6 +40,14 @@ function eventTail(runId: string) {
     JSON.stringify({ type: "thread.started", thread_id: "thread_test" }),
     JSON.stringify({ type: "turn.started" }),
     JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "message_progress_1",
+        type: "agent_message",
+        text: "まずリポジトリの状態を確認します。",
+      },
+    }),
+    JSON.stringify({
       type: "item.started",
       item: {
         id: "command_1",
@@ -62,7 +71,15 @@ function eventTail(runId: string) {
     }),
     JSON.stringify({
       type: "item.completed",
-      item: { id: "message_1", type: "agent_message", text: "Done." },
+      item: {
+        id: "message_progress_2",
+        type: "agent_message",
+        text: "状態はクリーンです。最終確認を進めます。",
+      },
+    }),
+    JSON.stringify({
+      type: "item.completed",
+      item: { id: "message_final", type: "agent_message", text: "Done." },
     }),
     JSON.stringify({ type: "turn.completed" }),
   ].join("\n");
@@ -105,10 +122,33 @@ describe("RunDetail", () => {
     );
     const disclosure = commandSummary.closest("details");
     expect(disclosure).not.toHaveAttribute("open");
-    expect(screen.getAllByText("コマンド", { selector: "span" })).toHaveLength(1);
+    expect(screen.queryByText("コマンド", { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "コマンド" })).toBeInTheDocument();
+    expect(commandSummary).toHaveClass("w-fit", "rounded-md");
+    const disclosureSummary = disclosure!.querySelector("summary")!;
+    expect(disclosureSummary).not.toHaveClass(
+      "bg-status-error-muted",
+    );
+    const disclosureIndicator = disclosureSummary.querySelector(
+      ".lucide-chevron-right",
+    );
+    expect(disclosureSummary.lastElementChild).toBe(disclosureIndicator);
+    expect(disclosureIndicator).toHaveClass(
+      "invisible",
+      "group-hover:visible",
+      "group-focus-within:visible",
+    );
+    expect(screen.getByText("まずリポジトリの状態を確認します。")).toBeInTheDocument();
+    expect(
+      screen.getByText("状態はクリーンです。最終確認を進めます。"),
+    ).toBeInTheDocument();
     expect(screen.getAllByText("Done.")).toHaveLength(1);
+    const finalOutput = screen.getByLabelText("最終出力");
+    expect(finalOutput).toHaveTextContent("Done.");
+    expect(finalOutput).toHaveClass("bg-muted");
+    expect(screen.queryByText("最終出力")).not.toBeInTheDocument();
 
-    await user.click(disclosure!.querySelector("summary")!);
+    await user.click(disclosureSummary);
     expect(disclosure).toHaveAttribute("open");
     expect(screen.getByText("clean working tree")).toBeInTheDocument();
 
@@ -119,6 +159,80 @@ describe("RunDetail", () => {
       limit: 16_384,
     });
     expect(tailSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads a long real-world Codex log through every cursor page", async () => {
+    expect(longCodexEventLog.length).toBeGreaterThan(16_384);
+    const tailSpy = vi
+      .spyOn(ipcClient, "runTailLog")
+      .mockImplementation(async (params) => {
+        const cursor = params.cursor ?? 0;
+        const limit = params.limit ?? 8192;
+        const data = longCodexEventLog.slice(cursor, cursor + limit);
+        const nextCursor = cursor + data.length;
+        return {
+          runId: params.runId,
+          stream: params.stream,
+          cursor,
+          nextCursor,
+          eof: nextCursor >= longCodexEventLog.length,
+          data,
+        };
+      });
+
+    renderWithClient(
+      <RunDetail
+        run={{ ...run, id: "run_demo_long" }}
+        task={{ ...task, name: "東京の天気とフォローアップ" }}
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        "東京の今日の天気を確認しつつ、2時間後の再チェックを同じスケジューラで設定します。まず現在時刻を確定してから、天気とスケジュール登録を確認します。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "/workspace/scheduler/target/debug/codex-schedule show task_weather_recheck --json",
+        { selector: "span" },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Codexの途中出力")).toHaveLength(10);
+    expect(screen.queryByText("コマンド", { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: "コマンド" })).toHaveLength(27);
+    expect(screen.getAllByRole("img", { name: "ウェブ検索" })).toHaveLength(10);
+    const failedCommand = screen.getByText("codex-schedule list --json", {
+      selector: "span",
+    });
+    expect(failedCommand).toHaveClass("w-fit", "rounded-md");
+    const failedRow = failedCommand.closest("summary")!;
+    expect(failedRow).toHaveClass(
+      "w-fit",
+      "rounded-md",
+      "bg-status-error-muted",
+    );
+    expect(failedRow.querySelector(".sr-only")).toHaveTextContent(
+      "ステータス: 失敗",
+    );
+    expect(
+      [...failedRow.querySelectorAll("span")].filter(
+        (element) =>
+          element.textContent === "失敗" &&
+          !element.classList.contains("sr-only"),
+      ),
+    ).toHaveLength(0);
+    expect(failedRow.querySelector(".lucide-x")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("最終出力")).toHaveTextContent(
+      "東京（2026年7月9日 09:00 JST時点）は、**晴れ時々くもり**です。",
+    );
+    expect(tailSpy.mock.calls.length).toBeGreaterThan(1);
+    expect(tailSpy).toHaveBeenLastCalledWith({
+      runId: "run_demo_long",
+      stream: "events",
+      cursor: 16_384,
+      limit: 16_384,
+    });
   });
 
   it("opens the task prompt in a dialog and task settings in a right sheet", async () => {
@@ -257,7 +371,7 @@ describe("RunDetail", () => {
     });
     const cancel = vi
       .spyOn(ipcClient, "runCancel")
-      .mockResolvedValue({ ...run, status: "canceled" });
+      .mockResolvedValue({ ...run, status: "canceled", artifacts: [] });
 
     renderWithClient(<RunDetail run={{ ...run, status: "running" }} task={task} />);
 

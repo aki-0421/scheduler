@@ -1,7 +1,7 @@
 ---
 title: S003 Task Sessions
-description: Task Session の chat transcript、task context overlay、tool usage disclosure、history filter、cancel / retry requirement を定義する。
-updated: 2026-07-10
+description: Task Session の長時間 chat transcript、task context overlay、tool usage disclosure、history filter、cancel / retry requirement を定義する。
+updated: 2026-07-11
 read_when:
   - Runs page、task session page、run filtering、task context overlay、chat transcript、tool usage display、cancel / retry flow を変更するとき。
 ---
@@ -25,6 +25,11 @@ read_when:
 - retry には `useRunTaskNow()` を使う。
 - tool call と agent message の transcript には event log を使い、`ipcClient.runTailLog()` で取得する。
 
+開発検証:
+
+- `apps/desktop/lib/mock-long-codex-log.ts` は実際の Codex CLI JSON event log から個人パスと ID を置換した長時間 session fixture である。development mock の `/runs?run=run_demo_long` で、1 chunk を超える取得、10 件の途中 agent message、37 件の tool call、末尾の final output をまとめて確認できる。
+- transcript parsing または cursor pagination を変更した場合は `pnpm --filter desktop test` を実行し、長い terminal run の後半まで欠落しないことを確認する。
+
 レイアウト領域:
 
 - status filter と task filter を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
@@ -34,11 +39,12 @@ read_when:
 - session header は parent task link、task name、run status、開始時刻を compact に表示する。右側の action は `タスク情報`、`タスクプロンプト`、active run の cancel または terminal run の retry の順に置く。
 - `タスク情報` は現在の task settings を読み取り専用の right sheet で表示する。task status、lock、schedule、next run、timezone、model、reasoning effort、target、project path、base ref を対象とし、prompt は含めない。
 - `タスクプロンプト` は現在の task prompt を dialog で表示し、copy action を持つ。
-- transcript 本文には task prompt を置かず、agent message、tool call、final output の順序を event log に従って維持する。
+- transcript 本文には task prompt を置かず、agent message、tool call、final output の順序を event log に従って維持する。terminal run では最後の `agent_message` だけを final output とし、それ以前の `agent_message` はモデルがユーザーへ公開した途中出力として時系列に残す。`reasoning` item は途中出力として扱わず表示しない。
 - Codex の `thread.started`、`turn.started`、`turn.completed` など内部 lifecycle event は通常表示しない。`turn.failed` と `error` は会話中の error row として表示する。
-- command、web search、file change、MCP tool call は tool name、短い要約、status だけを常時表示する。command output、arguments、result は disclosure 内に置き、既定では閉じる。known tool の raw event 全体は重複表示しない。
+- command、web search、file change、MCP tool call は外枠の card を持たない muted な 1 行ログとして表示する。tool type は文字 label ではなく識別可能な icon だけを表示し、accessible name と native title には文字 label を残す。短い要約の背景は 8px radius とし、横幅は内容に合わせ、利用可能幅を超える場合だけ truncate する。完了と失敗の status text は視覚的には表示せず読み上げだけに残し、実行中だけを visible status として表示する。通常行には背景色を付けず、失敗行は status icon や text を追加せず淡い error background だけで区別する。detail disclosure の indicator は行頭に置かず行末へ置き、pointer hover または keyboard focus の間だけ表示する。command output、arguments、result は disclosure 内に置き、既定では閉じる。known tool の raw event 全体は重複表示しない。
 - 同じ item ID の `item.started` と `item.completed` は 1 行に統合し、実行中から完了または失敗へ status を更新する。
-- `resultSummary` と最後の `agent_message` が同じ内容の場合は重複表示せず、1 つの final output として表示する。
+- terminal run の final output は最後の `agent_message` を優先し、event log にない場合だけ `resultSummary` を fallback に使う。final output は icon と見出しを持たず、transcript の最後に背景色の異なる surface として 1 回だけ表示する。copy action は surface 内に残す。
+- event log は 1 回の `runTailLog` 上限を超えることを前提に、terminal run でも EOF まで cursor pagination で読み切る。active run は各 polling cycle で現在の EOF まで読み切ってから次の poll を待つ。
 
 フィールドとコントロール:
 
@@ -48,7 +54,7 @@ read_when:
 - Session actions: parent task へ戻る、task settings sheet、task prompt dialog、cancel active run、retry terminal run。
 - Run list row の trigger、scheduled time、duration、exit code は icon と semantic color を持つ compact token で表示する。exit code `0` は success、non-zero は error、未記録は muted とする。
 - Run status と review state は text だけでなく icon と color tone で区別できる。
-- Chat transcript: assistant message、compact tool row、collapsed tool detail、final output。
+- Chat transcript: public な途中 assistant message、muted compact tool row、collapsed tool detail、背景で区別した final output。
 
 状態:
 
@@ -56,7 +62,7 @@ read_when:
 - Empty filtered list: 表示領域を埋める高さで `No matching runs` と open-tasks action を表示する。
 - Selected session loading: page skeleton。
 - Review badge は failed、timed out、interrupted、findings、created schedules の場合に表示される。
-- Active run は 3 秒ごとに log を poll する。
+- Active run は 3 秒ごとに log を poll し、各 poll で複数 chunk があれば現在の EOF まで取得する。terminal run も初回 load で EOF まで取得する。
 - missing event log は tool call が記録されていない旨を transcript 内で簡潔に表示する。
 - output がない場合は transcript 内に explicit empty state を持つ。task prompt がない場合は prompt dialog 内で明示する。
 - structured event を parse できない行は画面全体を壊さず無視する。error event の raw payload は disclosure から確認できる。
@@ -71,7 +77,7 @@ read_when:
 - filter と preset は keyboard-reachable control である。
 - status は color だけでなく text badge で伝える。
 - chat transcript は `role="log"` または ordered list として読み上げ順を維持する。
-- tool call row は tool name、status、summary を text で含み、detail disclosure は native keyboard interaction で開閉できる。
+- tool call row は視覚上 icon だけで表す tool type に accessible name を付け、status と summary も読み上げ可能にする。detail disclosure は native keyboard interaction で開閉でき、行末 indicator は hover に加えて keyboard focus でも表示する。完了と失敗 status は screen reader text として保持する。
 - task settings sheet と task prompt dialog は focus trap、Escape close、visible title を持つ accessible overlay primitive を使う。
 
 セキュリティと安全性:
@@ -84,10 +90,12 @@ read_when:
 - preset `Review` の場合、failed、timed-out、interrupted、findings、created-schedule run が表示される。
 - task detail の session history row を押すと `/runs?run=<runId>` が開く。
 - `/runs?run=<runId>` では global history、filter、preset、tabs、overview、raw log panel、artifact panel を表示しない。
-- session detail の transcript は task prompt を常時表示せず、agent message、tool usage、final output を時系列に確認できる。
+- session detail の transcript は task prompt を常時表示せず、公開された途中 agent message、tool usage、final output を時系列に確認できる。private reasoning は表示しない。
 - `タスク情報` を押すと current task settings が right sheet で開き、prompt は表示しない。
 - `タスクプロンプト` を押すと current task prompt が dialog で開き、copy できる。
-- tool call は開始 / 完了を 1 行に統合し、command output や tool result は初期状態で閉じている。
+- tool call は開始 / 完了を muted な 1 行に統合し、command output や tool result は初期状態で閉じている。tool type は icon のみ、summary surface は 8px radius の内容幅で、失敗行は icon や text を増やさず淡い error background だけを持つ。折りたたみ indicator は行末にあり、hover または keyboard focus のときだけ見える。大量の完了 tool が status label や card border で画面を占有しない。
+- final output は icon と visible heading を持たず、背景色の異なる 1 つの surface として transcript の末尾に表示される。
+- 1 chunk を超える長い event log でも EOF まで取得され、途中 agent message、後半の tool call、final output が欠落しない。
 - lifecycle event は transcript を占有せず、error event だけが user-visible row になる。
 - active run が selected の場合、run が active status を離れるまで log が poll される。
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。

@@ -1,3 +1,4 @@
+import { longCodexEventLog } from "@/lib/mock-long-codex-log";
 import type {
   DaemonDiagnostics,
   HealthDto,
@@ -178,6 +179,26 @@ let tasks: TaskDto[] = [
       body: "最新のマージ済み作業からリリースノートの下書きを作成してください。",
     },
   },
+  {
+    id: "task_weather_check",
+    slug: "tokyo-weather-check",
+    name: "東京の天気とフォローアップ",
+    status: "completed",
+    locked: false,
+    kind: "once",
+    cronExpr: undefined,
+    runAt: minutesAgo(120),
+    timezone: "Asia/Tokyo",
+    nextRunAt: undefined,
+    target: { mode: "chat", projectId: undefined, repoPath: undefined },
+    codex: {
+      model: "gpt-5.5",
+      reasoningEffort: "medium",
+    },
+    prompt: {
+      body: "東京の今日の天気を調べ、2時間後に再確認するタスクも登録してください。",
+    },
+  },
 ];
 
 function taskAuditEvents(taskId: string): TaskAuditEvent[] {
@@ -185,6 +206,43 @@ function taskAuditEvents(taskId: string): TaskAuditEvent[] {
 }
 
 let runs: RunDto[] = [
+  {
+    id: "run_demo_long",
+    taskId: "task_weather_check",
+    triggerType: "schedule",
+    scheduledFor: minutesAgo(120),
+    attempt: 1,
+    status: "succeeded",
+    statusReason: undefined,
+    queuedAt: minutesAgo(120),
+    startedAt: minutesAgo(119),
+    endedAt: minutesAgo(114),
+    durationMs: 300_000,
+    targetMode: "chat",
+    workspacePath: undefined,
+    worktreePath: undefined,
+    branchName: undefined,
+    baseRef: undefined,
+    commitBefore: undefined,
+    commitAfter: undefined,
+    exitCode: 0,
+    signal: undefined,
+    codexSessionId: "thread_demo_long",
+    stdoutLogPath:
+      "/Users/demo/Library/Application Support/Codex Scheduler/logs/run_demo_long/stdout.log",
+    stderrLogPath:
+      "/Users/demo/Library/Application Support/Codex Scheduler/logs/run_demo_long/stderr.log",
+    eventsJsonlPath:
+      "/Users/demo/Library/Application Support/Codex Scheduler/logs/run_demo_long/events.jsonl",
+    lastMessagePath:
+      "/Users/demo/Library/Application Support/Codex Scheduler/logs/run_demo_long/last-message.md",
+    stdoutTail: "東京の天気と再チェック時刻を確認しました。\n",
+    stderrTail: "",
+    resultSummary:
+      "東京は晴れ時々くもりで、2時間後の再チェックを設定しました。",
+    findingsCount: 0,
+    createdScheduleCount: 1,
+  },
   {
     id: "run_success",
     taskId: "task_daily_review",
@@ -305,6 +363,14 @@ let runs: RunDto[] = [
 ];
 
 const logs = new Map<string, Record<LogStream, string>>([
+  [
+    "run_demo_long",
+    {
+      stdout: "東京の天気と再チェック時刻を確認しました。\n",
+      stderr: "",
+      events: longCodexEventLog,
+    },
+  ],
   [
     "run_success",
     {
