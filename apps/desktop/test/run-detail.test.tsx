@@ -44,7 +44,7 @@ function eventTail(runId: string) {
       item: {
         id: "message_progress_1",
         type: "agent_message",
-        text: "まずリポジトリの状態を確認します。",
+        text: "まず **リポジトリ** の状態を確認します。",
       },
     }),
     JSON.stringify({
@@ -138,7 +138,9 @@ describe("RunDetail", () => {
       "group-hover:visible",
       "group-focus-within:visible",
     );
-    expect(screen.getByText("まずリポジトリの状態を確認します。")).toBeInTheDocument();
+    expect(
+      screen.getByText("リポジトリ", { selector: "strong" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("状態はクリーンです。最終確認を進めます。"),
     ).toBeInTheDocument();
@@ -223,9 +225,26 @@ describe("RunDetail", () => {
       ),
     ).toHaveLength(0);
     expect(failedRow.querySelector(".lucide-x")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("最終出力")).toHaveTextContent(
-      "東京（2026年7月9日 09:00 JST時点）は、**晴れ時々くもり**です。",
+    const finalOutput = screen.getByLabelText("最終出力");
+    expect(
+      within(finalOutput).getByText("晴れ時々くもり", {
+        selector: "strong",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(finalOutput).getByText("2026-07-09 11:00 JST", {
+        selector: "code",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(finalOutput).getByRole("link", {
+        name: "https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json",
+      }),
+    ).toHaveAttribute(
+      "href",
+      "https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json",
     );
+    expect(finalOutput).not.toHaveTextContent("**晴れ時々くもり**");
     expect(tailSpy.mock.calls.length).toBeGreaterThan(1);
     expect(tailSpy).toHaveBeenLastCalledWith({
       runId: "run_demo_long",

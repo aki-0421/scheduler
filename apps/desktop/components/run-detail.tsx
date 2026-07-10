@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { MarkdownContent } from "@/components/markdown-content";
 import { RunStatusBadge } from "@/components/status-badge";
 import {
   TaskInfoSheet,
@@ -393,9 +394,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
           }
           return (
             <li key={entry.id} aria-label="Codexの途中出力" className="py-4">
-              <p className="max-w-3xl whitespace-pre-wrap break-words text-pretty text-sm leading-7">
-                {entry.text}
-              </p>
+              <MarkdownContent content={entry.text} className="max-w-3xl" />
             </li>
           );
         })}
@@ -425,11 +424,14 @@ export function RunDetail({ run, task }: RunDetailProps) {
           className="mt-6 rounded-lg bg-muted px-4 py-4 sm:px-5"
         >
           <div className="flex items-start gap-4">
-            <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-pretty text-sm leading-7">
-              {active
-                ? "実行中です。最終出力を待っています。"
-                : finalOutput || "最終出力は記録されていません。"}
-            </p>
+            <MarkdownContent
+              content={
+                active
+                  ? "実行中です。最終出力を待っています。"
+                  : finalOutput || "最終出力は記録されていません。"
+              }
+              className="flex-1"
+            />
             {finalOutput ? (
               <CopyButton
                 value={finalOutput}

@@ -39,11 +39,11 @@ read_when:
 - session header は parent task link、task name、run status、開始時刻を compact に表示する。右側の action は `タスク情報`、`タスクプロンプト`、active run の cancel または terminal run の retry の順に置く。
 - `タスク情報` は現在の task settings を読み取り専用の right sheet で表示する。task status、lock、schedule、next run、timezone、model、reasoning effort、target、project path、base ref を対象とし、prompt は含めない。
 - `タスクプロンプト` は現在の task prompt を dialog で表示し、copy action を持つ。
-- transcript 本文には task prompt を置かず、agent message、tool call、final output の順序を event log に従って維持する。terminal run では最後の `agent_message` だけを final output とし、それ以前の `agent_message` はモデルがユーザーへ公開した途中出力として時系列に残す。`reasoning` item は途中出力として扱わず表示しない。
+- transcript 本文には task prompt を置かず、agent message、tool call、final output の順序を event log に従って維持する。terminal run では最後の `agent_message` だけを final output とし、それ以前の `agent_message` はモデルがユーザーへ公開した途中出力として時系列に残す。公開された agent message と final output は CommonMark と GFM の Markdown としてレンダリングし、強調、link、list、task list、blockquote、table、inline code、code block を表示する。モデルが意図した会話上のレイアウトを保つため、空行だけでなく単独の改行も改行として描画する。`reasoning` item は途中出力として扱わず表示しない。
 - Codex の `thread.started`、`turn.started`、`turn.completed` など内部 lifecycle event は通常表示しない。`turn.failed` と `error` は会話中の error row として表示する。
 - command、web search、file change、MCP tool call は外枠の card を持たない muted な 1 行ログとして表示する。tool type は文字 label ではなく識別可能な icon だけを表示し、accessible name と native title には文字 label を残す。短い要約の背景は 8px radius とし、横幅は内容に合わせ、利用可能幅を超える場合だけ truncate する。完了と失敗の status text は視覚的には表示せず読み上げだけに残し、実行中だけを visible status として表示する。通常行には背景色を付けず、失敗行は status icon や text を追加せず淡い error background だけで区別する。detail disclosure の indicator は行頭に置かず行末へ置き、pointer hover または keyboard focus の間だけ表示する。command output、arguments、result は disclosure 内に置き、既定では閉じる。known tool の raw event 全体は重複表示しない。
 - 同じ item ID の `item.started` と `item.completed` は 1 行に統合し、実行中から完了または失敗へ status を更新する。
-- terminal run の final output は最後の `agent_message` を優先し、event log にない場合だけ `resultSummary` を fallback に使う。final output は icon と見出しを持たず、transcript の最後に背景色の異なる surface として 1 回だけ表示する。copy action は surface 内に残す。
+- terminal run の final output は最後の `agent_message` を優先し、event log にない場合だけ `resultSummary` を fallback に使う。final output は icon と見出しを持たず、transcript の最後に背景色の異なる surface として 1 回だけ表示する。copy action はレンダリング前の Markdown source をコピーする。Markdown heading level 1 は session page の `h1` と競合させず `h2` として描画し、後続 level も 1 段下げる。table と code block は transcript 幅を広げず内部 scroll で確認できる。
 - event log は 1 回の `runTailLog` 上限を超えることを前提に、terminal run でも EOF まで cursor pagination で読み切る。active run は各 polling cycle で現在の EOF まで読み切ってから次の poll を待つ。
 
 フィールドとコントロール:
@@ -54,7 +54,7 @@ read_when:
 - Session actions: parent task へ戻る、task settings sheet、task prompt dialog、cancel active run、retry terminal run。
 - Run list row の trigger、scheduled time、duration、exit code は icon と semantic color を持つ compact token で表示する。exit code `0` は success、non-zero は error、未記録は muted とする。
 - Run status と review state は text だけでなく icon と color tone で区別できる。
-- Chat transcript: public な途中 assistant message、muted compact tool row、collapsed tool detail、背景で区別した final output。
+- Chat transcript: Markdown をレンダリングした public な途中 assistant message、muted compact tool row、collapsed tool detail、背景で区別した Markdown final output。
 
 状態:
 
@@ -83,6 +83,7 @@ read_when:
 セキュリティと安全性:
 
 - transcript に command output や tool arguments を表示するときも HTML として解釈せず text として表示する。
+- agent message と final output の Markdown に含まれる raw HTML は無視し、`dangerouslySetInnerHTML` や raw HTML plugin は使わない。link と image URL は Markdown renderer の safe URL transform を通す。
 
 受け入れ条件:
 
@@ -90,11 +91,12 @@ read_when:
 - preset `Review` の場合、failed、timed-out、interrupted、findings、created-schedule run が表示される。
 - task detail の session history row を押すと `/runs?run=<runId>` が開く。
 - `/runs?run=<runId>` では global history、filter、preset、tabs、overview、raw log panel、artifact panel を表示しない。
-- session detail の transcript は task prompt を常時表示せず、公開された途中 agent message、tool usage、final output を時系列に確認できる。private reasoning は表示しない。
+- session detail の transcript は task prompt を常時表示せず、Markdown としてレンダリングした公開済み途中 agent message、tool usage、Markdown final output を時系列に確認できる。private reasoning と raw HTML は表示しない。
 - `タスク情報` を押すと current task settings が right sheet で開き、prompt は表示しない。
 - `タスクプロンプト` を押すと current task prompt が dialog で開き、copy できる。
 - tool call は開始 / 完了を muted な 1 行に統合し、command output や tool result は初期状態で閉じている。tool type は icon のみ、summary surface は 8px radius の内容幅で、失敗行は icon や text を増やさず淡い error background だけを持つ。折りたたみ indicator は行末にあり、hover または keyboard focus のときだけ見える。大量の完了 tool が status label や card border で画面を占有しない。
 - final output は icon と visible heading を持たず、背景色の異なる 1 つの surface として transcript の末尾に表示される。
+- agent message と final output の emphasis、link、list、table、inline code、code block が Markdown source 記号を露出せず表示され、単独改行を含む source の改行位置が画面でも維持される。copy action は元の Markdown source を保持する。
 - 1 chunk を超える長い event log でも EOF まで取得され、途中 agent message、後半の tool call、final output が欠落しない。
 - lifecycle event は transcript を占有せず、error event だけが user-visible row になる。
 - active run が selected の場合、run が active status を離れるまで log が poll される。
