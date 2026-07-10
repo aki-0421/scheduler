@@ -1,14 +1,25 @@
-import { screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import RunsPage from "@/app/runs/page";
 import { renderWithClient } from "./test-utils";
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams("run=run_success"),
+const navigation = vi.hoisted(() => ({
+  search: "run=run_success",
+  replace: vi.fn(),
 }));
 
-describe("RunsPage selected session", () => {
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: navigation.replace }),
+  useSearchParams: () => new URLSearchParams(navigation.search),
+}));
+
+describe("RunsPage", () => {
+  beforeEach(() => {
+    navigation.search = "run=run_success";
+    navigation.replace.mockReset();
+  });
+
   it("renders only the selected chat session instead of the history controls and rows", async () => {
     renderWithClient(<RunsPage />);
 
@@ -29,5 +40,19 @@ describe("RunsPage selected session", () => {
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "最近" })).not.toBeInTheDocument();
     expect(screen.queryByText("run_failed")).not.toBeInTheDocument();
+  });
+
+  it("redirects the removed global history route to projects", async () => {
+    navigation.search = "";
+
+    renderWithClient(<RunsPage />);
+
+    await waitFor(() =>
+      expect(navigation.replace).toHaveBeenCalledWith("/projects"),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "実行履歴" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 });

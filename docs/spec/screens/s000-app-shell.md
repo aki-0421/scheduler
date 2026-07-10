@@ -54,7 +54,7 @@ read_when:
 - Archived item: folder icon + `アーカイブ済み` label。archived count は sidebar に表示しない。
 - Toolbox: settings gear icon button。必要に応じて diagnostics などの icon-only controls を追加できる。
 - Header count: running count。長い `0件実行中` 形式や queued count は使わない。
-- Header breadcrumb: `プロジェクト`、`アーカイブ済み`、`アーカイブ済み / <task name>`、`アーカイブ済み / 新規タスク`、`実行履歴 / <run id>`、`設定`。
+- Header breadcrumb: `プロジェクト`、`アーカイブ済み`、`アーカイブ済み / <task name>`、`アーカイブ済み / 新規タスク`、`<task name> / <run id>`、`設定`。run detail の task name は task detail への link とする。
 - Page header: title cluster と action controls は同じ行内で垂直中央揃えにする。page-level explanation は常時 subtitle として表示せず、title 右の `?` help trigger の tooltip に置く。
 
 状態:

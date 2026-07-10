@@ -107,6 +107,9 @@ function HeaderBreadcrumbs({
   const run = selectedRunId
     ? (runs.data ?? []).find((item) => item.id === selectedRunId)
     : undefined;
+  const runTask = run
+    ? (tasks.data ?? []).find((item) => item.id === run.taskId)
+    : undefined;
   const crumbs: BreadcrumbItem[] = (() => {
     if (pathname === "/tasks/new") {
       return [
@@ -125,12 +128,14 @@ function HeaderBreadcrumbs({
     }
     if (pathname === "/runs" && selectedRunId) {
       return [
-        { label: "実行履歴", href: "/runs" },
+        {
+          label: runTask?.name ?? "タスク",
+          href: run
+            ? `/tasks?task=${encodeURIComponent(run.taskId)}`
+            : "/projects",
+        },
         { label: shortIdentifier(run?.id ?? selectedRunId) },
       ];
-    }
-    if (pathname === "/runs") {
-      return [{ label: "実行履歴" }];
     }
     if (pathname === "/settings") {
       return [{ label: "設定" }];

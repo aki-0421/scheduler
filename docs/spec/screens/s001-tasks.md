@@ -10,7 +10,7 @@ read_when:
 
 ルート: `/tasks`、`/tasks?task=<taskId>`、`/tasks?view=archived`
 
-目的: sidebar から選択された scheduled Codex task の履歴と操作を inspect できるようにし、active sidebar から外れた task を archive として確認できるようにする。
+目的: sidebar から選択された scheduled Codex task の履歴と操作を inspect できるようにし、active sidebar から外れた task を archive として確認できるようにする。実行履歴は task detail を唯一の一覧導線とする。
 
 入口: sidebar task item、sidebar `アーカイブ済み` item、task wizard からの post-save redirect、task session の task link。
 
@@ -33,6 +33,7 @@ read_when:
 - archived table と task detail の tab content は page canvas に直接配置し、外側の rounded border、別背景、shadow、内側 padding を持つ panel で囲まない。table row の区切りは divider と spacing で示す。
 - tab content の先頭には、tab label を繰り返すだけの section heading や説明文を置かない。
 - run history row は status、scheduled/start time、duration、result summary を表示し、押すと `/runs?run=<runId>` へ遷移する。
+- global run history screen は持たず、別 task の履歴は sidebar または archived table から対象 task を選んで確認する。
 - Archived table row の task status、target、schedule、last status は icon と semantic color を持つ compact token を優先する。last run と duration は scan しやすい tabular numeric text とする。すべての cell は 1 行のまま表示し、task name と長い token label は利用可能幅で truncate しつつ title で完全な値を確認できるようにする。
 - task description と target detail の補助行は表示しない。task detail の `実行履歴` には task summary、ID、schedule、target、next run を表示しない。
 - Archived table は desktop width では page 内に収め、狭い width では row を複数段へ積み直さず table 自体を横スクロールできるようにする。
@@ -93,7 +94,7 @@ read_when:
 - detail header の右側に primary の run now、secondary の pause / resume、duplicate・lock / unlock・delete を構造化した `管理` menu が表示される。
 - `実行履歴` tab は session history table だけを表示し、task summary や設定値を表示しない。
 - `設定` tab は editable configuration だけを表示し、task actions と変更履歴を表示しない。
-- delete が confirmed された場合、run history は Runs から引き続き discoverable である。
+- delete が confirmed された場合も、archived table から task detail を開いて run history を引き続き確認できる。
 - task detail の tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
 - archived table と task detail の各 tab content は page-level panel surface を持たず、row divider と section spacing で情報を判別できる。
 - archived table、task detail、edit / duplicate flow のいずれにも task description は表示されない。

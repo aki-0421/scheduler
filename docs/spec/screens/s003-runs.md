@@ -1,25 +1,24 @@
 ---
 title: S003 Task Sessions
-description: Task Session の長時間 chat transcript、task context overlay、tool usage disclosure、history filter、cancel / retry requirement を定義する。
+description: Task Session の長時間 chat transcript、task context overlay、tool usage disclosure、cancel / retry requirement を定義する。
 updated: 2026-07-11
 read_when:
-  - Runs page、task session page、run filtering、task context overlay、chat transcript、tool usage display、cancel / retry flow を変更するとき。
+  - Task session page、task context overlay、chat transcript、tool usage display、cancel / retry flow を変更するとき。
 ---
 
 # S003 Task Sessions
 
-ルート: `/runs`、`/runs?run=<runId>`
+ルート: `/runs?run=<runId>`。run ID を持たない `/runs` は画面を表示せず `/projects` へ replace redirect する。
 
-目的: 1 回の task execution を独立した chat session として inspect し、利用された tool と最終 output を会話の流れのまま確認できるようにする。task prompt と task settings は header から必要なときだけ参照する。global history list は session を選ぶ triage surface として `/runs` にだけ残す。
+目的: task detail の履歴から選択した 1 回の task execution を独立した chat session として inspect し、利用された tool と最終 output を会話の流れのまま確認できるようにする。task prompt と task settings は header から必要なときだけ参照する。global run history screen は持たない。
 
-入口: task detail の session history row、archived task row、global history route。
+入口: task detail の session history row。
 
 出口: parent task、task retry。
 
 データ依存:
 
 - selected session の task name、task prompt、task settings には `useTask(taskId)` を使う。
-- filtered history には `useRuns({ status, taskId })` を使う。
 - selected session detail には `useRun(runId)` を使い、active run は 1 秒ごとに refetch して terminal status と final output への切り替えを追従する。
 - active run cancellation には `useCancelRun()` を使う。
 - retry には `useRunTaskNow()` を使う。
@@ -28,13 +27,14 @@ read_when:
 開発検証:
 
 - `apps/desktop/lib/mock-long-codex-log.ts` は実際の Codex CLI JSON event log から個人パスと ID を置換した長時間 session fixture である。development mock の `/runs?run=run_demo_long` で、1 chunk を超える取得、10 件の途中 agent message、37 件の tool call、末尾の final output をまとめて確認できる。
+- `pnpm --filter desktop exec vitest run test/runs-page.test.tsx test/app-shell.test.tsx` は、run ID なしの `/runs` が `/projects` へ replace redirect すること、selected session が global history control を持たないこと、breadcrumb が parent task へ戻ることを検証する。
 - transcript parsing または cursor pagination を変更した場合は `pnpm --filter desktop test` を実行し、長い terminal run の後半まで欠落しないことを確認する。
+- route または breadcrumb を変更した場合は `agent-browser` で `/runs/` の redirect と、`/tasks/?task=<taskId>` の history row から `/runs/?run=<runId>` を開いて parent task link が一致することを確認する。
 
 レイアウト領域:
 
-- status filter と task filter を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
-- preset button、list row を持つ run history section。list count の説明文は表示しない。
-- `/runs?run=<runId>` は global history list、filter、preset を描画しない独立した session detail page として開く。
+- `/runs?run=<runId>` は global history list、filter、preset を持たない独立した session detail page として開く。
+- app shell の breadcrumb は parent task name を `/tasks?task=<taskId>` への link として表示し、その後に run ID を置く。global history への戻り link は置かない。
 - session detail は tabs、overview、別 session の history を持たず、最大幅を抑えた 1 本の chat transcript だけを表示する。
 - session header は parent task link、task name、run status、開始時刻を compact に表示する。右側の action は `タスク情報`、`タスクプロンプト`、active run の cancel または terminal run の retry の順に置く。
 - `タスク情報` は現在の task settings を読み取り専用の right sheet で表示する。task status、lock、schedule、next run、timezone、model、reasoning effort、target、project path、base ref を対象とし、prompt は含めない。
@@ -50,20 +50,14 @@ read_when:
 
 フィールドとコントロール:
 
-- Presets: recent、failed、review。
-- Status filter: all run statuses。
-- Task filter: all tasks または specific task。
 - Session actions: parent task へ戻る、task settings sheet、task prompt dialog、cancel active run、retry terminal run。
-- Run list row の trigger、scheduled time、duration、exit code は icon と semantic color を持つ compact token で表示する。exit code `0` は success、non-zero は error、未記録は muted とする。
-- Run status と review state は text だけでなく icon と color tone で区別できる。
 - Chat transcript: Markdown をレンダリングした public な途中 assistant message、muted compact tool row、collapsed tool detail、背景で区別した Markdown final output。
 
 状態:
 
-- Loading route fallback: `Loading runs...`。
-- Empty filtered list: 表示領域を埋める高さで `No matching runs` と open-tasks action を表示する。
+- Loading route fallback: `実行を読み込んでいます...`。
+- Missing run ID: transcript や history screen を描画せず `/projects` へ replace redirect する。
 - Selected session loading: page skeleton。
-- Review badge は failed、timed out、interrupted、findings、created schedules の場合に表示される。
 - Active run は event log を 250ms 間隔で tail し、取得した各 chunk を即時 append する。log file がまだ作成されていない間は active status のまま retry し、terminal run だけを unavailable として確定する。terminal run も初回 load で EOF まで取得する。
 - Active run の初回接続中は `実行ログに接続しています…`、接続後に event がまだない場合は `新しい実行ログを待っています…` と表示する。実行中に `ツール呼び出しの記録がありません` と確定表示せず、terminal status になってから empty record を確定する。
 - missing event log は tool call が記録されていない旨を transcript 内で簡潔に表示する。
@@ -77,7 +71,6 @@ read_when:
 
 アクセシビリティ:
 
-- filter と preset は keyboard-reachable control である。
 - status は color だけでなく text badge で伝える。
 - chat transcript は `role="log"` または ordered list として読み上げ順を維持し、active run で追加された public entry を polite live update として通知する。
 - tool call row は視覚上 icon だけで表す tool type に accessible name を付け、status と summary も読み上げ可能にする。detail disclosure は native keyboard interaction で開閉でき、行末 indicator は hover に加えて keyboard focus でも表示する。完了と失敗 status は screen reader text として保持する。
@@ -90,8 +83,7 @@ read_when:
 
 受け入れ条件:
 
-- preset `Failed` の場合、failed run だけが表示される。
-- preset `Review` の場合、failed、timed-out、interrupted、findings、created-schedule run が表示される。
+- run ID なしで `/runs` を開くと global history UI を表示せず `/projects` へ replace redirect する。
 - task detail の session history row を押すと `/runs?run=<runId>` が開く。
 - `/runs?run=<runId>` では global history、filter、preset、tabs、overview、raw log panel、artifact panel を表示しない。
 - session detail の transcript は task prompt を常時表示せず、Markdown としてレンダリングした公開済み途中 agent message、tool usage、Markdown final output を時系列に確認できる。private reasoning と raw HTML は表示しない。
@@ -107,9 +99,8 @@ read_when:
 - active run が selected の場合、run が active status を離れるまで log が poll される。
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。
 - failed / interrupted / timed-out session の `再実行` は新しい manual run を enqueue する。scheduler 自身は自動 retry を作成しない。
-- run history list と session detail は同時に表示されず、browser back または parent task link で session 選択画面へ戻れる。
+- session detail の breadcrumb から parent task へ戻り、その task の `実行履歴` tab で別 session を選べる。
 
 既知の gap:
 
-- review state は derived であり、persisted reviewed または archived state はない。
 - task prompt dialog は現在の task prompt を参照しており、run 開始時点の prompt snapshot は保持していない。
