@@ -35,6 +35,8 @@ fn cli_output(temp_dir: &TempDir, args: &[&str]) -> Output {
         .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
         .env_remove("CODEX_SCHEDULER")
         .env_remove("CODEX_SCHEDULER_APP_VERSION")
+        .env_remove("CODEX_SCHEDULER_DB")
+        .env_remove("CODEX_SCHEDULER_SOCKET")
         .env_remove("CODEX_SCHEDULER_CURRENT_TASK_ID")
         .env_remove("CODEX_SCHEDULER_CURRENT_RUN_ID")
         .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
@@ -314,6 +316,38 @@ async fn create_once_create_cron_and_list_json() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn repo_target_always_uses_project_worktree_mode() {
+    let (temp_dir, handle) = start_test_daemon().await;
+    let repo = temp_dir.path().join("repo");
+    init_git_repo(&repo);
+
+    let created = cli_output(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "project review",
+            "--manual",
+            "--repo",
+            repo.to_str().expect("repo path"),
+            "--prompt",
+            "Review the project in an isolated worktree.",
+            "--json",
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&created.stdout),
+        String::from_utf8_lossy(&created.stderr),
+    );
+    let value = json_stdout(&created);
+    assert_eq!(value["task"]["targetMode"], "repo-worktree");
+
+    handle.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn update_current_uses_env_task_and_token() {
     let (temp_dir, handle) = start_test_daemon().await;
 
@@ -552,7 +586,6 @@ async fn scheduled_run_project_trust_and_settings_set_are_denied() {
             "--manual",
             "--repo",
             repo_path.to_str().expect("repo path"),
-            "--worktree",
             "--prompt",
             "Repo prompt.",
             "--json",
@@ -835,6 +868,18 @@ fn clap_invalid_args_exit_2() {
 }
 
 #[test]
+fn removed_project_execution_flags_are_rejected() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    for removed_flag in ["--local", "--worktree"] {
+        let output = cli_output(&temp_dir, &["create", removed_flag, "--json"]);
+        assert_eq!(output.status.code(), Some(2), "flag={removed_flag}");
+        let value = json_stdout(&output);
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["error"]["code"], "invalid_arguments");
+    }
+}
+
+#[test]
 fn update_current_without_token_exits_4() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let output = Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
@@ -872,4 +917,33 @@ fn scheduled_write_without_token_exits_4_locally() {
     let value = json_stdout(&output);
     assert_eq!(value["ok"], false);
     assert_eq!(value["error"]["code"], "permission_denied");
+}
+
+fn init_git_repo(path: &std::path::Path) {
+    std::fs::create_dir_all(path).expect("create repo");
+    for args in [
+        vec!["init"],
+        vec!["config", "user.name", "Scheduler Test"],
+        vec!["config", "user.email", "scheduler@example.invalid"],
+    ] {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(path)
+            .output()
+            .expect("run git");
+        assert!(output.status.success());
+    }
+    std::fs::write(path.join("README.md"), "test\n").expect("write readme");
+    let add = Command::new("git")
+        .args(["add", "README.md"])
+        .current_dir(path)
+        .output()
+        .expect("git add");
+    assert!(add.status.success());
+    let commit = Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(path)
+        .output()
+        .expect("git commit");
+    assert!(commit.status.success());
 }

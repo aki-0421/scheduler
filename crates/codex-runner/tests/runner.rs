@@ -11,6 +11,7 @@ use scheduler_core::model::{ApprovalPolicy, CleanupPolicy, RunStatus, RunTargetM
 use serde_json::Value;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -200,7 +201,7 @@ async fn injected_event_is_persisted_to_events_jsonl_with_spec_shape() {
 
     let injected_event = outcome.injected_event.unwrap();
     assert_eq!(injected_event.event_type, "scheduler_instructions_injected");
-    assert_eq!(injected_event.payload.version, "2026-07-07");
+    assert_eq!(injected_event.payload.version, "2026-07-10");
     assert_eq!(injected_event.payload.language, "ja");
     assert!(injected_event
         .payload
@@ -215,7 +216,7 @@ async fn injected_event_is_persisted_to_events_jsonl_with_spec_shape() {
         serde_json::json!({
             "eventType": "scheduler_instructions_injected",
             "payload": {
-                "version": "2026-07-07",
+                "version": "2026-07-10",
                 "language": "ja",
                 "capabilities": ["schedule:create", "schedule:update-current", "repo"]
             }
@@ -331,14 +332,57 @@ async fn worktree_run_creates_branch_and_cleans_up_on_success() {
     assert!(outcome.workspace.cleanup_performed);
     let worktree_path = outcome.workspace.worktree_path.unwrap();
     assert!(!worktree_path.exists());
+    let worktree_name = worktree_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .expect("worktree name");
+    let instance_id = worktree_name
+        .strip_prefix("wt-")
+        .expect("timestamp-random worktree prefix");
+    assert_eq!(Uuid::parse_str(instance_id).unwrap().get_version_num(), 7);
 
     let branch_name = outcome.workspace.branch_name.unwrap();
+    assert!(branch_name.ends_with(worktree_name));
     let branch = Command::new("git")
         .args(["rev-parse", "--verify", &branch_name])
         .current_dir(&repo)
         .output()
         .unwrap();
     assert!(branch.status.success());
+}
+
+#[tokio::test]
+async fn legacy_repo_local_target_is_prepared_as_an_isolated_worktree() {
+    let temp = TempDir::new().unwrap();
+    let repo = temp.path().join("repo");
+    init_git_repo(&repo);
+
+    let mut request = base_request(fixture("dummy-codex-success.sh"), &temp);
+    request.codex.reasoning_effort = None;
+    request.target = RunTarget {
+        mode: RunTargetMode::RepoLocal,
+        repo_path: Some(repo.clone()),
+        trusted_roots: vec![temp.path().to_path_buf()],
+        base_ref: None,
+        default_branch: Some("HEAD".to_owned()),
+        fetch_before_worktree: false,
+        worktree_parent: Some(temp.path().join("worktrees")),
+        cleanup_policy: CleanupPolicy::Keep,
+        cleanup_after_days: None,
+    };
+    request.codex.sandbox_mode = Some(SandboxMode::WorkspaceWrite);
+
+    let outcome = CodexRunner::new()
+        .run(request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.workspace.mode, RunTargetMode::RepoWorktree);
+    assert_ne!(
+        outcome.workspace.workspace_path,
+        repo.canonicalize().unwrap()
+    );
+    assert!(outcome.workspace.worktree_path.is_some());
 }
 
 #[cfg(unix)]

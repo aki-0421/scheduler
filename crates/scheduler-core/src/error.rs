@@ -35,11 +35,17 @@ pub enum ValidationError {
     #[error("kind='cron' requires cron_expr")]
     MissingCronExpr,
 
-    #[error("target_mode other than 'chat' requires project_id or repo_path")]
+    #[error("project target requires project_id")]
     MissingTarget,
 
     #[error("target_mode='repo-worktree' requires a git project")]
     RepoWorktreeRequiresGitProject,
+
+    #[error("project targets must use target_mode='repo-worktree'")]
+    ProjectTargetRequiresWorktree,
+
+    #[error("project target repo_path must match the registered git root")]
+    ProjectTargetPathMismatch,
 
     #[error("idempotent run creation requires scheduled_for")]
     IdempotentRunRequiresScheduledFor,

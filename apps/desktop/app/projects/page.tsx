@@ -54,8 +54,17 @@ import type { ProjectDto } from "@/lib/types";
 
 const PROJECT_NAME_STORAGE_KEY = "codex-scheduler.project-display-names";
 
+function formatProjectRegistrationError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message.includes("Git repository")
+      ? "Gitリポジトリ内のフォルダを選択してください。"
+      : error.message;
+  }
+  return "プロジェクトコマンドに失敗しました。";
+}
+
 function formatProjectKind(kind: ProjectDto["kind"]) {
-  return kind === "git" ? "Git" : "フォルダ";
+  return kind === "git" ? "Git" : "Git未検出";
 }
 
 function ProjectKindBadge({ kind }: { kind: ProjectDto["kind"] }) {
@@ -192,17 +201,14 @@ export default function ProjectsPage() {
         return;
       }
       trustProject.mutate(selectedPath, {
-        onSuccess: () => toast.success("プロジェクトを追加しました"),
+        onSuccess: () => toast.success("Gitプロジェクトを追加しました"),
         onError: (error) =>
-          toast.error("プロジェクトを追加できませんでした", {
-            description:
-              error instanceof Error
-                ? error.message
-                : "プロジェクトコマンドに失敗しました。",
+          toast.error("Gitプロジェクトを追加できませんでした", {
+            description: formatProjectRegistrationError(error),
           }),
       });
     } catch (error) {
-      toast.error("フォルダを選択できませんでした", {
+      toast.error("Gitリポジトリを選択できませんでした", {
         description:
           error instanceof Error
             ? error.message
@@ -280,15 +286,15 @@ export default function ProjectsPage() {
     <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-6">
       <PageHeader
         title="プロジェクト"
-        description="スケジュールされた Codex 実行で使うローカルフォルダとリポジトリを管理します。"
+        description="実行ごとのワークツリー作成に使うローカルGitリポジトリを管理します。"
         actions={
           <Button
             type="button"
             disabled={isPickingFolder || trustProject.isPending}
             onClick={() => void addProjectFromFolder()}
           >
-            <FolderOpen className="size-4" aria-hidden="true" />
-            プロジェクトを追加
+            <FolderOpen data-icon="inline-start" aria-hidden="true" />
+            Gitプロジェクトを追加
           </Button>
         }
       />
@@ -380,10 +386,10 @@ export default function ProjectsPage() {
           <EmptyState
             icon={FolderGit2}
             title="プロジェクトがまだありません"
-            description="Codex に任せるローカルフォルダまたはリポジトリを追加してください。"
+            description="ワークツリーの作成元にするローカルGitリポジトリを追加してください。"
             className="flex-1"
             action={{
-              label: "プロジェクトを追加",
+              label: "Gitプロジェクトを追加",
               onClick: () => void addProjectFromFolder(),
             }}
           />

@@ -127,13 +127,46 @@ describe("TaskWizard cron validation", () => {
     expect(taskToDraft(task).timezone).toBe(getSystemTimezone());
   });
 
+  it("normalizes a legacy local repository task to project worktree mode", () => {
+    const task = buildTaskDto(
+      {
+        ...defaultTaskDraft(),
+        name: "Legacy local task",
+        prompt: "Move this task to an isolated worktree.",
+      },
+      false,
+    );
+    task.target.mode = "repo-local";
+
+    expect(taskToDraft(task).targetMode).toBe("repo-worktree");
+  });
+
+  it("selects chat or project with radio cards", async () => {
+    const user = userEvent.setup();
+
+    renderWithClient(<TaskWizard />);
+    await user.click(screen.getByRole("tab", { name: "実行先" }));
+
+    expect(screen.getByRole("radio", { name: /チャット/ })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: /プロジェクト/ }));
+
+    expect(screen.getByRole("radio", { name: /プロジェクト/ })).toBeChecked();
+    expect(
+      screen.getByRole("combobox", { name: "Gitプロジェクト" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Gitリポジトリを追加" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows hardening warnings in advanced settings", async () => {
     const user = userEvent.setup();
     const draft = {
       ...defaultTaskDraft(),
       name: "Danger task",
       prompt: "Run with broad permissions.",
-      targetMode: "repo-local" as const,
+      targetMode: "repo-worktree" as const,
+      projectId: "proj_demo",
       repoPath: "/tmp/repo",
       sandboxMode: "danger-full-access" as const,
       allowScheduleCli: true,
@@ -154,7 +187,7 @@ describe("TaskWizard cron validation", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "実行先" }));
     expect(
-      screen.getByRole("button", { name: "フォルダを選択" }),
+      screen.getByRole("button", { name: "Gitリポジトリを追加" }),
     ).toBeInTheDocument();
   });
 

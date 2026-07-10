@@ -38,7 +38,7 @@ read_when:
 - tabs: `基本`、`実行先`、`スケジュール`、`詳細`。
 - tab list は content panel の外側、直上に配置する。選択中の tab content と footer action は、1つの bordered panel 内に表示する。
 - `基本` tab: required main flow。prompt、task name、任意の description を同じ画面にまとめる。
-- `実行先` tab: target mode、project selector、folder picker、base ref、local modification warning。
+- `実行先` tab: `チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、worktree explanation。
 - `スケジュール` tab: schedule selector、schedule-specific fields、PC timezone indicator、preview。timezone selector は置かない。
 - `詳細` tab: Codex model、permission、retry、cleanup、scheduler CLI、lock / pause safety controls。
 - tab content の先頭には、tab label と同義の section heading や説明文を置かない。
@@ -47,9 +47,9 @@ read_when:
 フィールドとコントロール:
 
 - prompt textarea、import prompt button、task name、任意の description。
-- target mode: chat workspace、existing repository、fresh worktree。
-- project selector: registered project または folder picker から追加した project。
-- repository path は手入力ではなく project selection / folder picker によって設定する。
+- target radio cards: `チャット` は app-managed workspace、`プロジェクト` は registered Git project の isolated worktree。
+- project selector: registered Git project、または Git repository folder picker から追加した project。folder project は選択肢に出さない。
+- repository path は手入力ではなく project selection / Git folder picker によって設定する。project target は常に `repo-worktree` DTO を生成する。
 - base ref。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
 - once date and time、preset time、weekly day、custom 5-field cron、PC timezone indicator、next-five-runs preview。
@@ -75,7 +75,7 @@ read_when:
 バリデーションとエラー:
 
 - required: prompt、task name、frontier model、reasoning effort。timezone は PC から自動設定される内部必須値である。
-- repository target には registered project が必要。
+- project target には Git root を持つ registered Git project が必要。
 - once schedule には現在の PC timezone に対して valid な date and time が必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。
 - max runtime は少なくとも 60 seconds。
@@ -89,7 +89,7 @@ read_when:
 
 - follow-up prefill loading は skeleton content を表示する。
 - project selection state は registered project name と local path を表示する。
-- existing repository かつ workspace-write の場合、local change が変更され得る warning を表示する。
+- project target は実行ごとに isolated worktree を作成し、登録した project root を直接変更しないことを表示する。
 - locked task edit は lock badge と unlock guidance を表示する。
 - cron preview は valid な場合に next five runs、once schedule の場合に once preview、manual task の場合に manual guidance、invalid な場合に fix-schedule guidance を表示する。
 - manual 以外の schedule summary は、現在の PC timezone を自動使用することと IANA timezone 名を表示する。
@@ -105,7 +105,7 @@ read_when:
 
 セキュリティと安全性:
 
-- repository task は save 前に project scope を surface する。
+- project task は save 前に Git project scope と isolated worktree execution を surface する。
 - `danger-full-access` は単なる dropdown value ではない。warning と required confirmation を開く。
 - Schedule CLI capability は explicit であり、`maxCreatedSchedulesPerRun` によって capped される。
 - locked task は scheduled Codex session による edit / delete / pause / resume を拒否するため、lock / unlock は audit に記録する。
@@ -114,7 +114,8 @@ read_when:
 
 - prompt または name が empty の場合、save は error summary を表示し、`基本` tab 内の最初の invalid field に focus する。
 - repository、schedule、advanced field に error がある場合、save は対象 tab を開いて field に focus する。
-- repository target に project がない場合、save は blocked される。
+- project target に registered Git project がない場合、save は blocked される。
+- 実行先は `チャット` / `プロジェクト` の keyboard-operable radio cards で選択でき、`プロジェクト` を保存した DTO は `repo-worktree` になる。
 - locked task を edit しようとした場合、unlock なしでは save できない。
 - `danger-full-access` に confirmation がない場合、save は blocked される。
 - valid cron schedule の場合、preview は next five runs を list する。

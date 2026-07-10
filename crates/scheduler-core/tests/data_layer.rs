@@ -105,14 +105,14 @@ fn sample_run(task_id: &str, scheduled_for: &str) -> Run {
 }
 
 #[tokio::test]
-async fn migration_creates_v2_schema() {
+async fn migration_creates_v3_schema() {
     let (_temp_dir, db) = temp_db().await;
 
     let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(db.pool())
         .await
         .expect("user_version");
-    assert_eq!(user_version, 2);
+    assert_eq!(user_version, 3);
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master
@@ -171,6 +171,121 @@ async fn migration_creates_v2_schema() {
 }
 
 #[tokio::test]
+async fn v3_migration_moves_git_tasks_to_worktrees_and_pauses_folder_tasks() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db_path = temp_dir.path().join("scheduler.sqlite3");
+    let db = SchedulerDb::connect(&db_path).await.expect("connect db");
+    let now = now_rfc3339();
+    let git_project = Project {
+        id: new_project_id(),
+        name: "git-project".to_owned(),
+        path: "/tmp/git-project".to_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some("/tmp/git-project".to_owned()),
+        git_remote_url: None,
+        default_branch: Some("main".to_owned()),
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    };
+    let folder_project = Project {
+        id: new_project_id(),
+        name: "folder-project".to_owned(),
+        path: "/tmp/folder-project".to_owned(),
+        kind: ProjectKind::Folder,
+        git_root: None,
+        git_remote_url: None,
+        default_branch: None,
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    db.create_project(&git_project).await.expect("git project");
+    db.create_project(&folder_project)
+        .await
+        .expect("folder project");
+
+    let git_task = sample_task("legacy-git-task");
+    let worktree_task = sample_task("legacy-worktree-task");
+    let folder_task = sample_task("legacy-folder-task");
+    db.create_task(&git_task).await.expect("git task");
+    db.create_task(&worktree_task).await.expect("worktree task");
+    db.create_task(&folder_task).await.expect("folder task");
+    sqlx::query(
+        "UPDATE tasks SET target_mode = 'repo-local', project_id = ?, repo_path = ? WHERE id = ?",
+    )
+    .bind(&git_project.id)
+    .bind(&git_project.path)
+    .bind(&git_task.id)
+    .execute(db.pool())
+    .await
+    .expect("legacy git target");
+    sqlx::query(
+        "UPDATE tasks SET target_mode = 'repo-worktree', project_id = ?, repo_path = ? WHERE id = ?",
+    )
+    .bind(&git_project.id)
+    .bind("/tmp/git-project/subdirectory")
+    .bind(&worktree_task.id)
+    .execute(db.pool())
+    .await
+    .expect("legacy worktree target");
+    sqlx::query(
+        "UPDATE tasks SET target_mode = 'repo-local', project_id = ?, repo_path = ? WHERE id = ?",
+    )
+    .bind(&folder_project.id)
+    .bind(&folder_project.path)
+    .bind(&folder_task.id)
+    .execute(db.pool())
+    .await
+    .expect("legacy folder target");
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 3")
+        .execute(db.pool())
+        .await
+        .expect("rewind migration record");
+    sqlx::query("PRAGMA user_version = 2")
+        .execute(db.pool())
+        .await
+        .expect("rewind user version");
+    drop(db);
+
+    let migrated = SchedulerDb::connect(&db_path)
+        .await
+        .expect("apply v3 migration");
+    let migrated_git = migrated
+        .get_task(&git_task.id)
+        .await
+        .expect("get git task")
+        .expect("git task");
+    assert_eq!(migrated_git.target_mode, RunTargetMode::RepoWorktree);
+    assert_eq!(migrated_git.status, TaskStatus::Active);
+    assert_eq!(
+        migrated_git.repo_path.as_deref(),
+        git_project.git_root.as_deref()
+    );
+    let migrated_worktree = migrated
+        .get_task(&worktree_task.id)
+        .await
+        .expect("get worktree task")
+        .expect("worktree task");
+    assert_eq!(migrated_worktree.target_mode, RunTargetMode::RepoWorktree);
+    assert_eq!(migrated_worktree.status, TaskStatus::Active);
+    assert_eq!(
+        migrated_worktree.repo_path.as_deref(),
+        git_project.git_root.as_deref()
+    );
+
+    let migrated_folder = migrated
+        .get_task(&folder_task.id)
+        .await
+        .expect("get folder task")
+        .expect("folder task");
+    assert_eq!(migrated_folder.target_mode, RunTargetMode::RepoLocal);
+    assert_eq!(migrated_folder.status, TaskStatus::Paused);
+    assert_eq!(migrated_folder.schedule_status, ScheduleStatus::Invalid);
+    assert!(migrated_folder.schedule_error.is_some());
+}
+
+#[tokio::test]
 async fn task_crud_and_validation() {
     let (_temp_dir, db) = temp_db().await;
     let mut task = sample_task("status-summary");
@@ -222,10 +337,10 @@ async fn task_crud_and_validation() {
     let err = db
         .create_task(&invalid_target)
         .await
-        .expect_err("repo target required");
+        .expect_err("local project targets are rejected");
     assert!(matches!(
         err,
-        SchedulerError::Validation(ValidationError::MissingTarget)
+        SchedulerError::Validation(ValidationError::ProjectTargetRequiresWorktree)
     ));
 
     let mut invalid_worktree = sample_task("invalid-worktree");
@@ -237,7 +352,65 @@ async fn task_crud_and_validation() {
         .expect_err("repo-worktree requires a git project_id");
     assert!(matches!(
         err,
+        SchedulerError::Validation(ValidationError::MissingTarget)
+    ));
+
+    let now = now_rfc3339();
+    let folder_project = Project {
+        id: new_project_id(),
+        name: "folder".to_owned(),
+        path: "/tmp/folder".to_owned(),
+        kind: ProjectKind::Folder,
+        git_root: None,
+        git_remote_url: None,
+        default_branch: None,
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    db.create_project(&folder_project)
+        .await
+        .expect("create legacy folder project");
+    let mut invalid_folder_project = sample_task("invalid-folder-project");
+    invalid_folder_project.target_mode = RunTargetMode::RepoWorktree;
+    invalid_folder_project.project_id = Some(folder_project.id);
+    invalid_folder_project.repo_path = Some("/tmp/folder".to_owned());
+    let err = db
+        .create_task(&invalid_folder_project)
+        .await
+        .expect_err("project worktree requires git");
+    assert!(matches!(
+        err,
         SchedulerError::Validation(ValidationError::RepoWorktreeRequiresGitProject)
+    ));
+
+    let now = now_rfc3339();
+    let git_project = Project {
+        id: new_project_id(),
+        name: "git".to_owned(),
+        path: "/tmp/git".to_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some("/tmp/git".to_owned()),
+        git_remote_url: None,
+        default_branch: Some("main".to_owned()),
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    db.create_project(&git_project)
+        .await
+        .expect("create git project");
+    let mut mismatched_project_path = sample_task("mismatched-project-path");
+    mismatched_project_path.target_mode = RunTargetMode::RepoWorktree;
+    mismatched_project_path.project_id = Some(git_project.id);
+    mismatched_project_path.repo_path = Some("/tmp/other".to_owned());
+    let err = db
+        .create_task(&mismatched_project_path)
+        .await
+        .expect_err("project path must match registered git root");
+    assert!(matches!(
+        err,
+        SchedulerError::Validation(ValidationError::ProjectTargetPathMismatch)
     ));
 
     let deleted_at = now_rfc3339();

@@ -34,6 +34,10 @@ function id(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function worktreeInstanceName() {
+  return `wt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -158,7 +162,7 @@ let tasks: TaskDto[] = [
     timezone: "Asia/Tokyo",
     nextRunAt: undefined,
     target: {
-      mode: "repo-local",
+      mode: "repo-worktree",
       projectId: "proj_demo",
       repoPath: "/Users/aki-0421/conductor/workspaces/scheduler/davis-v2",
       baseRef: "main",
@@ -243,10 +247,11 @@ let runs: RunDto[] = [
     durationMs: 240_000,
     targetMode: "repo-worktree",
     workspacePath:
-      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/run_success",
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/wt-01900000-0000-7000-8000-000000000001",
     worktreePath:
-      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/run_success",
-    branchName: "codex-scheduler/daily-review/run_success",
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/wt-01900000-0000-7000-8000-000000000001",
+    branchName:
+      "codex-scheduler/daily-review/wt-01900000-0000-7000-8000-000000000001",
     baseRef: "main",
     commitBefore: "abc123",
     commitAfter: "def456",
@@ -279,10 +284,13 @@ let runs: RunDto[] = [
     startedAt: minutesAgo(89),
     endedAt: minutesAgo(84),
     durationMs: 300_000,
-    targetMode: "repo-local",
-    workspacePath: "/Users/aki-0421/conductor/workspaces/scheduler/davis-v2",
-    worktreePath: undefined,
-    branchName: undefined,
+    targetMode: "repo-worktree",
+    workspacePath:
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/dependency-scan/wt-01900000-0000-7000-8000-000000000002",
+    worktreePath:
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/dependency-scan/wt-01900000-0000-7000-8000-000000000002",
+    branchName:
+      "codex-scheduler/dependency-scan/wt-01900000-0000-7000-8000-000000000002",
     baseRef: "main",
     commitBefore: "feed01",
     commitAfter: undefined,
@@ -317,10 +325,11 @@ let runs: RunDto[] = [
     durationMs: undefined,
     targetMode: "repo-worktree",
     workspacePath:
-      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/run_running",
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/wt-01900000-0000-7000-8000-000000000003",
     worktreePath:
-      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/run_running",
-    branchName: "codex-scheduler/daily-review/run_running",
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/wt-01900000-0000-7000-8000-000000000003",
+    branchName:
+      "codex-scheduler/daily-review/wt-01900000-0000-7000-8000-000000000003",
     baseRef: "main",
     commitBefore: "abc123",
     commitAfter: undefined,
@@ -442,6 +451,11 @@ function activeTaskCountForProject(project: ProjectDto) {
 
 function createRun(taskId: string, status: RunStatus = "queued") {
   const task = taskById(taskId);
+  const worktreeName =
+    task.target.mode === "repo-worktree" ? worktreeInstanceName() : undefined;
+  const worktreePath = worktreeName
+    ? `/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/${task.slug}/${worktreeName}`
+    : undefined;
   const run: RunDto = {
     id: id("run"),
     taskId: task.id,
@@ -455,9 +469,11 @@ function createRun(taskId: string, status: RunStatus = "queued") {
     endedAt: undefined,
     durationMs: undefined,
     targetMode: task.target.mode,
-    workspacePath: task.target.repoPath,
-    worktreePath: undefined,
-    branchName: undefined,
+    workspacePath: worktreePath ?? task.target.repoPath,
+    worktreePath,
+    branchName: worktreeName
+      ? `codex-scheduler/${task.slug}/${worktreeName}`
+      : undefined,
     baseRef: task.target.baseRef,
     commitBefore: undefined,
     commitAfter: undefined,
@@ -502,7 +518,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const health: HealthDto = {
         ok: true,
         version: "dev-mock",
-        dbSchemaVersion: 1,
+        dbSchemaVersion: 3,
         schedulerEnabled: enabled,
         runningCount: runs.filter((run) => run.status === "running").length,
         queuedCount: runs.filter((run) => run.status === "queued").length,
@@ -518,7 +534,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       ) as boolean;
       const diagnostics: DaemonDiagnostics = {
         version: "dev-mock",
-        dbSchemaVersion: 1,
+        dbSchemaVersion: 3,
         dataDir: "/tmp/codex-scheduler",
         socketPath: "/tmp/codex-scheduler/scheduler.sock",
         dbSizeBytes: 4096,
@@ -630,7 +646,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
         id: id("proj"),
         name: path.split("/").filter(Boolean).at(-1) ?? "プロジェクト",
         path,
-        kind: path.includes(".git") ? "git" : "folder",
+        kind: "git",
         gitRoot: path,
         gitRemoteUrl: undefined,
         defaultBranch: "main",

@@ -317,7 +317,7 @@ async fn daemon_health_returns_shape_over_uds() {
     .expect("health rpc");
 
     assert!(health.ok);
-    assert_eq!(health.db_schema_version, 2);
+    assert_eq!(health.db_schema_version, 3);
     assert!(health.scheduler_enabled);
     assert_eq!(health.running_count, 0);
     assert_eq!(health.queued_count, 0);
@@ -339,7 +339,7 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
     .await
     .expect("diagnostics rpc");
 
-    assert_eq!(diagnostics.db_schema_version, 2);
+    assert_eq!(diagnostics.db_schema_version, 3);
     assert_eq!(
         diagnostics.data_dir,
         temp.path().to_string_lossy().into_owned()
@@ -519,6 +519,78 @@ async fn project_trust_sets_default_branch_from_local_main_without_origin() {
 }
 
 #[tokio::test]
+async fn project_trust_reuses_a_legacy_project_registered_from_a_subdirectory() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo = init_repo_with_local_main(&temp);
+    let subdirectory = repo.join("packages/app");
+    std::fs::create_dir_all(&subdirectory).expect("create project subdirectory");
+    let canonical_repo = repo.canonicalize().expect("canonical repo");
+    let canonical_subdirectory = subdirectory
+        .canonicalize()
+        .expect("canonical project subdirectory");
+    let now = now_rfc3339();
+    let legacy_project = Project {
+        id: new_project_id(),
+        name: "legacy-subdirectory".to_owned(),
+        path: canonical_subdirectory.to_string_lossy().into_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some(canonical_repo.to_string_lossy().into_owned()),
+        git_remote_url: None,
+        default_branch: Some("main".to_owned()),
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    handle
+        .db()
+        .create_project(&legacy_project)
+        .await
+        .expect("create legacy project");
+
+    let trusted: ProjectTrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: subdirectory.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("trust existing project");
+
+    assert_eq!(trusted.project.id, legacy_project.id);
+    assert_eq!(handle.db().list_projects().await.unwrap().len(), 1);
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn project_trust_rejects_a_non_git_directory() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let folder = temp.path().join("plain-folder");
+    std::fs::create_dir_all(&folder).expect("create folder");
+
+    let denied = rpc::call_raw(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: folder.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("project trust response");
+
+    let error = denied.error.expect("validation error");
+    assert_eq!(error.code, JsonRpcErrorCode::ValidationFailed.code());
+    assert!(error.message.contains("Git repository"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn project_list_fills_missing_default_branch_from_detected_main() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
@@ -571,8 +643,7 @@ async fn project_list_fills_missing_default_branch_from_detected_main() {
 #[tokio::test]
 async fn project_untrust_clears_trusted_at_in_project_list_and_counts_active_tasks() {
     let (temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
-    let project_path = temp.path().join("trusted-project");
-    std::fs::create_dir_all(&project_path).expect("create project dir");
+    let project_path = init_repo_with_local_main(&temp);
 
     let trusted: ProjectTrustResult = rpc::call(
         &handle.socket_path(),
@@ -587,8 +658,9 @@ async fn project_untrust_clears_trusted_at_in_project_list_and_counts_active_tas
     assert!(trusted.project.trusted_at.is_some());
 
     let mut task = sample_task_dto("untrust-affected", TaskKind::Manual);
-    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.mode = RunTargetMode::RepoWorktree;
     task.target.project_id = Some(trusted.project.id.clone());
+    task.target.repo_path = trusted.project.git_root.clone();
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
@@ -1598,10 +1670,9 @@ async fn run_token_can_only_cancel_own_run_and_revokes_immediately() {
 }
 
 #[tokio::test]
-async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
+async fn scheduled_run_cannot_create_an_unregistered_project_target() {
     let (temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
-    let repo_path = temp.path().join("untrusted-repo");
-    std::fs::create_dir_all(&repo_path).expect("repo dir");
+    let repo_path = init_repo_with_local_main(&temp);
     let (source_task, token, run_id) = source_token(
         &handle,
         &executor,
@@ -1611,9 +1682,9 @@ async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
     .await;
 
     let mut task = sample_task_dto("untrusted-created", TaskKind::Manual);
-    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.mode = RunTargetMode::RepoWorktree;
     task.target.repo_path = Some(repo_path.to_string_lossy().into_owned());
-    let created: TaskResult = rpc::call(
+    let denied = rpc::call_raw(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
         with_invocation_metadata(
@@ -1631,34 +1702,10 @@ async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
         ),
     )
     .await
-    .expect("create paused");
+    .expect("create response");
 
-    let stored = handle
-        .db()
-        .get_task(&created.task.id)
-        .await
-        .expect("get task")
-        .expect("task");
-    assert_eq!(stored.status, TaskStatus::Paused);
-    assert_eq!(
-        stored.repo_path.as_deref(),
-        Some(
-            repo_path
-                .canonicalize()
-                .expect("canonical")
-                .to_str()
-                .unwrap()
-        )
-    );
-    let audits = handle
-        .db()
-        .list_task_audit_events(&stored.id)
-        .await
-        .expect("audits");
-    assert!(audits
-        .iter()
-        .any(|audit| audit.action == "task.review_required"
-            && audit.reason.as_deref() == Some("untrusted_repo_path")));
+    let error = denied.error.expect("validation error");
+    assert_eq!(error.code, JsonRpcErrorCode::ValidationFailed.code());
 
     handle.shutdown().await;
 }
@@ -1667,11 +1714,10 @@ async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
 async fn human_untrusted_repo_path_create_is_validation_error() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
-    let repo_path = temp.path().join("human-untrusted-repo");
-    std::fs::create_dir_all(&repo_path).expect("repo dir");
+    let repo_path = init_repo_with_local_main(&temp);
 
     let mut task = sample_task_dto("human-untrusted", TaskKind::Manual);
-    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.mode = RunTargetMode::RepoWorktree;
     task.target.repo_path = Some(repo_path.to_string_lossy().into_owned());
     let denied = rpc::call_raw(
         &handle.socket_path(),

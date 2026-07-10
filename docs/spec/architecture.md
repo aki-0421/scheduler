@@ -1,7 +1,7 @@
 ---
 title: アーキテクチャ
 description: 実装済み Codex Scheduler の process layout、crate、app shell、sidecar、storage、runtime path を説明する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - desktop shell、daemon process、sidecar packaging、Rust workspace、IPC、persistent runtime path を変更するとき。
   - UI、daemon、CLI、runner、SQLite database がどう接続されるか debug するとき。
@@ -52,7 +52,7 @@ default app data directory は次である。
 - `scheduler.sqlite3`: SQLite database。
 - `scheduler.sock`: daemon Unix socket。
 - `logs/`: run ごとの log directory。
-- `worktrees/`: isolated Git worktree。
+- `worktrees/<task-slug>/wt-<UUIDv7>`: taskごとに整理され、実行ごとに timestamp-ordered random name を持つ isolated Git worktree。
 - `chat-workspaces/`: temporary chat-only workspace。
 
 desktop backend は logs、worktrees、chat workspaces、registered project roots 配下の path だけを open する。

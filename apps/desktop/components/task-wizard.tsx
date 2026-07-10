@@ -6,7 +6,9 @@ import {
   AlertTriangle,
   CalendarClock,
   FileText,
+  FolderGit2,
   FolderOpen,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,6 +19,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -69,6 +75,7 @@ type TaskWizardProps = {
 };
 
 type ScheduleChoice = "manual" | "once" | PresetMode | "cron";
+type TargetChoice = "chat" | "project";
 type WizardTab = "basics" | "target" | "schedule" | "advanced";
 
 const capabilityOptions = [
@@ -101,12 +108,6 @@ const weekdayOptions = [
 const weekdayByValue = Object.fromEntries(
   weekdayOptions.map((option) => [option.value, option.label]),
 );
-
-const targetModeOptions = [
-  { value: "chat", label: "チャットワークスペース" },
-  { value: "repo-local", label: "既存リポジトリ" },
-  { value: "repo-worktree", label: "新規ワークツリー" },
-] satisfies SelectOption<TaskDraft["targetMode"]>[];
 
 const sandboxModeOptions = [
   { value: "read-only", label: "読み取り専用" },
@@ -141,7 +142,7 @@ const cleanupPolicyOptions = [
 const japaneseErrorMessages: Record<string, string> = {
   name: "タスク名は必須です。",
   prompt: "プロンプトは必須です。",
-  repoPath: "リポジトリ実行先にはプロジェクトを選択してください。",
+  repoPath: "プロジェクト実行にはGitプロジェクトを選択してください。",
   onceDate: "有効な日付と時刻を選択してください。",
   onceTime: "有効な日付と時刻を選択してください。",
   model: "モデルは必須です。",
@@ -207,7 +208,7 @@ const errorLabelByKey: Record<string, string> = {
 const errorTargetIds: Record<string, string[]> = {
   prompt: ["task-prompt"],
   name: ["task-name"],
-  repoPath: ["repo-path"],
+  repoPath: ["project"],
   onceDate: ["once-date"],
   onceTime: ["once-time"],
   cronPreview: ["cron-expression"],
@@ -256,6 +257,15 @@ function formatCronError(message?: string) {
   }
 
   return message;
+}
+
+function formatProjectRegistrationError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message.includes("Git repository")
+      ? "Gitリポジトリ内のフォルダを選択してください。"
+      : error.message;
+  }
+  return "プロジェクトコマンドに失敗しました。";
 }
 
 function normalizeErrors(stepErrors: StepErrors): Record<string, string> {
@@ -508,27 +518,28 @@ export function TaskWizard({
   const projectOptions = useMemo<SelectOption<string>[]>(
     () => [
       { value: "none", label: "選択してください" },
-      ...(projects.data ?? []).map((project) => ({
-        value: project.id,
-        label: project.name || project.path,
-      })),
+      ...(projects.data ?? [])
+        .filter((project) => project.kind === "git" && project.gitRoot)
+        .map((project) => ({
+          value: project.id,
+          label: project.name || project.path,
+        })),
     ],
     [projects.data],
   );
   const matchedProject = projects.data?.find(
     (project) =>
-      project.path === draft.repoPath ||
-      project.gitRoot === draft.repoPath ||
-      project.id === draft.projectId,
+      project.kind === "git" &&
+      project.gitRoot &&
+      project.id === draft.projectId &&
+      project.gitRoot === draft.repoPath,
   );
-  const isRepoTarget = draft.targetMode !== "chat";
+  const isRepoTarget = draft.targetMode === "repo-worktree";
+  const targetChoice: TargetChoice = isRepoTarget ? "project" : "chat";
   const isDangerFullAccess = draft.sandboxMode === "danger-full-access";
   const canUpdateAnySchedule =
     draft.allowScheduleCli &&
     draft.capabilities.includes("schedule:update-any");
-  const canModifyLocalChanges =
-    draft.targetMode === "repo-local" &&
-    draft.sandboxMode === "workspace-write";
   const modelReasoningEffortOptions = useMemo(
     () => reasoningEffortOptionsForModel(draft.model),
     [draft.model],
@@ -569,18 +580,19 @@ export function TaskWizard({
     clearErrors("model", "reasoningEffort");
   }
 
-  function updateTargetMode(value: TaskDraft["targetMode"]) {
+  function updateTargetChoice(value: TargetChoice) {
+    const targetMode = value === "project" ? "repo-worktree" : "chat";
     setDraft((current) => ({
       ...current,
-      targetMode: value,
+      targetMode,
       sandboxMode:
-        value !== "chat" && current.sandboxMode === "read-only"
+        targetMode === "repo-worktree" && current.sandboxMode === "read-only"
           ? "workspace-write"
-          : value === "chat" && current.sandboxMode === "workspace-write"
+          : targetMode === "chat" && current.sandboxMode === "workspace-write"
             ? "read-only"
             : current.sandboxMode,
     }));
-    clearErrors("targetMode", "repoPath");
+    clearErrors("targetMode", "projectId", "repoPath");
   }
 
   function updateScheduleChoice(value: ScheduleChoice) {
@@ -613,18 +625,20 @@ export function TaskWizard({
       return;
     }
 
-    const project = projects.data?.find((item) => item.id === value);
-    if (!project) {
+    const project = projects.data?.find(
+      (item) => item.id === value && item.kind === "git" && item.gitRoot,
+    );
+    if (!project?.gitRoot) {
       return;
     }
+    const gitRoot = project.gitRoot;
 
     setDraft((current) => ({
       ...current,
       projectId: project.id,
-      repoPath: project.gitRoot ?? project.path,
+      repoPath: gitRoot,
       baseRef: project.defaultBranch ?? current.baseRef,
-      targetMode:
-        current.targetMode === "chat" ? "repo-local" : current.targetMode,
+      targetMode: "repo-worktree",
     }));
     clearErrors("projectId", "repoPath", "targetMode");
   }
@@ -635,6 +649,15 @@ export function TaskWizard({
       .reduce<
         Record<string, string>
       >((accumulator, value) => ({ ...accumulator, ...value }), {});
+
+    if (
+      draft.targetMode === "repo-worktree" &&
+      projects.data &&
+      !matchedProject
+    ) {
+      allErrors.repoPath =
+        "プロジェクト実行には登録済みGitプロジェクトが必要です。";
+    }
 
     setErrors(allErrors);
     const [firstError] = getOrderedErrorEntries(allErrors);
@@ -716,30 +739,29 @@ export function TaskWizard({
       if (path) {
         trustProject.mutate(path, {
           onSuccess: (project) => {
+            if (project.kind !== "git" || !project.gitRoot) {
+              toast.error("Gitリポジトリを選択してください");
+              return;
+            }
+            const gitRoot = project.gitRoot;
             setDraft((current) => ({
               ...current,
               projectId: project.id,
-              repoPath: project.gitRoot ?? project.path,
+              repoPath: gitRoot,
               baseRef: project.defaultBranch ?? current.baseRef,
-              targetMode:
-                current.targetMode === "chat"
-                  ? "repo-local"
-                  : current.targetMode,
+              targetMode: "repo-worktree",
             }));
             clearErrors("projectId", "repoPath", "targetMode");
-            toast.success("プロジェクトを追加しました");
+            toast.success("Gitプロジェクトを追加しました");
           },
           onError: (error) =>
-            toast.error("プロジェクトを追加できませんでした", {
-              description:
-                error instanceof Error
-                  ? error.message
-                  : "プロジェクトコマンドに失敗しました。",
+            toast.error("Gitプロジェクトを追加できませんでした", {
+              description: formatProjectRegistrationError(error),
             }),
         });
       }
     } catch (error) {
-      toast.error("プロジェクトフォルダを選択できませんでした", {
+      toast.error("Gitリポジトリを選択できませんでした", {
         description:
           error instanceof Error
             ? error.message
@@ -877,77 +899,112 @@ export function TaskWizard({
           </TabsContent>
 
             <TabsContent value="target" className="mt-0 grid gap-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <SelectField
-                id="target-mode"
-                label="実行先"
-                value={draft.targetMode}
-                options={targetModeOptions}
-                onChange={updateTargetMode}
-              />
-              <SelectField
-                id="project"
-                label="プロジェクト"
-                value={draft.projectId || "none"}
-                options={projectOptions}
-                onChange={selectProject}
-                description="登録済みプロジェクトを選ぶか、フォルダを選択して追加します。"
-              />
+            <div className="grid gap-2">
+              <p id="target-choice-label" className="text-sm font-medium">
+                実行先
+              </p>
+              <RadioGroup
+                value={targetChoice}
+                aria-labelledby="target-choice-label"
+                className="grid gap-3 md:grid-cols-2"
+                onValueChange={(value) =>
+                  updateTargetChoice(value as TargetChoice)
+                }
+              >
+                <Label
+                  htmlFor="target-chat"
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors duration-150 hover:bg-muted/50",
+                    targetChoice === "chat" && "border-ring bg-accent/50",
+                  )}
+                >
+                  <RadioGroupItem
+                    id="target-chat"
+                    value="chat"
+                    className="mt-0.5 shrink-0"
+                  />
+                  <MessageSquare
+                    className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="grid gap-1">
+                    <span className="font-medium">チャット</span>
+                    <span className="text-xs font-normal text-muted-foreground text-pretty">
+                      アプリ管理のワークスペースで実行します。
+                    </span>
+                  </span>
+                </Label>
+                <Label
+                  htmlFor="target-project"
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors duration-150 hover:bg-muted/50",
+                    targetChoice === "project" && "border-ring bg-accent/50",
+                  )}
+                >
+                  <RadioGroupItem
+                    id="target-project"
+                    value="project"
+                    className="mt-0.5 shrink-0"
+                  />
+                  <FolderGit2
+                    className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="grid gap-1">
+                    <span className="font-medium">プロジェクト</span>
+                    <span className="text-xs font-normal text-muted-foreground text-pretty">
+                      Gitプロジェクトから実行ごとにワークツリーを作成します。
+                    </span>
+                  </span>
+                </Label>
+              </RadioGroup>
             </div>
             {isRepoTarget ? (
               <div className="grid gap-4">
-                <Field
-                  label="プロジェクトパス"
-                  htmlFor="repo-path"
-                  error={errors.repoPath}
-                  description="パスはプロジェクト選択またはフォルダ選択から設定します。"
-                >
-                  <div className="flex gap-2">
-                    <Input
-                      id="repo-path"
-                      className="min-w-0"
-                      value={draft.repoPath}
-                      readOnly
-                      placeholder="プロジェクトを選択してください"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={isPickingRepo || trustProject.isPending}
-                      onClick={() => void pickRepositoryFolder()}
-                    >
-                      <FolderOpen className="size-4" aria-hidden="true" />
-                      フォルダを選択
-                    </Button>
-                  </div>
-                </Field>
-                <Field label="ベース参照" htmlFor="base-ref">
-                  <Input
-                    id="base-ref"
-                    value={draft.baseRef}
-                    onChange={(event) =>
-                      update("baseRef", event.currentTarget.value)
-                    }
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.45fr)]">
+                  <SelectField
+                    id="project"
+                    label="Gitプロジェクト"
+                    value={draft.projectId || "none"}
+                    options={projectOptions}
+                    onChange={selectProject}
+                    error={errors.repoPath}
+                    description="登録済みのGitプロジェクトを選択します。"
                   />
-                </Field>
+                  <Field label="ベース参照" htmlFor="base-ref">
+                    <Input
+                      id="base-ref"
+                      value={draft.baseRef}
+                      onChange={(event) =>
+                        update("baseRef", event.currentTarget.value)
+                      }
+                    />
+                  </Field>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isPickingRepo || trustProject.isPending}
+                    onClick={() => void pickRepositoryFolder()}
+                  >
+                    <FolderOpen data-icon="inline-start" aria-hidden="true" />
+                    Gitリポジトリを追加
+                  </Button>
+                </div>
                 {matchedProject ? (
                   <div className="rounded-md border p-3 text-xs text-muted-foreground">
-                    {matchedProject.path}
+                    {matchedProject.gitRoot}
                   </div>
                 ) : null}
+                <Alert>
+                  <FolderGit2 className="size-4" aria-hidden="true" />
+                  <AlertTitle>分離されたワークツリーで実行します</AlertTitle>
+                  <AlertDescription>
+                    登録したプロジェクトの作業ツリーを直接変更せず、実行ごとに新しいワークツリーを作成します。
+                  </AlertDescription>
+                </Alert>
               </div>
-            ) : null}
-            {canModifyLocalChanges ? (
-              <Alert variant="warning">
-                <AlertTriangle className="size-4" aria-hidden="true" />
-                <AlertTitle>
-                  既存リポジトリが変更される可能性があります
-                </AlertTitle>
-                <AlertDescription>
-                  ワークスペース書き込みでは、Codex
-                  が現在の作業ツリーのファイルを変更できます。
-                </AlertDescription>
-              </Alert>
             ) : null}
           </TabsContent>
 

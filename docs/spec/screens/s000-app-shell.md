@@ -1,7 +1,7 @@
 ---
 title: S000 App Shell
 description: Codex Scheduler の global shell、sidebar、header、root navigation behavior を定義する。
-updated: 2026-07-09
+updated: 2026-07-10
 read_when:
   - desktop app shell、sidebar、header、global navigation、root redirect、task sidebar behavior を変更するとき。
   - scheduler health summary、task count indicator、settings entry、mobile navigation を変更するとき。
@@ -32,7 +32,7 @@ read_when:
 レイアウト領域:
 
 - sidebar 先頭 section は product title ではなく `プロジェクト` navigation item を表示する。`Codex Scheduler` の title section、brand mark、subtitle は sidebar に置かない。
-- プロジェクトを開いている場合、sidebar の project context と page header では GitHub repository は `user(org)/repo` 形式で表示する。GitHub remote を判定できない folder project は user-editable project name を表示する。
+- プロジェクトを開いている場合、sidebar の project context と page header では GitHub repository は `user(org)/repo` 形式で表示する。GitHub remote を判定できない Git project は user-editable project name を表示する。
 - sidebar section 間は separator line で区切る。
 - `ダッシュボード`、`タスク`、`実行履歴` の top-level navigation item は表示しない。
 - sidebar main section には active scheduled task を実行予定順で表示する。recurring task は次回実行 1 件だけを表示し、実行完了後に次の `nextRunAt` 位置へ移動する。

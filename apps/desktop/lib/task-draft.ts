@@ -22,7 +22,6 @@ import {
   missedPolicySchema,
   overlapPolicySchema,
   sandboxModeSchema,
-  targetModeSchema,
   type TaskDto,
 } from "@/lib/types";
 
@@ -39,7 +38,7 @@ export type TaskDraft = {
   description: string;
   prompt: string;
   injectSchedulerInstructions: boolean;
-  targetMode: "chat" | "repo-local" | "repo-worktree";
+  targetMode: "chat" | "repo-worktree";
   projectId: string;
   repoPath: string;
   baseRef: string;
@@ -266,7 +265,8 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     description: task.description ?? "",
     prompt: task.prompt.body,
     injectSchedulerInstructions: task.prompt.injectSchedulerInstructions,
-    targetMode: task.target.mode,
+    targetMode:
+      task.target.mode === "chat" ? "chat" : ("repo-worktree" as const),
     projectId: task.target.projectId ?? "",
     repoPath: task.target.repoPath ?? "",
     baseRef: task.target.baseRef ?? "main",
@@ -302,15 +302,19 @@ const basicsSchema = z.object({
 
 const targetSchema = z
   .object({
-    targetMode: targetModeSchema,
+    targetMode: z.enum(["chat", "repo-worktree"]),
+    projectId: z.string(),
     repoPath: z.string(),
   })
   .superRefine((value, context) => {
-    if (value.targetMode !== "chat" && !value.repoPath.trim()) {
+    if (
+      value.targetMode === "repo-worktree" &&
+      (!value.projectId.trim() || !value.repoPath.trim())
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["repoPath"],
-        message: "リポジトリ実行先にはリポジトリパスが必要です。",
+        message: "プロジェクト実行には登録済みGitプロジェクトが必要です。",
       });
     }
   });
@@ -464,9 +468,11 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
           : undefined,
     target: {
       mode: draft.targetMode,
-      projectId: draft.projectId || undefined,
+      projectId:
+        draft.targetMode === "chat" ? undefined : draft.projectId || undefined,
       repoPath: draft.targetMode === "chat" ? undefined : draft.repoPath.trim(),
-      baseRef: draft.baseRef.trim() || undefined,
+      baseRef:
+        draft.targetMode === "chat" ? undefined : draft.baseRef.trim() || undefined,
     },
     codex: {
       model: draft.model.trim(),

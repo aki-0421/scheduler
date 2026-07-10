@@ -9,7 +9,7 @@ read_when:
 
 # プロダクトスコープ
 
-Codex Scheduler は、ローカル Codex CLI 作業をスケジュールする macOS ファーストの desktop app である。すでにローカル project folder から Codex を実行しているユーザーが、visible state、local log、明示的な execution policy を持つ recurring または delayed work を実行したい場合を想定している。
+Codex Scheduler は、ローカル Codex CLI 作業をスケジュールする macOS ファーストの desktop app である。すでにローカル Git project から Codex を実行しているユーザーが、visible state、local log、明示的な execution policy を持つ recurring または delayed work を実行したい場合を想定している。
 
 app は、汎用 admin dashboard ではなく、AI work の local automation console のように感じられる必要がある。実装済み UI は、project、upcoming work、failed run、execution session、execution setting のために、compact で task-first な surface を使う。
 
@@ -19,10 +19,10 @@ app は、汎用 admin dashboard ではなく、AI work の local automation con
 
 - scheduler task の作成、編集、一時停止、再開、削除、手動実行。
 - manual、once、cron task の作成。
-- chat workspace、registered project path、または新しい Git worktree を対象にする。
+- chat workspace、または登録済み Git project から実行ごとに作成する isolated worktree を対象にする。project root を直接変更する実行 mode は提供しない。
 - task prompt、model、reasoning effort、sandbox、approval policy、runtime limit、retry count、missed-run handling、overlap handling、schedule CLI capability scope、worktree cleanup policy の設定。timezone は PC の現在値を自動使用する。
 - task list、task detail、run history、run detail、log tail、artifact、audit event、daemon diagnostics の確認。
-- local folder または Git repository を project として追加し、project 配下を task execution scope として使う。
+- local Git repository を project として追加し、scheduler-owned worktree の source として使う。
 - task を lock し、AI / scheduled-run actor からの edit、delete、pause、resume を防ぐ。
 - terminal または scheduled Codex session から `codex-schedule` を使い、daemon 経由で task を管理する。
 

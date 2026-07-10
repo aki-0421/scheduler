@@ -162,12 +162,6 @@ struct TaskFields {
     repo: Option<PathBuf>,
 
     #[arg(long)]
-    worktree: bool,
-
-    #[arg(long)]
-    local: bool,
-
-    #[arg(long)]
     base_ref: Option<String>,
 
     #[arg(long)]
@@ -1260,14 +1254,18 @@ async fn apply_repo_path_trust_policy_sqlite(
         )));
     };
 
-    if task.target_mode == RunTargetMode::RepoWorktree {
-        if project.kind != ProjectKind::Git {
-            return Err(CliError::validation(
-                "repo-worktree target requires a git repository",
-            ));
-        }
-        task.project_id = Some(project.id);
-    }
+    let Some(git_root) = project
+        .git_root
+        .clone()
+        .filter(|root| project.kind == ProjectKind::Git && !root.trim().is_empty())
+    else {
+        return Err(CliError::validation(
+            "project target requires a registered git repository",
+        ));
+    };
+    task.target_mode = RunTargetMode::RepoWorktree;
+    task.project_id = Some(project.id);
+    task.repo_path = Some(git_root);
     Ok(())
 }
 
@@ -1278,7 +1276,11 @@ async fn trusted_project_for_path(
     let projects = db.list_projects().await.map_err(scheduler_error_to_cli)?;
     Ok(projects
         .into_iter()
-        .filter(|project| project.trusted_at.is_some())
+        .filter(|project| {
+            project.trusted_at.is_some()
+                && project.kind == ProjectKind::Git
+                && project.git_root.is_some()
+        })
         .find(|project| {
             let root = project.git_root.as_deref().unwrap_or(&project.path);
             path.starts_with(Path::new(root))
@@ -1355,12 +1357,13 @@ async fn complete_project_fields(
             add_invocation_metadata(params, reason),
         )
         .await?;
-    if project.project.kind != ProjectKind::Git {
+    if project.project.kind != ProjectKind::Git || project.project.git_root.is_none() {
         return Err(CliError::validation(
             "repo-worktree target requires a git repository",
         ));
     }
     task.target.project_id = Some(project.project.id);
+    task.target.repo_path = project.project.git_root;
     Ok(())
 }
 
@@ -1607,18 +1610,8 @@ fn target_from_fields(
     }
     if let Some(repo) = &fields.repo {
         let repo_path = normalize_repo_path(repo)?;
-        let mode = if fields.worktree {
-            RunTargetMode::RepoWorktree
-        } else if fields.local {
-            RunTargetMode::RepoLocal
-        } else {
-            existing
-                .map(|task| task.target.mode)
-                .filter(|mode| *mode != RunTargetMode::Chat)
-                .unwrap_or(RunTargetMode::RepoLocal)
-        };
         return Ok(TaskTargetDto {
-            mode,
+            mode: RunTargetMode::RepoWorktree,
             project_id: None,
             repo_path: Some(repo_path),
             base_ref: fields
@@ -1629,6 +1622,9 @@ fn target_from_fields(
     }
     if let Some(task) = existing {
         let mut target = task.target.clone();
+        if target.mode != RunTargetMode::Chat {
+            target.mode = RunTargetMode::RepoWorktree;
+        }
         if fields.base_ref.is_some() {
             target.base_ref = fields.base_ref.clone();
         }
@@ -1690,16 +1686,6 @@ fn validate_task_fields(fields: &TaskFields, mode: ValidationMode) -> Result<(),
     if fields.chat && fields.repo.is_some() {
         return Err(CliError::validation(
             "--chat and --repo are mutually exclusive",
-        ));
-    }
-    if fields.worktree && fields.local {
-        return Err(CliError::validation(
-            "--worktree and --local are mutually exclusive",
-        ));
-    }
-    if (fields.worktree || fields.local) && fields.repo.is_none() {
-        return Err(CliError::validation(
-            "--worktree and --local require --repo",
         ));
     }
     if mode == ValidationMode::Create && !fields.chat && fields.repo.is_none() {
@@ -1848,7 +1834,7 @@ fn has_schedule_patch(fields: &TaskFields) -> bool {
 }
 
 fn has_target_patch(fields: &TaskFields) -> bool {
-    fields.chat || fields.repo.is_some() || fields.worktree || fields.local
+    fields.chat || fields.repo.is_some()
 }
 
 fn parse_optional_enum<T>(value: Option<&str>, field: &str) -> Result<Option<T>, CliError>

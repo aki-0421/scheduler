@@ -1,7 +1,7 @@
 ---
 title: セキュリティと運用
 description: local trust boundary、project scope、task lock、capability token、sandbox policy、diagnostics、cleanup、release operations を定義する。
-updated: 2026-07-09
+updated: 2026-07-10
 read_when:
   - project scope、task lock、path opening、scheduler token、sandbox default、diagnostics export、cleanup、signing、sidecar release flow を変更するとき。
   - scheduled Codex run の local execution risk を review するとき。
@@ -35,7 +35,7 @@ untrusted input:
 
 ## Project scope
 
-repository-backed task は registered project root 配下でのみ許可される。project は canonical path information、利用可能な場合の Git metadata、detect 可能な場合の GitHub `user(org)/repo` display、default branch を保存する。Git project の default branch が未設定の場合、project 登録時に `origin/main`、`origin/master`、local `main`、local `master` の順に検出して保存し、worktree task の base ref fallback に使う。
+project-backed task は registered Git project でのみ許可され、project root ではなく scheduler-owned isolated worktree で実行される。project 登録は selected directory から Git root を検出できなければ拒否する。project は canonical path、Git root、利用可能な Git metadata、detect 可能な GitHub `user(org)/repo` display、default branch を保存する。default branch が未設定の場合、project 登録時に `origin/main`、`origin/master`、local `main`、local `master` の順に検出して保存し、worktree task の base ref fallback に使う。
 
 project を削除すると project record が inactive になり、audit event が記録される。既存 task は削除も自動 pause もされないが、有効な project が再び存在するまで fail する可能性がある。
 

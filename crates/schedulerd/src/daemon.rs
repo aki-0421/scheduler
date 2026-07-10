@@ -1775,7 +1775,11 @@ async fn path_is_under_trusted_project(
     let projects = db.list_projects().await?;
     Ok(projects
         .iter()
-        .filter(|project| project.trusted_at.is_some())
+        .filter(|project| {
+            project.trusted_at.is_some()
+                && project.kind == ProjectKind::Git
+                && project.git_root.is_some()
+        })
         .any(|project| {
             let root = project.git_root.as_deref().unwrap_or(&project.path);
             path.starts_with(Path::new(root))
@@ -2142,32 +2146,30 @@ async fn rpc_project_trust(
             format!("unable to canonicalize project path: {err}"),
         )
     })?;
-    let path = path_to_string(&canonical);
-    let git_root = detect_git_root(&canonical);
-    let detected_default_branch = git_root
-        .as_deref()
-        .and_then(|root| detect_project_default_branch(Path::new(root)));
+    let git_root = detect_git_root(&canonical).ok_or_else(|| {
+        JsonRpcError::new(
+            JsonRpcErrorCode::ValidationFailed,
+            "project path must be inside a Git repository",
+        )
+    })?;
+    let path = git_root.clone();
+    let detected_default_branch = detect_project_default_branch(Path::new(&git_root));
     let now = now_rfc3339();
-    let mut existing = state
-        .db
-        .list_projects()
-        .await
-        .map_err(map_core_error)?
-        .into_iter()
-        .find(|project| project.path == path);
+    let projects = state.db.list_projects().await.map_err(map_core_error)?;
+    let exact_match = projects
+        .iter()
+        .find(|project| project.path == path)
+        .cloned();
+    let mut existing = exact_match.or_else(|| {
+        projects
+            .into_iter()
+            .find(|project| project.git_root.as_deref() == Some(path.as_str()))
+    });
 
     let project = if let Some(mut project) = existing.take() {
-        project.kind = if git_root.is_some() {
-            ProjectKind::Git
-        } else {
-            ProjectKind::Folder
-        };
-        project.git_root = git_root.clone();
-        project.default_branch = if git_root.is_some() {
-            project.default_branch.or(detected_default_branch.clone())
-        } else {
-            None
-        };
+        project.kind = ProjectKind::Git;
+        project.git_root = Some(git_root.clone());
+        project.default_branch = project.default_branch.or(detected_default_branch.clone());
         project.trusted_at = Some(now.clone());
         project.updated_at = now.clone();
         state
@@ -2179,18 +2181,14 @@ async fn rpc_project_trust(
     } else {
         let project = Project {
             id: new_project_id(),
-            name: canonical
+            name: Path::new(&git_root)
                 .file_name()
                 .and_then(|value| value.to_str())
                 .unwrap_or("Project")
                 .to_owned(),
             path: path.clone(),
-            kind: if git_root.is_some() {
-                ProjectKind::Git
-            } else {
-                ProjectKind::Folder
-            },
-            git_root,
+            kind: ProjectKind::Git,
+            git_root: Some(git_root),
             git_remote_url: None,
             default_branch: detected_default_branch,
             trusted_at: Some(now.clone()),

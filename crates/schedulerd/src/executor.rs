@@ -9,7 +9,7 @@ use codex_runner::{
 };
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::model::{
-    new_run_artifact_id, new_run_event_id, Project, Run, RunArtifact, RunArtifactKind,
+    new_run_artifact_id, new_run_event_id, Project, ProjectKind, Run, RunArtifact, RunArtifactKind,
     RunEventSource, RunStatus, SandboxMode, Task,
 };
 use scheduler_core::time::now_rfc3339;
@@ -369,7 +369,11 @@ impl CodexExecutor {
             .map_err(scheduler_error_to_runner_error)?;
         Ok(projects
             .into_iter()
-            .filter(|project| project.trusted_at.is_some())
+            .filter(|project| {
+                project.trusted_at.is_some()
+                    && project.kind == ProjectKind::Git
+                    && project.git_root.is_some()
+            })
             .map(|project| {
                 project
                     .git_root

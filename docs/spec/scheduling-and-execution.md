@@ -73,11 +73,11 @@ runner は configured path または `PATH` で Codex CLI を検出し、canonic
 
 `chat` は app data 配下に scheduler-owned chat workspace を作成し、project を必要としない。
 
-`repo-local` は registered project path で直接実行する。
+`repo-worktree` は登録済み Git project から scheduler worktree root 配下に isolated Git worktree を作成し、task または project default から base ref を選択し、scheduler branch を作成し、execution 前後の Git state を capture し、task cleanup policy を適用する。project root で直接 Codex を実行しない。
 
-`repo-worktree` は scheduler worktree root 配下に isolated Git worktree を作成し、task または project default から base ref を選択し、scheduler branch を作成し、execution 前後の Git state を capture し、task cleanup policy を適用する。
+worktree は task slug directory の下に、実行ごとに新しく生成する `wt-<UUIDv7>` という leaf name で作成する。UUIDv7 は生成 timestamp で順序付け可能な random ID であり、run ID とは独立している。branch name も同じ instance name を含む。path collision 時だけ numeric suffix を付けて retry する。
 
-repository mode には registered project root が必要である。worktree directory 配下の symlink escape attempt は rejected される。
+project mode には registered Git project root が必要である。legacy `repo-local` request が runner に到達した場合も安全側に倒してworktreeとして準備する。worktree directory 配下の symlink escape attempt は rejected される。
 
 ## Prompt composition
 
