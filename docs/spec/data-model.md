@@ -1,7 +1,7 @@
 ---
 title: データモデル
 description: Codex Scheduler の現在の SQLite entity、DTO contract、enum、setting、retention record を定義する。
-updated: 2026-07-10
+updated: 2026-07-11
 read_when:
   - migration、scheduler-core model、IPC DTO、frontend schema、setting、retention behavior を変更するとき。
   - 永続化された task、run、project、audit、token state を debug するとき。
@@ -121,7 +121,7 @@ Rust settings module は次の persisted key を定義する。
 - `retention.failed_run_logs_days`
 - `retention.capability_token_delete_after_hours`
 
-migration は retention setting を seed する。frontend はさらに `daemon.global_concurrency`、`runner.default_model`、`notifications.enabled` の default を理解する。`runner.codex_path` は全 task 共通で、task 固有 override は持たない。値がないか `codex` の場合は `PATH` lookup を使い、それ以外の custom path は Settings の global customization から保存する。sandbox、approval policy、worktree cleanup の setting は持たない。
+migration は retention setting を seed する。frontend はさらに `runner.default_model`、`notifications.enabled` の default を理解する。全体同時実行数は app-wide に無制限であり、旧 `daemon.global_concurrency` setting が残っていても frontend と daemon は参照しない。`runner.codex_path` は全 task 共通で、task 固有 override は持たない。値がないか `codex` の場合は `PATH` lookup を使い、それ以外の custom path は Settings の global customization から保存する。sandbox、approval policy、worktree cleanup の setting は持たない。
 
 ## Retention default
 

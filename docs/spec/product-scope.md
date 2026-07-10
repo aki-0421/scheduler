@@ -1,7 +1,7 @@
 ---
 title: プロダクトスコープ
 description: Codex Scheduler の実装済み product purpose、user、MVP boundary、既知の implementation gap を定義する。
-updated: 2026-07-10
+updated: 2026-07-11
 read_when:
   - product behavior、navigation、task creation、run history、scheduler default を変更するとき。
   - 現在の branch が実装済み scope として何を主張しているか確認するとき。
@@ -21,7 +21,7 @@ app は、汎用 admin dashboard ではなく、AI work の local automation con
 - manual、once、cron task の作成。
 - chat workspace、または登録済み Git project から実行ごとに作成する isolated worktree を対象にする。project root を直接変更する実行 mode は提供しない。
 - task prompt、model、思考レベル、lock、開始状態の設定。timezone は PC の現在値を自動使用する。Codex binary path は Settings の global value を全 task で共有する。
-- すべての task を full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持で実行する。Scheduler CLI は全 action を作成数上限なしで常に利用できる。
+- すべての task を full access、approval request なし、timeout なし、自動 retry なし、全体同時実行数無制限、重複時 skip、未実行分 skip、worktree 保持で実行する。Scheduler CLI は全 action を作成数上限なしで常に利用できる。
 - task list、task detail、run history、run detail、log tail、artifact、audit event、daemon diagnostics の確認。
 - local Git repository を project として追加し、scheduler-owned worktree の source として使う。
 - task を lock し、AI エージェントが使う CLI / scheduled-run actor からの edit、delete、pause、resume を防ぐ。desktop UI の user operation は lock 中も利用できる。
@@ -31,11 +31,11 @@ app は、汎用 admin dashboard ではなく、AI work の local automation con
 
 desktop app には次の top-level page がある。
 
-- App shell: project entry、next-run order の task sidebar、archived task entry、bottom toolbox settings、icon + number health count。
+- App shell: project entry、next-run order の task sidebar、archived task entry、bottom toolbox settings、icon + number の running count。
 - `Projects`: file browser からの project 追加、GitHub `user(org)/repo` display、non-GitHub project name editing、active task count、project removal confirmation。
 - `Tasks`: archived list、task detail、初期表示の session history table、creation form と共通の inline settings、task-name header actions、lock / unlock。
 - `Runs`: global history preset、status と task filter、task session detail、chat UI、tool usage、prompt/output/log/artifact inspection、cancel support。
-- `Settings`: scheduler switch、notification switch、global concurrency、global Codex path、default model、schema version、固定 local path、diagnostics export。
+- `Settings`: scheduler switch、notification switch、global Codex path、default model、schema version、固定 local path、diagnostics export。
 
 ## MVP 境界
 

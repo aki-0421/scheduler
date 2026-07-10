@@ -15,6 +15,8 @@ describe("SettingsPage", () => {
       </TooltipProvider>,
     );
 
+    expect(screen.queryByLabelText("全体同時実行数")).not.toBeInTheDocument();
+
     const customize = screen.getByRole("checkbox", {
       name: /Codex バイナリパスをカスタマイズ/,
     });

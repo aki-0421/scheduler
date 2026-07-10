@@ -1,7 +1,7 @@
 ---
 title: インターフェース
 description: 実装済み desktop UI、Tauri command、daemon JSON-RPC、codex-schedule CLI interface を定義する。
-updated: 2026-07-10
+updated: 2026-07-11
 read_when:
   - UI page、IPC schema、Tauri command、daemon RPC method、codex-schedule behavior を変更するとき。
   - Codex Scheduler と通信する automation を書くとき。
@@ -22,13 +22,13 @@ frontend は daemon data を受け入れる前に typed IPC helper と Zod schem
 - `Archived`
 - bottom toolbox `Settings`
 
-`/` は dashboard を表示せず `/projects` に redirect する。sidebar は project entry、next-run order の task entry、archived task entry、bottom toolbox を持つ。header は scheduler badge と scheduler toggle を表示せず、running / queued を icon + number で表示する。
+`/` は dashboard を表示せず `/projects` に redirect する。sidebar は project entry、next-run order の task entry、archived task entry、bottom toolbox を持つ。header は scheduler badge と scheduler toggle を表示せず、running count だけを icon + number で表示する。
 
 task creation、editing、duplication は wizard で扱う。実行先は radio card の `チャット` と `プロジェクト` から選ぶ。`プロジェクト` は登録済み Git project を必須とし、実行ごとに isolated worktree を作る。field は prompt、name、schedule、project selection、base ref、model、思考レベル、lock state、開始状態を含む。task description field と task 固有 Codex binary path は持たず、内容は name と prompt で表す。cron calculation は validation と next-run data にだけ使い、実行タイミングの preview は表示しない。
 
 Codex binary path は Settings の global customization checkbox を選択したときだけ `runner.codex_path` input で設定し、すべての task に共通適用する。未選択時は `PATH` 上の `codex` を使う。
 
-full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持、Scheduler CLI の全 action と作成数無制限は app-wide invariant であり、task wizard と Settings には選択肢や warning を表示しない。
+full access、approval request なし、timeout なし、自動 retry なし、全体同時実行数無制限、重複時 skip、未実行分 skip、worktree 保持、Scheduler CLI の全 action と作成数無制限は app-wide invariant であり、task wizard と Settings には選択肢や warning を表示しない。
 
 task detail は `/tasks?task=<taskId>` で開き、初期表示の `実行履歴` と `設定` の 2 tabs を持つ。`実行履歴` は session history table だけを表示し、`設定` は task creation と同じ inline form だけを表示する。lock は CLI / scheduled-run actor の mutation を防ぐ control であり、desktop UI の form と user action は lock 中も利用できる。task name と同じ header の右側には primary の run now、secondary の pause / resume、label 付きの `管理` menu を置く。menu は duplicate、lock / unlock、separator、delete の順に構造化し、変更履歴は task detail に表示しない。session row は `/runs?run=<runId>` に遷移する。run detail は global history や tabs を併設せず、public な途中 agent message、muted な compact tool usage、背景で区別した final output だけを時系列に並べた chat UI とする。private reasoning は表示しない。task prompt は header の dialog、prompt を除く current task settings は right sheet から参照する。tool の arguments、output、raw event は既定で閉じた disclosure に置き、event log は cursor pagination で EOF まで取得する。
 

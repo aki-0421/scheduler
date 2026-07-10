@@ -199,24 +199,6 @@ export default function SettingsPage() {
 
       <SettingsSection title="実行">
         <SettingRow
-          label="全体同時実行数"
-          description="デーモンが同時に実行できるスケジューラー実行の最大数です。"
-          htmlFor="global-concurrency"
-        >
-          <Input
-            id="global-concurrency"
-            type="number"
-            min={1}
-            value={form["daemon.global_concurrency"]}
-            onChange={(event) =>
-              update(
-                "daemon.global_concurrency",
-                Number(event.currentTarget.value),
-              )
-            }
-          />
-        </SettingRow>
-        <SettingRow
           label="Codex バイナリパスをカスタマイズ"
           description="通常は PATH 上の codex を使います。必要な場合だけ、すべてのタスクで使うバイナリパスを指定します。"
           htmlFor="customize-codex-path"

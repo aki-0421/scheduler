@@ -71,25 +71,18 @@ function formatTaskTime(task: TaskDto, running: boolean) {
   }).format(new Date(task.nextRunAt));
 }
 
-function HeaderCounts() {
+function HeaderRunningCount() {
   const health = useHealth();
   const running = health.data?.runningCount ?? 0;
-  const queued = health.data?.queuedCount ?? 0;
 
   return (
-    <div
-      className="flex items-center gap-1.5 text-sm text-muted-foreground"
-      aria-label="実行状態"
+    <span
+      className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-surface px-2 text-sm tabular-nums text-muted-foreground"
+      aria-label={`実行中 ${running.toLocaleString("ja-JP")}件`}
     >
-      <span className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-surface px-2 tabular-nums">
-        <Activity className="size-4" aria-hidden="true" />
-        {running.toLocaleString("ja-JP")}
-      </span>
-      <span className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-surface px-2 tabular-nums">
-        <Timer className="size-4" aria-hidden="true" />
-        {queued.toLocaleString("ja-JP")}
-      </span>
-    </div>
+      <Activity className="size-4" aria-hidden="true" />
+      {running.toLocaleString("ja-JP")}
+    </span>
   );
 }
 
@@ -438,7 +431,7 @@ function AppShellContent({ children }: { children: ReactNode }) {
               />
             </div>
             <div className="ml-auto flex items-center gap-3">
-              <HeaderCounts />
+              <HeaderRunningCount />
               <Button asChild size="sm">
                 <Link href="/tasks/new">
                   <Plus className="size-4" aria-hidden="true" />
