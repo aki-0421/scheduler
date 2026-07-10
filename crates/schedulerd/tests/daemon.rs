@@ -288,6 +288,21 @@ fn init_repo_with_origin_main(temp: &TempDir) -> PathBuf {
     repo
 }
 
+fn init_repo_with_local_main(temp: &TempDir) -> PathBuf {
+    let repo = temp.path().join("local-repo");
+    std::fs::create_dir_all(&repo).expect("create local repo");
+
+    run_git(&repo, &["init"]);
+    run_git(&repo, &["config", "user.email", "scheduler@example.com"]);
+    run_git(&repo, &["config", "user.name", "Scheduler Test"]);
+    run_git(&repo, &["checkout", "-b", "main"]);
+    std::fs::write(repo.join("README.md"), "hello\n").expect("write readme");
+    run_git(&repo, &["add", "README.md"]);
+    run_git(&repo, &["commit", "-m", "initial"]);
+    run_git(&repo, &["checkout", "-b", "feature"]);
+    repo
+}
+
 #[tokio::test]
 async fn daemon_health_returns_shape_over_uds() {
     let (_temp, handle, _executor) =
@@ -458,7 +473,7 @@ async fn task_audit_list_returns_task_audit_events_over_uds() {
 }
 
 #[tokio::test]
-async fn project_trust_sets_default_branch_from_origin_head() {
+async fn project_trust_sets_default_branch_from_origin_main() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
     let repo = init_repo_with_origin_main(&temp);
@@ -481,7 +496,30 @@ async fn project_trust_sets_default_branch_from_origin_head() {
 }
 
 #[tokio::test]
-async fn project_list_fills_missing_default_branch_from_origin_head() {
+async fn project_trust_sets_default_branch_from_local_main_without_origin() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo = init_repo_with_local_main(&temp);
+
+    let trusted: ProjectTrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: repo.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("trust project");
+
+    assert_eq!(trusted.project.kind, ProjectKind::Git);
+    assert_eq!(trusted.project.default_branch.as_deref(), Some("main"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn project_list_fills_missing_default_branch_from_detected_main() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
     let repo = std::fs::canonicalize(init_repo_with_origin_main(&temp)).expect("canonical repo");

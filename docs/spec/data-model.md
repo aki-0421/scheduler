@@ -13,7 +13,7 @@ schema version は `2` である。SQLite は database constraint 付きの text
 
 ## 主要エンティティ
 
-`projects` は scheduler task の実行先としてユーザーが追加した local folder または Git repository を記録する。project は stable ID、display name、canonical path、`git` または `folder` kind、任意の Git root、任意の remote URL、任意の GitHub owner/repository display、任意の default branch、timestamp を含む。Git project を登録するとき、default branch が未設定なら daemon は origin の default branch を検出して保存する。project は追加された時点でユーザーが編集を許可した scope とみなし、UI と DTO は `Trusted Project` という別状態を持たない。
+`projects` は scheduler task の実行先としてユーザーが追加した local folder または Git repository を記録する。project は stable ID、display name、canonical path、`git` または `folder` kind、任意の Git root、任意の remote URL、任意の GitHub owner/repository display、任意の default branch、timestamp を含む。Git project を登録するとき、default branch が未設定なら daemon は `origin/main`、`origin/master`、local `main`、local `master` の順に検出して保存する。project は追加された時点でユーザーが編集を許可した scope とみなし、UI と DTO は `Trusted Project` という別状態を持たない。
 
 `tasks` は scheduled work を記録する。task は identity、schedule kind and state、prompt、target、Codex configuration、scheduler CLI permission、missed / overlap / retry / runtime / cleanup policy、lock state、creator metadata、soft-delete metadata を保存する。
 

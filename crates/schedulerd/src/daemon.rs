@@ -2144,9 +2144,9 @@ async fn rpc_project_trust(
     })?;
     let path = path_to_string(&canonical);
     let git_root = detect_git_root(&canonical);
-    let origin_default_branch = git_root
+    let detected_default_branch = git_root
         .as_deref()
-        .and_then(|root| detect_origin_default_branch(Path::new(root)));
+        .and_then(|root| detect_project_default_branch(Path::new(root)));
     let now = now_rfc3339();
     let mut existing = state
         .db
@@ -2164,7 +2164,7 @@ async fn rpc_project_trust(
         };
         project.git_root = git_root.clone();
         project.default_branch = if git_root.is_some() {
-            project.default_branch.or(origin_default_branch.clone())
+            project.default_branch.or(detected_default_branch.clone())
         } else {
             None
         };
@@ -2192,7 +2192,7 @@ async fn rpc_project_trust(
             },
             git_root,
             git_remote_url: None,
-            default_branch: origin_default_branch,
+            default_branch: detected_default_branch,
             trusted_at: Some(now.clone()),
             created_at: now.clone(),
             updated_at: now.clone(),
@@ -2241,7 +2241,7 @@ async fn fill_missing_project_default_branch(
     }
 
     let root = project.git_root.as_deref().unwrap_or(&project.path);
-    let Some(default_branch) = detect_origin_default_branch(Path::new(root)) else {
+    let Some(default_branch) = detect_project_default_branch(Path::new(root)) else {
         return Ok(());
     };
 
@@ -2805,48 +2805,28 @@ fn detect_git_root(path: &Path) -> Option<String> {
     }
 }
 
-fn detect_origin_default_branch(git_root: &Path) -> Option<String> {
-    let symbolic = std::process::Command::new("git")
-        .arg("-C")
-        .arg(git_root)
-        .arg("symbolic-ref")
-        .arg("--quiet")
-        .arg("refs/remotes/origin/HEAD")
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| {
-            let value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-            value
-                .strip_prefix("refs/remotes/origin/")
-                .map(str::to_owned)
-                .or_else(|| value.strip_prefix("origin/").map(str::to_owned))
-        })
-        .filter(|branch| !branch.is_empty());
-    if symbolic.is_some() {
-        return symbolic;
-    }
+fn detect_project_default_branch(git_root: &Path) -> Option<String> {
+    [
+        ("refs/remotes/origin/main", "main"),
+        ("refs/remotes/origin/master", "master"),
+        ("refs/heads/main", "main"),
+        ("refs/heads/master", "master"),
+    ]
+    .into_iter()
+    .find_map(|(reference, branch)| git_ref_exists(git_root, reference).then(|| branch.to_owned()))
+}
 
+fn git_ref_exists(git_root: &Path, reference: &str) -> bool {
     std::process::Command::new("git")
         .arg("-C")
         .arg(git_root)
-        .arg("remote")
-        .arg("show")
-        .arg("origin")
+        .arg("show-ref")
+        .arg("--verify")
+        .arg("--quiet")
+        .arg(reference)
         .output()
         .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(str::trim)
-                .find_map(|line| {
-                    line.strip_prefix("HEAD branch:")
-                        .map(str::trim)
-                        .filter(|branch| !branch.is_empty() && *branch != "(unknown)")
-                        .map(str::to_owned)
-                })
-        })
+        .is_some_and(|output| output.status.success())
 }
 
 fn path_to_string(path: &Path) -> String {

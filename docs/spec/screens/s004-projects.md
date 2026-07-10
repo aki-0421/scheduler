@@ -19,7 +19,7 @@ read_when:
 データ依存:
 
 - project record には `useProjects()` を使う。
-- project add は desktop folder picker command を呼び出し、選択された directory を project として登録する。Git project の default branch が未設定の場合、daemon は origin の default branch を検出して保存する。
+- project add は desktop folder picker command を呼び出し、選択された directory を project として登録する。Git project の default branch が未設定の場合、daemon は `origin/main`、`origin/master`、local `main`、local `master` の順に検出して保存する。
 - project update は display name と project metadata を保存する。
 - project remove で影響を受ける active task count には `useTasks()` を使う。
 
@@ -36,7 +36,8 @@ read_when:
 - `プロジェクトを追加`: file browser UI から directory を選択する。直接 path input は表示しない。
 - Project display name: GitHub remote を検出できる場合は `user(org)/repo` を既定表示にする。GitHub ではない folder project は project settings dialog で任意の project name を編集できる。
 - Project metadata: kind、local path、Git root、default branch、GitHub remote。
-- Project kind、active task count、default branch は icon と semantic color を持つ compact token で表示する。文字だけの cell にしない。
+- Project kind は table の種類 column ではなく、project title の先頭 icon で表示する。
+- Active task count と default branch は icon と semantic color を持つ compact token で表示する。文字だけの cell にしない。
 - Active tasks count: project を対象にする active task count。zero は muted、active count は success tone で表示する。
 - Project table の local path は文字列として表示しない。folder icon button で path を clipboard にコピーする。
 - Actions: copy local path、open project settings、edit name、remove project。
@@ -76,6 +77,7 @@ read_when:
 
 - Projects page に path text input が表示されず、directory selection は file browser UI から開始される。
 - Projects table に local path 文字列は表示されず、folder icon button から path をコピーできる。
+- Projects table に `種類` column は表示されず、project kind は project title 先頭の icon で判別できる。
 - Projects table の row または settings icon を押すと project settings dialog が開く。
 - Projects table は読み取り専用で、display name 編集と削除は project settings dialog から行う。
 - GitHub remote がある project は `user(org)/repo` 形式で表示される。

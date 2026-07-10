@@ -35,7 +35,7 @@ untrusted input:
 
 ## Project scope
 
-repository-backed task は registered project root 配下でのみ許可される。project は canonical path information、利用可能な場合の Git metadata、detect 可能な場合の GitHub `user(org)/repo` display、default branch を保存する。Git project の default branch が未設定の場合、project 登録時に origin の default branch を検出して保存し、worktree task の base ref fallback に使う。
+repository-backed task は registered project root 配下でのみ許可される。project は canonical path information、利用可能な場合の Git metadata、detect 可能な場合の GitHub `user(org)/repo` display、default branch を保存する。Git project の default branch が未設定の場合、project 登録時に `origin/main`、`origin/master`、local `main`、local `master` の順に検出して保存し、worktree task の base ref fallback に使う。
 
 project を削除すると project record が inactive になり、audit event が記録される。既存 task は削除も自動 pause もされないが、有効な project が再び存在するまで fail する可能性がある。
 

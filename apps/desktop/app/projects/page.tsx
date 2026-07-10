@@ -69,6 +69,18 @@ function ProjectKindBadge({ kind }: { kind: ProjectDto["kind"] }) {
   );
 }
 
+function ProjectKindIcon({ kind }: { kind: ProjectDto["kind"] }) {
+  const Icon = kind === "git" ? GitBranch : Folder;
+  return (
+    <span
+      title={formatProjectKind(kind)}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-background text-muted-foreground"
+    >
+      <Icon className="size-4" aria-hidden="true" />
+    </span>
+  );
+}
+
 function ActiveTaskCountBadge({ count }: { count: number }) {
   return (
     <ValueBadge
@@ -284,14 +296,13 @@ export default function ProjectsPage() {
       <section className="flex min-h-0 flex-1 flex-col gap-3">
         {sortedProjects.length ? (
           <div className="overflow-x-auto overflow-y-hidden rounded-lg border bg-surface/70">
-            <Table className="min-w-[720px] table-fixed">
+            <Table className="min-w-[640px] table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead>プロジェクト</TableHead>
                   <TableHead className="w-[5rem] text-center">
                     フォルダ
                   </TableHead>
-                  <TableHead className="w-[8rem]">種類</TableHead>
                   <TableHead className="w-[8rem]">有効なタスク</TableHead>
                   <TableHead className="w-[9rem]">既定ブランチ</TableHead>
                   <TableHead className="w-[5rem] text-right">設定</TableHead>
@@ -309,15 +320,18 @@ export default function ProjectsPage() {
                       onClick={() => openProjectSettings(project)}
                     >
                       <TableCell className="min-w-0">
-                        <div className="min-w-0">
-                          <div className="truncate font-medium">
-                            {displayName}
-                          </div>
-                          {githubName ? (
-                            <div className="truncate text-xs text-muted-foreground">
-                              GitHub remote
+                        <div className="flex min-w-0 items-center gap-2">
+                          <ProjectKindIcon kind={project.kind} />
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">
+                              {displayName}
                             </div>
-                          ) : null}
+                            {githubName ? (
+                              <div className="truncate text-xs text-muted-foreground">
+                                GitHub remote
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
@@ -331,9 +345,6 @@ export default function ProjectsPage() {
                         >
                           <FolderOpen className="size-4" aria-hidden="true" />
                         </Button>
-                      </TableCell>
-                      <TableCell>
-                        <ProjectKindBadge kind={project.kind} />
                       </TableCell>
                       <TableCell>
                         <ActiveTaskCountBadge count={affectedTaskCount} />
