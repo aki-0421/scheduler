@@ -25,7 +25,6 @@ describe("TaskWizard cron validation", () => {
     };
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
-    await user.click(screen.getByRole("tab", { name: "スケジュール" }));
 
     const cronInput = screen.getByLabelText("カスタム cron 式");
     await user.clear(cronInput);
@@ -39,7 +38,6 @@ describe("TaskWizard cron validation", () => {
   });
 
   it("renders the next five cron preview entries", async () => {
-    const user = userEvent.setup();
     const draft = {
       ...defaultTaskDraft(),
       name: "Cron task",
@@ -49,7 +47,6 @@ describe("TaskWizard cron validation", () => {
     };
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
-    await user.click(screen.getByRole("tab", { name: "スケジュール" }));
 
     const preview = screen.getByTestId("cron-preview");
     expect(preview).toHaveTextContent("次の5回");
@@ -57,11 +54,9 @@ describe("TaskWizard cron validation", () => {
   });
 
   it("shows the default cron cadence as the matching schedule preset", async () => {
-    const user = userEvent.setup();
     const draft = defaultTaskDraft();
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
-    await user.click(screen.getByRole("tab", { name: "スケジュール" }));
 
     expect(draft.scheduleMode).toBe("preset");
     expect(draft.presetMode).toBe("weekdays");
@@ -75,14 +70,12 @@ describe("TaskWizard cron validation", () => {
   });
 
   it("uses the PC timezone without presenting a timezone selector", async () => {
-    const user = userEvent.setup();
     const draft = {
       ...defaultTaskDraft(),
       timezone: "America/New_York",
     };
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
-    await user.click(screen.getByRole("tab", { name: "スケジュール" }));
 
     expect(
       screen.queryByRole("combobox", { name: "タイムゾーン" }),
@@ -92,6 +85,19 @@ describe("TaskWizard cron validation", () => {
         `PCのタイムゾーン（${getSystemTimezone()}）を使用します。`,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("uses only the task name and prompt for task content", () => {
+    const draft = {
+      ...defaultTaskDraft(),
+      name: "Focused task",
+      prompt: "Review the repository.",
+    };
+
+    renderWithClient(<TaskWizard initialDraft={draft} />);
+
+    expect(screen.queryByLabelText("説明")).not.toBeInTheDocument();
+    expect(buildTaskDto(draft, false)).not.toHaveProperty("description");
   });
 
   it("maps matching cron tasks back to presets for editing", () => {
@@ -145,7 +151,11 @@ describe("TaskWizard cron validation", () => {
     const user = userEvent.setup();
 
     renderWithClient(<TaskWizard />);
-    await user.click(screen.getByRole("tab", { name: "実行先" }));
+    expect(screen.getByRole("tablist")).toHaveClass("flex-wrap");
+    expect(screen.getByRole("tablist")).not.toHaveClass("overflow-x-auto");
+    expect(
+      screen.getAllByRole("tab").map((tab) => tab.textContent),
+    ).toEqual(["タスク", "詳細"]);
 
     expect(screen.getByRole("radio", { name: /チャット/ })).toBeChecked();
     await user.click(screen.getByRole("radio", { name: /プロジェクト/ }));
@@ -185,7 +195,7 @@ describe("TaskWizard cron validation", () => {
     expect(
       screen.getByText("任意のスケジュールを更新できます"),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "実行先" }));
+    await user.click(screen.getByRole("tab", { name: "タスク" }));
     expect(
       screen.getByRole("button", { name: "Gitリポジトリを追加" }),
     ).toBeInTheDocument();
@@ -270,7 +280,6 @@ describe("TaskWizard cron validation", () => {
     const draft = {
       ...defaultTaskDraft(),
       name: "Daily review",
-      description: "Summarize repository risk.",
       prompt: "Review the repository and report the riskiest changes.",
       targetMode: "repo-worktree" as const,
       projectId: "proj_demo",

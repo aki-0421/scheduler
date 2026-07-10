@@ -78,7 +78,6 @@ let tasks: TaskDto[] = [
     id: "task_daily_review",
     slug: "daily-review",
     name: "毎日のリポジトリレビュー",
-    description: "有効な scheduler ワークスペースのリスクを要約します。",
     status: "active",
     locked: true,
     kind: "cron",
@@ -153,7 +152,6 @@ let tasks: TaskDto[] = [
     id: "task_dependency_scan",
     slug: "dependency-scan",
     name: "依存関係スキャン",
-    description: "依存関係の更新を確認し、フォローアップスケジュールを作成します。",
     status: "paused",
     locked: false,
     kind: "cron",
@@ -194,7 +192,6 @@ let tasks: TaskDto[] = [
     id: "task_release_notes",
     slug: "release-notes",
     name: "リリースノート下書き",
-    description: "次のローカルリリース向けの一度だけの実行です。",
     status: "active",
     locked: false,
     kind: "once",
@@ -518,7 +515,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const health: HealthDto = {
         ok: true,
         version: "dev-mock",
-        dbSchemaVersion: 3,
+        dbSchemaVersion: 4,
         schedulerEnabled: enabled,
         runningCount: runs.filter((run) => run.status === "running").length,
         queuedCount: runs.filter((run) => run.status === "queued").length,
@@ -534,7 +531,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       ) as boolean;
       const diagnostics: DaemonDiagnostics = {
         version: "dev-mock",
-        dbSchemaVersion: 3,
+        dbSchemaVersion: 4,
         dataDir: "/tmp/codex-scheduler",
         socketPath: "/tmp/codex-scheduler/scheduler.sock",
         dbSizeBytes: 4096,

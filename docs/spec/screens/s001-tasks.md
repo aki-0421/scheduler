@@ -30,10 +30,11 @@ read_when:
 - `/tasks?task=<taskId>`: task detail page。`概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作` の tabs で 1 機能ずつ表示する。常時表示の right action panel は置かない。
 - header の文脈説明は title 右の `?` tooltip に置く。subtitle として常時表示しない。list section には title と同義の補足説明文や count 説明文を置かない。
 - detail header: task name、status、lock state、target、next run。
-- tabs: `概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作`。タスク操作は `操作` tab に集約する。
+- tabs: `概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作`。タスク操作は `操作` tab に集約する。tab list は横スクロール領域にせず、利用可能な幅に収まらない場合は複数行へ折り返す。
 - tab content の先頭には、tab label を繰り返すだけの section heading や説明文を置かない。
 - run history row は status、trigger、scheduled/start time、duration、result summary を表示し、押すと `/runs?run=<runId>` へ遷移する。
 - Archived list row の target、schedule、last status、duration は icon と semantic color を持つ compact token を優先し、文字だけの cell を避ける。
+- task description は表示しない。Archived list の補助行には target detail を使い、task detail の概要は status、ID、schedule、target、execution setting に集中する。
 - edit / duplicate flow は right column action から開始する。
 
 フィールドとコントロール:
@@ -81,6 +82,8 @@ read_when:
 - `Run now` が成功した場合、app は scheduler data を invalidate し、`Run queued` toast を表示する。
 - locked task の edit / delete action は disabled で、unlock action が visible である。
 - delete が confirmed された場合、run history は Runs から引き続き discoverable である。
+- task detail の tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
+- archived list、task detail、edit / duplicate flow のいずれにも task description は表示されない。
 
 既知の gap:
 

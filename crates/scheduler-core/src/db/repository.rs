@@ -207,7 +207,7 @@ impl SchedulerDb {
         self.validate_task(task).await?;
         sqlx::query(
             "INSERT INTO tasks (
-                id, slug, name, description, status, locked, kind, cron_expr, run_at, timezone,
+                id, slug, name, status, locked, kind, cron_expr, run_at, timezone,
                 next_run_at, last_scheduled_for, schedule_status, schedule_error, prompt_body,
                 prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
                 base_ref, model, reasoning_effort, sandbox_mode, approval_policy,
@@ -216,14 +216,15 @@ impl SchedulerDb {
                 retry_backoff_sec, cleanup_policy, cleanup_after_days, created_by,
                 created_by_run_id, created_at, updated_at, deleted_at
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )",
         )
         .bind(&task.id)
         .bind(&task.slug)
         .bind(&task.name)
-        .bind(&task.description)
         .bind(task.status)
         .bind(task.locked)
         .bind(task.kind)
@@ -290,7 +291,7 @@ impl SchedulerDb {
         self.validate_task(task).await?;
         let result = sqlx::query(
             "UPDATE tasks SET
-                slug = ?, name = ?, description = ?, status = ?, locked = ?, kind = ?, cron_expr = ?,
+                slug = ?, name = ?, status = ?, locked = ?, kind = ?, cron_expr = ?,
                 run_at = ?, timezone = ?, next_run_at = ?, last_scheduled_for = ?,
                 schedule_status = ?, schedule_error = ?, prompt_body = ?, prompt_hash = ?,
                 inject_scheduler_instructions = ?, target_mode = ?, project_id = ?,
@@ -304,7 +305,6 @@ impl SchedulerDb {
         )
         .bind(&task.slug)
         .bind(&task.name)
-        .bind(&task.description)
         .bind(task.status)
         .bind(task.locked)
         .bind(task.kind)
@@ -1206,8 +1206,7 @@ async fn has_pending_migration(pool: &SqlitePool) -> Result<bool> {
     Ok(false)
 }
 
-const TASK_SELECT_BY_ID: &str =
-    "SELECT id, slug, name, description, status, locked, kind, cron_expr,
+const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
     base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
@@ -1216,8 +1215,7 @@ const TASK_SELECT_BY_ID: &str =
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
     FROM tasks WHERE id = ?";
 
-const TASK_SELECT_BY_SLUG: &str =
-    "SELECT id, slug, name, description, status, locked, kind, cron_expr,
+const TASK_SELECT_BY_SLUG: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
     base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
@@ -1226,7 +1224,7 @@ const TASK_SELECT_BY_SLUG: &str =
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
     FROM tasks WHERE slug = ?";
 
-const TASK_SELECT_ALL: &str = "SELECT id, slug, name, description, status, locked, kind, cron_expr,
+const TASK_SELECT_ALL: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
     base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
@@ -1235,8 +1233,7 @@ const TASK_SELECT_ALL: &str = "SELECT id, slug, name, description, status, locke
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
     FROM tasks ORDER BY updated_at DESC, id DESC";
 
-const TASK_SELECT_ACTIVE_DUE: &str =
-    "SELECT id, slug, name, description, status, locked, kind, cron_expr,
+const TASK_SELECT_ACTIVE_DUE: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
     base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,

@@ -35,7 +35,6 @@ export type TaskDraft = {
   id?: string;
   slug?: string;
   name: string;
-  description: string;
   prompt: string;
   injectSchedulerInstructions: boolean;
   targetMode: "chat" | "repo-worktree";
@@ -212,7 +211,6 @@ export function defaultTaskDraft(): TaskDraft {
 
   return {
     name: "",
-    description: "",
     prompt: "",
     injectSchedulerInstructions: true,
     targetMode: "chat",
@@ -262,7 +260,6 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     id: task.id,
     slug: task.slug,
     name: task.name,
-    description: task.description ?? "",
     prompt: task.prompt.body,
     injectSchedulerInstructions: task.prompt.injectSchedulerInstructions,
     targetMode:
@@ -453,7 +450,6 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
     id: draft.id ?? "",
     slug: draft.slug ?? "",
     name: draft.name.trim(),
-    description: draft.description.trim() || undefined,
     status: paused || draft.forcePaused ? "paused" : "active",
     locked: draft.locked,
     kind,

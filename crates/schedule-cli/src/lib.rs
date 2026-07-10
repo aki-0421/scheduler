@@ -135,9 +135,6 @@ struct TaskFields {
     name: Option<String>,
 
     #[arg(long)]
-    description: Option<String>,
-
-    #[arg(long)]
     prompt: Option<String>,
 
     #[arg(long)]
@@ -202,9 +199,6 @@ struct ClearFlags {
 
     #[arg(long)]
     clear_cron: bool,
-
-    #[arg(long)]
-    clear_description: bool,
 
     #[arg(long)]
     clear_base_ref: bool,
@@ -1390,7 +1384,6 @@ fn build_create_task(fields: &TaskFields, slug: String) -> Result<TaskDto, CliEr
         id: String::new(),
         slug,
         name,
-        description: fields.description.clone(),
         status: if fields.paused {
             TaskStatus::Paused
         } else {
@@ -1445,12 +1438,6 @@ fn apply_task_patch(
     if let Some(name) = &fields.name {
         validate_name(name)?;
         task.name = name.clone();
-    }
-    if clear.clear_description {
-        task.description = None;
-    }
-    if let Some(description) = &fields.description {
-        task.description = Some(description.clone());
     }
     if fields.prompt.is_some() || fields.prompt_file.is_some() {
         task.prompt.body = read_prompt(fields)?;
@@ -1716,11 +1703,6 @@ fn validate_clear_flags(clear: &ClearFlags, fields: &TaskFields) -> Result<(), C
     }
     if clear.clear_cron && fields.cron.is_some() {
         return Err(CliError::validation("--clear-cron conflicts with --cron"));
-    }
-    if clear.clear_description && fields.description.is_some() {
-        return Err(CliError::validation(
-            "--clear-description conflicts with --description",
-        ));
     }
     if clear.clear_base_ref && fields.base_ref.is_some() {
         return Err(CliError::validation(

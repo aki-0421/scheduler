@@ -19,7 +19,6 @@ fn sample_task(kind: TaskKind, cron_expr: Option<&str>, run_at: Option<&str>) ->
         id: "task_01900000-0000-7000-8000-000000000000".to_owned(),
         slug: "sample-task".to_owned(),
         name: "Sample Task".to_owned(),
-        description: None,
         status: TaskStatus::Active,
         locked: false,
         kind,

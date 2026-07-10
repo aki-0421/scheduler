@@ -11,7 +11,6 @@ const activeTask: TaskDto = {
   id: "task_test",
   slug: "task-test",
   name: "Task Test",
-  description: "Task for mutation test",
   status: "active",
   kind: "manual",
   timezone: "UTC",

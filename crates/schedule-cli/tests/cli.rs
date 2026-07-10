@@ -130,7 +130,6 @@ fn sample_task_dto() -> TaskDto {
         id: String::new(),
         slug: "fallback-task".to_owned(),
         name: "fallback task".to_owned(),
-        description: None,
         status: TaskStatus::Active,
         locked: false,
         kind: TaskKind::Manual,
@@ -167,6 +166,19 @@ fn sample_task_dto() -> TaskDto {
             cleanup_policy: Some(CleanupPolicy::Keep),
             cleanup_after_days: None,
         },
+    }
+}
+
+#[test]
+fn task_help_does_not_expose_description_flags() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+
+    for args in [["create", "--help"], ["update", "--help"]] {
+        let output = cli_output(&temp_dir, &args);
+        assert!(output.status.success());
+        let help = String::from_utf8_lossy(&output.stdout);
+        assert!(!help.contains("--description"));
+        assert!(!help.contains("--clear-description"));
     }
 }
 

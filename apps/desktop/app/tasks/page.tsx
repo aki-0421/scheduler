@@ -187,7 +187,7 @@ function TasksPageContent() {
                         />
                       </div>
                       <p className="mt-1 line-clamp-1 max-w-3xl text-xs text-muted-foreground">
-                        {task.description || target.detail}
+                        {target.detail ?? "アプリ管理ワークスペース"}
                       </p>
                     </div>
                     <div className="text-left text-xs text-muted-foreground sm:text-right">

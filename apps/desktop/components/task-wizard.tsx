@@ -76,7 +76,7 @@ type TaskWizardProps = {
 
 type ScheduleChoice = "manual" | "once" | PresetMode | "cron";
 type TargetChoice = "chat" | "project";
-type WizardTab = "basics" | "target" | "schedule" | "advanced";
+type WizardTab = "task" | "advanced";
 
 const capabilityOptions = [
   { value: "schedule:create", label: "スケジュールを作成" },
@@ -167,14 +167,6 @@ const advancedErrorKeys = new Set([
   "dangerConfirmed",
 ]);
 
-const targetErrorKeys = new Set(["repoPath", "projectId", "targetMode"]);
-
-const scheduleErrorKeys = new Set([
-  "onceDate",
-  "onceTime",
-  "cronPreview",
-]);
-
 const errorFieldOrder = [
   "prompt",
   "name",
@@ -224,13 +216,7 @@ function getTabForErrorKey(key: string): WizardTab {
   if (advancedErrorKeys.has(key)) {
     return "advanced";
   }
-  if (targetErrorKeys.has(key)) {
-    return "target";
-  }
-  if (scheduleErrorKeys.has(key)) {
-    return "schedule";
-  }
-  return "basics";
+  return "task";
 }
 
 function formatCronError(message?: string) {
@@ -498,7 +484,7 @@ export function TaskWizard({
     }),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<WizardTab>("basics");
+  const [activeTab, setActiveTab] = useState<WizardTab>("task");
   const [isImportingPrompt, setIsImportingPrompt] = useState(false);
   const [isPickingRepo, setIsPickingRepo] = useState(false);
   const projects = useProjects();
@@ -833,301 +819,343 @@ export function TaskWizard({
         className="grid gap-3"
         onValueChange={(value) => setActiveTab(value as WizardTab)}
       >
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="basics">基本</TabsTrigger>
-          <TabsTrigger value="target">実行先</TabsTrigger>
-          <TabsTrigger value="schedule">スケジュール</TabsTrigger>
+        <TabsList className="w-full justify-start">
+          <TabsTrigger value="task">タスク</TabsTrigger>
           <TabsTrigger value="advanced">詳細</TabsTrigger>
         </TabsList>
 
         <Card>
           <CardContent className="grid gap-5 p-4">
-            <TabsContent value="basics" className="mt-0 grid gap-4">
-            <Field
-              label="プロンプト"
-              htmlFor="task-prompt"
-              error={errors.prompt}
-              description={`${draft.prompt.length.toLocaleString("ja-JP")} 文字`}
-            >
-              <div className="grid gap-2">
-                <Textarea
-                  id="task-prompt"
-                  className="min-h-[360px] resize-y font-mono text-sm leading-6"
-                  value={draft.prompt}
-                  placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"
-                  onChange={(event) =>
-                    update("prompt", event.currentTarget.value)
-                  }
-                />
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isImportingPrompt}
-                    onClick={() => void importPromptFile()}
+            <TabsContent value="task" className="mt-0">
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
+                <section
+                  className="grid content-start gap-4"
+                  aria-labelledby="task-content-heading"
+                >
+                  <h3 id="task-content-heading" className="text-sm font-semibold">
+                    依頼内容
+                  </h3>
+                  <Field
+                    label="タスク名"
+                    htmlFor="task-name"
+                    error={errors.name}
                   >
-                    <FileText className="size-4" aria-hidden="true" />
-                    プロンプトをインポート
-                  </Button>
-                </div>
-              </div>
-            </Field>
-
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.45fr)]">
-              <Field label="タスク名" htmlFor="task-name" error={errors.name}>
-                <Input
-                  id="task-name"
-                  value={draft.name}
-                  placeholder="毎日のリポジトリレビュー"
-                  onChange={(event) =>
-                    update("name", event.currentTarget.value)
-                  }
-                />
-              </Field>
-              <Field label="説明" htmlFor="task-description">
-                <Input
-                  id="task-description"
-                  value={draft.description}
-                  placeholder="任意"
-                  onChange={(event) =>
-                    update("description", event.currentTarget.value)
-                  }
-                />
-              </Field>
-            </div>
-          </TabsContent>
-
-            <TabsContent value="target" className="mt-0 grid gap-4">
-            <div className="grid gap-2">
-              <p id="target-choice-label" className="text-sm font-medium">
-                実行先
-              </p>
-              <RadioGroup
-                value={targetChoice}
-                aria-labelledby="target-choice-label"
-                className="grid gap-3 md:grid-cols-2"
-                onValueChange={(value) =>
-                  updateTargetChoice(value as TargetChoice)
-                }
-              >
-                <Label
-                  htmlFor="target-chat"
-                  className={cn(
-                    "flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors duration-150 hover:bg-muted/50",
-                    targetChoice === "chat" && "border-ring bg-accent/50",
-                  )}
-                >
-                  <RadioGroupItem
-                    id="target-chat"
-                    value="chat"
-                    className="mt-0.5 shrink-0"
-                  />
-                  <MessageSquare
-                    className="mt-0.5 size-5 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="grid gap-1">
-                    <span className="font-medium">チャット</span>
-                    <span className="text-xs font-normal text-muted-foreground text-pretty">
-                      アプリ管理のワークスペースで実行します。
-                    </span>
-                  </span>
-                </Label>
-                <Label
-                  htmlFor="target-project"
-                  className={cn(
-                    "flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors duration-150 hover:bg-muted/50",
-                    targetChoice === "project" && "border-ring bg-accent/50",
-                  )}
-                >
-                  <RadioGroupItem
-                    id="target-project"
-                    value="project"
-                    className="mt-0.5 shrink-0"
-                  />
-                  <FolderGit2
-                    className="mt-0.5 size-5 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="grid gap-1">
-                    <span className="font-medium">プロジェクト</span>
-                    <span className="text-xs font-normal text-muted-foreground text-pretty">
-                      Gitプロジェクトから実行ごとにワークツリーを作成します。
-                    </span>
-                  </span>
-                </Label>
-              </RadioGroup>
-            </div>
-            {isRepoTarget ? (
-              <div className="grid gap-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.45fr)]">
-                  <SelectField
-                    id="project"
-                    label="Gitプロジェクト"
-                    value={draft.projectId || "none"}
-                    options={projectOptions}
-                    onChange={selectProject}
-                    error={errors.repoPath}
-                    description="登録済みのGitプロジェクトを選択します。"
-                  />
-                  <Field label="ベース参照" htmlFor="base-ref">
                     <Input
-                      id="base-ref"
-                      value={draft.baseRef}
+                      id="task-name"
+                      value={draft.name}
+                      placeholder="毎日のリポジトリレビュー"
                       onChange={(event) =>
-                        update("baseRef", event.currentTarget.value)
+                        update("name", event.currentTarget.value)
                       }
                     />
                   </Field>
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isPickingRepo || trustProject.isPending}
-                    onClick={() => void pickRepositoryFolder()}
+                  <Field
+                    label="プロンプト"
+                    htmlFor="task-prompt"
+                    error={errors.prompt}
                   >
-                    <FolderOpen data-icon="inline-start" aria-hidden="true" />
-                    Gitリポジトリを追加
-                  </Button>
-                </div>
-                {matchedProject ? (
-                  <div className="rounded-md border p-3 text-xs text-muted-foreground">
-                    {matchedProject.gitRoot}
-                  </div>
-                ) : null}
-                <Alert>
-                  <FolderGit2 className="size-4" aria-hidden="true" />
-                  <AlertTitle>分離されたワークツリーで実行します</AlertTitle>
-                  <AlertDescription>
-                    登録したプロジェクトの作業ツリーを直接変更せず、実行ごとに新しいワークツリーを作成します。
-                  </AlertDescription>
-                </Alert>
-              </div>
-            ) : null}
-          </TabsContent>
-
-            <TabsContent value="schedule" className="mt-0 grid gap-4">
-            <SelectField
-              id="schedule"
-              label="実行タイミング"
-              value={scheduleChoice}
-              options={scheduleOptions}
-              onChange={updateScheduleChoice}
-            />
-
-            {scheduleChoice === "once" ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="日付" htmlFor="once-date" error={errors.onceDate}>
-                  <Input
-                    id="once-date"
-                    type="date"
-                    value={draft.onceDate}
-                    onChange={(event) =>
-                      update("onceDate", event.currentTarget.value)
-                    }
-                  />
-                </Field>
-                <Field label="時刻" htmlFor="once-time" error={errors.onceTime}>
-                  <Input
-                    id="once-time"
-                    type="time"
-                    value={draft.onceTime}
-                    onChange={(event) =>
-                      update("onceTime", event.currentTarget.value)
-                    }
-                  />
-                </Field>
-              </div>
-            ) : null}
-
-            {scheduleChoice === "daily" ||
-            scheduleChoice === "weekdays" ||
-            scheduleChoice === "weekly" ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {scheduleChoice === "weekly" ? (
-                  <SelectField
-                    id="weekly-day"
-                    label="曜日"
-                    value={draft.weeklyDay}
-                    options={weekdayOptions}
-                    onChange={(value) => update("weeklyDay", value)}
-                  />
-                ) : null}
-                <Field label="時刻" htmlFor="preset-time">
-                  <Input
-                    id="preset-time"
-                    type="time"
-                    value={draft.presetTime}
-                    onChange={(event) =>
-                      update("presetTime", event.currentTarget.value)
-                    }
-                  />
-                </Field>
-              </div>
-            ) : null}
-
-            {scheduleChoice === "cron" ? (
-              <Field
-                label="カスタム cron 式"
-                htmlFor="cron-expression"
-                error={errors.cronPreview ?? cronError}
-                description="5フィールドの cron 式を使ってください。"
-              >
-                <Input
-                  id="cron-expression"
-                  value={draft.cronExpr}
-                  aria-invalid={Boolean(errors.cronPreview ?? cronError)}
-                  onChange={(event) =>
-                    update("cronExpr", event.currentTarget.value, [
-                      "cronPreview",
-                    ])
-                  }
-                  placeholder="0 9 * * 1-5"
-                />
-              </Field>
-            ) : null}
-
-            <div className="rounded-md border bg-muted/30 p-3">
-              <div className="flex items-start gap-2">
-                <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
-                <div className="grid gap-1">
-                  <p className="text-sm font-medium">
-                    {getScheduleSummary(draft)}
-                  </p>
-                  {scheduleChoice !== "manual" ? (
-                    <p className="text-xs text-muted-foreground">
-                      PCのタイムゾーン（{draft.timezone}）を使用します。
-                    </p>
-                  ) : null}
-                  {cronPreview.ok && cronPreview.dates.length ? (
-                    <div data-testid="cron-preview" className="grid gap-1">
-                      <p className="text-xs text-muted-foreground">次の5回</p>
-                      <div className="grid gap-1 text-sm tabular-nums">
-                        {cronPreview.dates.map((date) => (
-                          <span key={date}>{formatDateTime(date)}</span>
-                        ))}
+                    <div className="grid gap-2">
+                      <Textarea
+                        id="task-prompt"
+                        className="min-h-56 resize-y font-mono text-sm leading-6"
+                        value={draft.prompt}
+                        placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"
+                        onChange={(event) =>
+                          update("prompt", event.currentTarget.value)
+                        }
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {draft.prompt.length.toLocaleString("ja-JP")} 文字
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isImportingPrompt}
+                          onClick={() => void importPromptFile()}
+                        >
+                          <FileText className="size-4" aria-hidden="true" />
+                          プロンプトをインポート
+                        </Button>
                       </div>
                     </div>
-                  ) : scheduleChoice === "once" ? (
-                    <p className="text-xs text-muted-foreground">
-                      次回実行: {getOncePreview(draft)}
-                    </p>
-                  ) : scheduleChoice === "manual" ? (
-                    <p className="text-xs text-muted-foreground">
-                      タスク詳細または scheduler CLI
-                      からこのタスクを実行します。
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      今後の実行をプレビューするにはスケジュールを修正してください。
-                    </p>
-                  )}
+                  </Field>
+                </section>
+
+                <div className="grid content-start gap-5 lg:border-l lg:pl-6">
+                  <section
+                    className="grid gap-3"
+                    aria-labelledby="target-choice-label"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3
+                        id="target-choice-label"
+                        className="text-sm font-semibold"
+                      >
+                        実行先
+                      </h3>
+                      {isRepoTarget ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isPickingRepo || trustProject.isPending}
+                          onClick={() => void pickRepositoryFolder()}
+                        >
+                          <FolderOpen
+                            data-icon="inline-start"
+                            aria-hidden="true"
+                          />
+                          Gitリポジトリを追加
+                        </Button>
+                      ) : null}
+                    </div>
+                    <RadioGroup
+                      value={targetChoice}
+                      aria-labelledby="target-choice-label"
+                      className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
+                      onValueChange={(value) =>
+                        updateTargetChoice(value as TargetChoice)
+                      }
+                    >
+                      <Label
+                        htmlFor="target-chat"
+                        className={cn(
+                          "flex cursor-pointer items-start gap-2.5 rounded-lg border bg-background p-3 transition-colors duration-150 hover:bg-muted/50",
+                          targetChoice === "chat" &&
+                            "border-ring bg-accent/50",
+                        )}
+                      >
+                        <RadioGroupItem
+                          id="target-chat"
+                          value="chat"
+                          className="mt-0.5 shrink-0"
+                        />
+                        <MessageSquare
+                          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                        <span className="grid gap-0.5">
+                          <span className="text-sm font-medium">チャット</span>
+                          <span className="text-xs font-normal text-muted-foreground text-pretty">
+                            アプリ管理のワークスペースで実行します。
+                          </span>
+                        </span>
+                      </Label>
+                      <Label
+                        htmlFor="target-project"
+                        className={cn(
+                          "flex cursor-pointer items-start gap-2.5 rounded-lg border bg-background p-3 transition-colors duration-150 hover:bg-muted/50",
+                          targetChoice === "project" &&
+                            "border-ring bg-accent/50",
+                        )}
+                      >
+                        <RadioGroupItem
+                          id="target-project"
+                          value="project"
+                          className="mt-0.5 shrink-0"
+                        />
+                        <FolderGit2
+                          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                        <span className="grid gap-0.5">
+                          <span className="text-sm font-medium">
+                            プロジェクト
+                          </span>
+                          <span className="text-xs font-normal text-muted-foreground text-pretty">
+                            実行ごとにGitワークツリーを作成します。
+                          </span>
+                        </span>
+                      </Label>
+                    </RadioGroup>
+                    {isRepoTarget ? (
+                      <div className="grid gap-3">
+                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+                          <SelectField
+                            id="project"
+                            label="Gitプロジェクト"
+                            value={draft.projectId || "none"}
+                            options={projectOptions}
+                            onChange={selectProject}
+                            error={errors.repoPath}
+                          />
+                          <Field label="ベース参照" htmlFor="base-ref">
+                            <Input
+                              id="base-ref"
+                              value={draft.baseRef}
+                              onChange={(event) =>
+                                update("baseRef", event.currentTarget.value)
+                              }
+                            />
+                          </Field>
+                        </div>
+                        {matchedProject ? (
+                          <div className="break-all rounded-md border p-3 text-xs text-muted-foreground">
+                            {matchedProject.gitRoot}
+                          </div>
+                        ) : null}
+                        <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                          <FolderGit2
+                            className="mt-0.5 size-4 shrink-0"
+                            aria-hidden="true"
+                          />
+                          <p className="text-pretty">
+                            登録した作業ツリーは変更せず、実行ごとに分離ワークツリーを作成します。
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <section
+                    className="grid gap-3 border-t pt-5"
+                    aria-labelledby="schedule-heading"
+                  >
+                    <h3 id="schedule-heading" className="text-sm font-semibold">
+                      スケジュール
+                    </h3>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <SelectField
+                        id="schedule"
+                        label="実行タイミング"
+                        value={scheduleChoice}
+                        options={scheduleOptions}
+                        onChange={updateScheduleChoice}
+                      />
+
+                      {scheduleChoice === "once" ? (
+                        <>
+                          <Field
+                            label="日付"
+                            htmlFor="once-date"
+                            error={errors.onceDate}
+                          >
+                            <Input
+                              id="once-date"
+                              type="date"
+                              value={draft.onceDate}
+                              onChange={(event) =>
+                                update("onceDate", event.currentTarget.value)
+                              }
+                            />
+                          </Field>
+                          <Field
+                            label="時刻"
+                            htmlFor="once-time"
+                            error={errors.onceTime}
+                          >
+                            <Input
+                              id="once-time"
+                              type="time"
+                              value={draft.onceTime}
+                              onChange={(event) =>
+                                update("onceTime", event.currentTarget.value)
+                              }
+                            />
+                          </Field>
+                        </>
+                      ) : null}
+
+                      {scheduleChoice === "daily" ||
+                      scheduleChoice === "weekdays" ||
+                      scheduleChoice === "weekly" ? (
+                        <>
+                          {scheduleChoice === "weekly" ? (
+                            <SelectField
+                              id="weekly-day"
+                              label="曜日"
+                              value={draft.weeklyDay}
+                              options={weekdayOptions}
+                              onChange={(value) => update("weeklyDay", value)}
+                            />
+                          ) : null}
+                          <Field label="時刻" htmlFor="preset-time">
+                            <Input
+                              id="preset-time"
+                              type="time"
+                              value={draft.presetTime}
+                              onChange={(event) =>
+                                update("presetTime", event.currentTarget.value)
+                              }
+                            />
+                          </Field>
+                        </>
+                      ) : null}
+
+                      {scheduleChoice === "cron" ? (
+                        <Field
+                          label="カスタム cron 式"
+                          htmlFor="cron-expression"
+                          error={errors.cronPreview ?? cronError}
+                          description="5フィールドの cron 式を使ってください。"
+                          className="sm:col-span-2"
+                        >
+                          <Input
+                            id="cron-expression"
+                            value={draft.cronExpr}
+                            aria-invalid={Boolean(
+                              errors.cronPreview ?? cronError,
+                            )}
+                            onChange={(event) =>
+                              update("cronExpr", event.currentTarget.value, [
+                                "cronPreview",
+                              ])
+                            }
+                            placeholder="0 9 * * 1-5"
+                          />
+                        </Field>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-md border bg-muted/30 p-3">
+                      <div className="flex items-start gap-2">
+                        <CalendarClock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                        <div className="grid min-w-0 gap-1">
+                          <p className="text-sm font-medium">
+                            {getScheduleSummary(draft)}
+                          </p>
+                          {scheduleChoice !== "manual" ? (
+                            <p className="text-xs text-muted-foreground">
+                              PCのタイムゾーン（{draft.timezone}）を使用します。
+                            </p>
+                          ) : null}
+                          {cronPreview.ok && cronPreview.dates.length ? (
+                            <div
+                              data-testid="cron-preview"
+                              className="grid gap-1"
+                            >
+                              <p className="text-xs text-muted-foreground">
+                                次の5回
+                              </p>
+                              <div className="grid gap-x-3 gap-y-1 text-sm tabular-nums sm:grid-cols-2">
+                                {cronPreview.dates.map((date) => (
+                                  <span key={date}>{formatDateTime(date)}</span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : scheduleChoice === "once" ? (
+                            <p className="text-xs text-muted-foreground">
+                              次回実行: {getOncePreview(draft)}
+                            </p>
+                          ) : scheduleChoice === "manual" ? (
+                            <p className="text-xs text-muted-foreground">
+                              タスク詳細または scheduler CLI
+                              からこのタスクを実行します。
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              今後の実行をプレビューするにはスケジュールを修正してください。
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
                 </div>
               </div>
-            </div>
-          </TabsContent>
+            </TabsContent>
 
             <TabsContent value="advanced" className="mt-0 grid gap-4">
             {isDangerFullAccess ? (

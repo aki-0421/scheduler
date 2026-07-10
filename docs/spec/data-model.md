@@ -9,7 +9,7 @@ read_when:
 
 # データモデル
 
-schema version は `3` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
+schema version は `4` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
 
 ## 主要エンティティ
 
@@ -33,7 +33,7 @@ schema version は `3` である。SQLite は database constraint 付きの text
 
 Task DTO は camelCase field を使う。
 
-- `id`, `slug`, `name`, `description`, `status`
+- `id`, `slug`, `name`, `status`
 - `kind`: `manual`, `once`, `cron`
 - `cronExpr`, `runAt`, `timezone`, `nextRunAt`
 - `target`: `chat` または `repo-worktree` mode、Git project ID、repository path、base ref。project target は登録済み Git project ID を必須とする。
@@ -84,6 +84,8 @@ Run history は start、schedule、queue timestamp で sort できる。active s
 - Project kinds: 新規登録可能な値は `git`。`folder` は既存 database の読み取り互換にだけ残す。
 
 schema version 3 migration は、Git project に紐づく既存 `repo-local` task を `repo-worktree` へ変換し、既存 `repo-worktree` task を含む project target の `repo_path` を登録済み Git root に正規化する。有効な Git project に紐づかない project target は自動実行を防ぐため pause し、invalid schedule reason を保存する。
+
+schema version 4 migration は `tasks.description` と既存 task audit snapshot の top-level `description` key を削除する。task の内容は `name` と `prompt.body` を唯一の source of truth とし、Task DTO、desktop schema、daemon RPC、CLI は task description field を公開しない。
 - Run event sources: `daemon`, `codex-jsonl`, `stdout`, `stderr`
 - Run artifact kinds: `file`, `diff`, `patch`, `log`, `last-message`, `worktree`
 - Audit actor types: `user`, `daemon`, `cli`, `scheduled-run`

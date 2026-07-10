@@ -16,8 +16,6 @@ pub struct TaskDto {
     pub id: String,
     pub slug: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
     pub status: TaskStatus,
     #[serde(default)]
     pub locked: bool,
@@ -97,7 +95,6 @@ impl From<&Task> for TaskDto {
             id: task.id.clone(),
             slug: task.slug.clone(),
             name: task.name.clone(),
-            description: task.description.clone(),
             status: task.status,
             locked: task.locked,
             kind: task.kind,
@@ -159,7 +156,6 @@ impl TryFrom<TaskDto> for Task {
             },
             slug: dto.slug,
             name: dto.name,
-            description: dto.description,
             status: dto.status,
             locked: dto.locked,
             kind: dto.kind,

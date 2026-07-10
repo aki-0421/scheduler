@@ -78,6 +78,8 @@ describe("RunDetail", () => {
     const stdoutPanel = screen.getByRole("tabpanel", { name: "stdout" });
 
     expect(logTabList?.closest("section")).toBeNull();
+    expect(logTabList).toHaveClass("flex-wrap");
+    expect(logTabList).not.toHaveClass("overflow-x-auto");
     expect(stdoutPanel.querySelector("section")).toBeInTheDocument();
   });
 

@@ -35,18 +35,17 @@ read_when:
 - page または dialog header。
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - validation failure 時の error summary alert。
-- tabs: `基本`、`実行先`、`スケジュール`、`詳細`。
-- tab list は content panel の外側、直上に配置する。選択中の tab content と footer action は、1つの bordered panel 内に表示する。
-- `基本` tab: required main flow。prompt、task name、任意の description を同じ画面にまとめる。
-- `実行先` tab: `チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、worktree explanation。
-- `スケジュール` tab: schedule selector、schedule-specific fields、PC timezone indicator、preview。timezone selector は置かない。
+- tabs: `タスク`、`詳細`。従来の `基本`、`実行先`、`スケジュール` は `タスク` tab に統合する。
+- tab list は content panel の外側、直上に配置する。横スクロール領域にはせず、利用可能な幅に収まらない場合は複数行へ折り返す。選択中の tab content と footer action は、1つの bordered panel 内に表示する。
+- `タスク` tab: task name、prompt、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、schedule selector、schedule-specific fields、PC timezone indicator、preview を同じ画面にまとめる。task description field は置かない。desktop width では task content と execution condition を 2 column に分け、狭い width では 1 column に戻す。
+- prompt textarea は resize 可能なまま compact な初期高にし、next-five-runs preview は複数列で表示できる幅では 2 column にして縦方向の占有を抑える。
 - `詳細` tab: Codex model、permission、retry、cleanup、scheduler CLI、lock / pause safety controls。
 - tab content の先頭には、tab label と同義の section heading や説明文を置かない。
 - cancel、save paused、save active の footer action。
 
 フィールドとコントロール:
 
-- prompt textarea、import prompt button、task name、任意の description。
+- prompt textarea、import prompt button、task name。task の内容は task name と prompt だけで表す。
 - target radio cards: `チャット` は app-managed workspace、`プロジェクト` は registered Git project の isolated worktree。
 - project selector: registered Git project、または Git repository folder picker から追加した project。folder project は選択肢に出さない。
 - repository path は手入力ではなく project selection / Git folder picker によって設定する。project target は常に `repo-worktree` DTO を生成する。
@@ -88,6 +87,7 @@ read_when:
 状態:
 
 - follow-up prefill loading は skeleton content を表示する。
+- follow-up prefill は source run ID の文脈を prompt 冒頭に追加し、元 task の prompt を続ける。duplicate は元 task の prompt をそのまま複製する。
 - project selection state は registered project name と local path を表示する。
 - project target は実行ごとに isolated worktree を作成し、登録した project root を直接変更しないことを表示する。
 - locked task edit は lock badge と unlock guidance を表示する。
@@ -112,8 +112,8 @@ read_when:
 
 受け入れ条件:
 
-- prompt または name が empty の場合、save は error summary を表示し、`基本` tab 内の最初の invalid field に focus する。
-- repository、schedule、advanced field に error がある場合、save は対象 tab を開いて field に focus する。
+- prompt、name、repository、schedule field に error がある場合、save は error summary を表示し、`タスク` tab 内の最初の invalid field に focus する。
+- advanced field に error がある場合、save は `詳細` tab を開いて field に focus する。
 - project target に registered Git project がない場合、save は blocked される。
 - 実行先は `チャット` / `プロジェクト` の keyboard-operable radio cards で選択でき、`プロジェクト` を保存した DTO は `repo-worktree` になる。
 - locked task を edit しようとした場合、unlock なしでは save できない。
@@ -123,7 +123,10 @@ read_when:
 - create が成功した場合、user は `/tasks?task=<newTaskId>` に遷移する。
 - duplicate が成功した場合、lock state は unlocked で作成される。
 - edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
-- create、follow-up、duplicate、edit のすべてで、tab list は content panel の外にあり、選択中の tab content は panel として表示される。
+- create、follow-up、duplicate、edit のすべてで、`タスク` / `詳細` の tab list は content panel の外にあり、選択中の tab content は panel として表示される。
+- tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
+- desktop width の `タスク` tab は主要フィールドを 2 column に分け、既定の chat / weekdays state を過度な縦スクロールなしで確認できる。
+- create、follow-up、duplicate、edit のいずれにも task description input は表示されず、保存 DTO に description field を含めない。
 
 既知の gap:
 

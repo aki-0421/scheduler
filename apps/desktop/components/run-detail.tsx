@@ -344,7 +344,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
   return (
     <Tabs defaultValue="overview" className="grid min-w-0 gap-4">
-      <TabsList className="w-full justify-start overflow-x-auto">
+      <TabsList className="w-full justify-start">
         <TabsTrigger value="overview">概要</TabsTrigger>
         <TabsTrigger value="chat">チャット</TabsTrigger>
         <TabsTrigger value="prompt">プロンプト</TabsTrigger>
@@ -595,7 +595,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
       <TabsContent value="logs">
         <Tabs defaultValue="stdout" className="grid gap-3">
-          <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsList className="w-full justify-start">
             <TabsTrigger value="stdout">stdout</TabsTrigger>
             <TabsTrigger value="stderr">stderr</TabsTrigger>
             <TabsTrigger value="events">events</TabsTrigger>

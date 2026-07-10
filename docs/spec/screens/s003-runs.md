@@ -33,7 +33,7 @@ read_when:
 - `/runs?run=<runId>` は session detail page として開く。
 - session detail header は task name、run status、trigger、scheduled / started time、parent task link を持つ。
 - selected session detail は `概要`、`チャット`、`プロンプト`、`出力`、`ログ`、`成果物` の tabs で表示する。
-- session detail と `ログ` 内の nested tabs は tab list を content panel の外側、直上に配置し、選択中の tab content を bordered panel として表示する。
+- session detail と `ログ` 内の nested tabs は tab list を content panel の外側、直上に配置し、横スクロール領域にはしない。利用可能な幅に収まらない tab は複数行へ折り返し、選択中の tab content を bordered panel として表示する。
 - `チャット` tab は system / user prompt、assistant output、tool call、tool result、daemon event を時系列 bubble として表示する。
 - right or top action area は workspace / follow-up / cancel / retry / export logs を持つ。
 - tab content の先頭には、tab label と同義の section heading や説明文を置かない。
@@ -76,7 +76,7 @@ read_when:
 セキュリティと安全性:
 
 - Finder open action は run DTO または artifact が返した path だけを使う。
-- follow-up task prefill は source run context を task description に保持する。
+- follow-up task prefill は source run ID の文脈を task prompt 冒頭に保持する。
 
 受け入れ条件:
 
@@ -88,6 +88,7 @@ read_when:
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。
 - export logs が成功した場合、user は exported local path を見る。
 - `ログ` tab の stdout、stderr、events を切り替えた場合、nested tab list は panel の外にあり、選択した log と copy / export action は同じ panel 内に表示される。
+- session detail と nested log の tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
 
 既知の gap:
 

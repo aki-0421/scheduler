@@ -278,7 +278,7 @@ export function TaskDetail({
 
   return (
     <Tabs defaultValue="overview" className="grid min-w-0 gap-4">
-      <TabsList className="w-full justify-start overflow-x-auto">
+      <TabsList className="w-full justify-start">
         <TabsTrigger value="overview">概要</TabsTrigger>
         <TabsTrigger value="history">実行履歴</TabsTrigger>
         <TabsTrigger value="prompt">プロンプト</TabsTrigger>
@@ -306,9 +306,6 @@ export function TaskDetail({
                   </Badge>
                 ) : null}
               </div>
-              <p className="mt-2 text-sm text-muted-foreground text-pretty">
-                {task.description || "説明なし"}
-              </p>
               <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
                 {task.id}
               </p>

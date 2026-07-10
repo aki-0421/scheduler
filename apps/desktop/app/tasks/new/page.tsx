@@ -15,7 +15,7 @@ function NewTaskLoading() {
     <div className="grid gap-5">
       <PageHeader
         title="新規タスク"
-        description="プロンプトとタスク名を基本タブにまとめ、通常変更しない実行設定は詳細タブで調整します。"
+        description="タスク名とプロンプトで依頼内容を定義し、実行先とスケジュールも同じタブで設定します。"
       />
       <div className="grid gap-4">
         <Skeleton className="h-24" />
@@ -46,11 +46,10 @@ function NewTaskPageContent() {
       name: duplicate
         ? `${sourceTask.data.name} のコピー`
         : `フォローアップ: ${sourceTask.data.name}`,
-      description: duplicate
-        ? draft.description
-        : sourceRun
-          ? `実行 ${sourceRun} のフォローアップ`
-          : draft.description,
+      prompt:
+        duplicate || !sourceRun
+          ? draft.prompt
+          : `実行 ${sourceRun} の結果を踏まえて、次のフォローアップを行ってください。\n\n${draft.prompt}`,
       scheduleMode: duplicate ? draft.scheduleMode : ("manual" as const),
       forcePaused: false,
       locked: false,
@@ -80,7 +79,7 @@ function NewTaskPageContent() {
             ? "既存タスクの設定をもとに、新しいタスクを作成します。"
             : prefillFromTask
               ? "選択した実行やタスクの文脈を引き継いで、次の作業用タスクを作成します。"
-              : "プロンプトとタスク名を基本タブにまとめ、通常変更しない実行設定は詳細タブで調整します。"
+              : "タスク名とプロンプトで依頼内容を定義し、実行先とスケジュールも同じタブで設定します。"
         }
       />
       <TaskWizard

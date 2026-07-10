@@ -151,7 +151,6 @@ export const taskDtoSchema = z
     id: z.string(),
     slug: z.string(),
     name: z.string(),
-    description: optionalString,
     status: taskStatusSchema,
     locked: z.boolean().optional().default(false),
     kind: taskKindSchema,

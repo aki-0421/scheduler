@@ -22,7 +22,6 @@ fn sample_task(slug: &str) -> Task {
         id: new_task_id(),
         slug: slug.to_owned(),
         name: "Status Summary".to_owned(),
-        description: None,
         status: TaskStatus::Active,
         locked: false,
         kind: TaskKind::Manual,
@@ -105,14 +104,22 @@ fn sample_run(task_id: &str, scheduled_for: &str) -> Run {
 }
 
 #[tokio::test]
-async fn migration_creates_v3_schema() {
+async fn migration_creates_v4_schema() {
     let (_temp_dir, db) = temp_db().await;
 
     let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(db.pool())
         .await
         .expect("user_version");
-    assert_eq!(user_version, 3);
+    assert_eq!(user_version, 4);
+
+    let description_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'description'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .expect("task columns");
+    assert_eq!(description_columns, 0);
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master
@@ -171,7 +178,7 @@ async fn migration_creates_v3_schema() {
 }
 
 #[tokio::test]
-async fn v3_migration_moves_git_tasks_to_worktrees_and_pauses_folder_tasks() {
+async fn v3_and_v4_migrations_update_targets_and_remove_descriptions() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let db_path = temp_dir.path().join("scheduler.sqlite3");
     let db = SchedulerDb::connect(&db_path).await.expect("connect db");
@@ -238,10 +245,31 @@ async fn v3_migration_moves_git_tasks_to_worktrees_and_pauses_folder_tasks() {
     .execute(db.pool())
     .await
     .expect("legacy folder target");
-    sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 3")
+    sqlx::query("ALTER TABLE tasks ADD COLUMN description TEXT")
         .execute(db.pool())
         .await
-        .expect("rewind migration record");
+        .expect("restore legacy description column");
+    sqlx::query("UPDATE tasks SET description = 'legacy description'")
+        .execute(db.pool())
+        .await
+        .expect("seed legacy descriptions");
+    sqlx::query(
+        "INSERT INTO task_audit_events (
+            id, task_id, actor_type, action, before_json, after_json, created_at
+         ) VALUES (?, ?, 'user', 'task.update', ?, ?, ?)",
+    )
+    .bind(new_task_audit_event_id())
+    .bind(&git_task.id)
+    .bind(r#"{"name":"before","description":"legacy before"}"#)
+    .bind(r#"{"name":"after","description":"legacy after"}"#)
+    .bind(now_rfc3339())
+    .execute(db.pool())
+    .await
+    .expect("seed legacy audit snapshot");
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version IN (3, 4)")
+        .execute(db.pool())
+        .await
+        .expect("rewind migration records");
     sqlx::query("PRAGMA user_version = 2")
         .execute(db.pool())
         .await
@@ -250,7 +278,7 @@ async fn v3_migration_moves_git_tasks_to_worktrees_and_pauses_folder_tasks() {
 
     let migrated = SchedulerDb::connect(&db_path)
         .await
-        .expect("apply v3 migration");
+        .expect("apply v3 and v4 migrations");
     let migrated_git = migrated
         .get_task(&git_task.id)
         .await
@@ -283,6 +311,30 @@ async fn v3_migration_moves_git_tasks_to_worktrees_and_pauses_folder_tasks() {
     assert_eq!(migrated_folder.status, TaskStatus::Paused);
     assert_eq!(migrated_folder.schedule_status, ScheduleStatus::Invalid);
     assert!(migrated_folder.schedule_error.is_some());
+
+    let description_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'description'",
+    )
+    .fetch_one(migrated.pool())
+    .await
+    .expect("task columns after migration");
+    assert_eq!(description_columns, 0);
+
+    let (before_json, after_json): (String, String) = sqlx::query_as(
+        "SELECT before_json, after_json
+         FROM task_audit_events
+         WHERE task_id = ? AND action = 'task.update'",
+    )
+    .bind(&git_task.id)
+    .fetch_one(migrated.pool())
+    .await
+    .expect("migrated audit snapshot");
+    let before: serde_json::Value = serde_json::from_str(&before_json).expect("before json");
+    let after: serde_json::Value = serde_json::from_str(&after_json).expect("after json");
+    assert_eq!(before["name"], json!("before"));
+    assert_eq!(after["name"], json!("after"));
+    assert!(before.get("description").is_none());
+    assert!(after.get("description").is_none());
 }
 
 #[tokio::test]
@@ -602,6 +654,7 @@ fn task_and_run_dto_serialize_to_spec_camel_case_shape() {
     task.sandbox_mode = SandboxMode::WorkspaceWrite;
 
     let task_value = serde_json::to_value(TaskDto::from(&task)).expect("task dto json");
+    assert!(task_value.get("description").is_none());
     assert_eq!(task_value["cronExpr"], json!("0 9 * * 1-5"));
     assert_eq!(task_value["nextRunAt"], json!("2026-07-08T00:00:00Z"));
     assert_eq!(task_value["target"]["mode"], json!("repo-worktree"));

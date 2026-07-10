@@ -77,6 +77,7 @@ describe("DTO schemas", () => {
     });
 
     expect(task.target.projectId).toBe("proj_1");
+    expect(task).not.toHaveProperty("description");
     expect(run.attempt).toBe(2);
     expect(run.commitAfter).toBe("def456");
     expect(run.findingsCount).toBe(2);
