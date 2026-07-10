@@ -11,26 +11,16 @@ const activeTask: TaskDto = {
   id: "task_test",
   slug: "task-test",
   name: "Task Test",
-  description: "Task for mutation test",
   status: "active",
   kind: "manual",
   timezone: "UTC",
   target: { mode: "chat" },
   codex: {
-    model: "gpt-5-codex",
-    reasoningEffort: "default",
-    sandboxMode: "read-only",
-    approvalPolicy: "never",
+    model: "gpt-5.5",
+    reasoningEffort: "medium",
   },
   prompt: {
     body: "Test",
-    injectSchedulerInstructions: true,
-  },
-  policies: {
-    allowScheduleCli: true,
-    missedPolicy: "skip",
-    overlapPolicy: "skip",
-    maxRuntimeSec: 300,
   },
 };
 

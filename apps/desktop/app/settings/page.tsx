@@ -11,42 +11,31 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { codexModelOptions } from "@/lib/codex-options";
 import { Switch } from "@/components/ui/switch";
-import { formatEnumLabel } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
 import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
-import {
-  approvalPolicies,
-  cleanupPolicies,
-  sandboxModes,
-  type SchedulerSettings,
-} from "@/lib/types";
+import type { SchedulerSettings } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function SettingsSection({
   title,
-  description,
   children,
 }: {
   title: string;
-  description: string;
   children: ReactNode;
 }) {
   return (
     <section className="grid gap-3 border-t pt-5 first:border-t-0">
-      <div className="grid gap-1 md:grid-cols-[11rem_minmax(0,1fr)]">
+      <div>
         <h2 className="text-base font-semibold text-balance">{title}</h2>
-        <p className="max-w-3xl text-sm text-muted-foreground text-pretty">
-          {description}
-        </p>
       </div>
-      <div className="overflow-hidden rounded-lg border bg-surface/70 px-4">
-        {children}
-      </div>
+      <div>{children}</div>
     </section>
   );
 }
@@ -74,7 +63,9 @@ function SettingRow({
           {description}
         </p>
       </div>
-      <div className={cn("min-w-0 md:justify-self-end md:w-80", controlClassName)}>
+      <div
+        className={cn("min-w-0 md:justify-self-end md:w-80", controlClassName)}
+      >
         {children}
       </div>
     </div>
@@ -89,15 +80,26 @@ function ReadOnlyCode({ value }: { value: string }) {
   );
 }
 
+function hasCustomCodexPath(value: string) {
+  const normalized = value.trim();
+  return normalized !== "" && normalized !== "codex";
+}
+
 export default function SettingsPage() {
   const settings = useSettings();
   const health = useHealth();
   const setSetting = useSetSetting();
   const [form, setForm] = useState<SchedulerSettings>(settings.data);
+  const [customizeCodexPath, setCustomizeCodexPath] = useState(() =>
+    hasCustomCodexPath(settings.data["runner.codex_path"]),
+  );
   const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
 
   useEffect(() => {
     setForm(settings.data);
+    setCustomizeCodexPath(
+      hasCustomCodexPath(settings.data["runner.codex_path"]),
+    );
   }, [settings.data]);
 
   function update<Key extends keyof SchedulerSettings>(
@@ -108,17 +110,32 @@ export default function SettingsPage() {
   }
 
   async function save() {
+    const codexPath = form["runner.codex_path"].trim();
+    if (customizeCodexPath && !codexPath) {
+      toast.error("Codex バイナリパスを入力してください");
+      return;
+    }
+
+    const settingsToSave: SchedulerSettings = {
+      ...form,
+      "runner.codex_path": customizeCodexPath ? codexPath : "codex",
+    };
+    setForm(settingsToSave);
+
     try {
       await Promise.all(
-        (Object.keys(form) as Array<keyof SchedulerSettings>).map((key) =>
-          setSetting.mutateAsync({ key, value: form[key] }),
+        (Object.keys(settingsToSave) as Array<keyof SchedulerSettings>).map(
+          (key) =>
+            setSetting.mutateAsync({ key, value: settingsToSave[key] }),
         ),
       );
       toast.success("設定を保存しました");
     } catch (error) {
       toast.error("設定を保存できませんでした", {
         description:
-          error instanceof Error ? error.message : "設定コマンドに失敗しました。",
+          error instanceof Error
+            ? error.message
+            : "設定コマンドに失敗しました。",
       });
     }
   }
@@ -135,7 +152,9 @@ export default function SettingsPage() {
     } catch (error) {
       toast.error("診断情報をエクスポートできませんでした", {
         description:
-          error instanceof Error ? error.message : "診断コマンドに失敗しました。",
+          error instanceof Error
+            ? error.message
+            : "診断コマンドに失敗しました。",
       });
     } finally {
       setIsExportingDiagnostics(false);
@@ -146,13 +165,10 @@ export default function SettingsPage() {
     <div className="grid gap-6">
       <PageHeader
         title="設定"
-        description="スケジューラーの挙動、Codex 実行の既定値、通知、診断を設定します。"
+        description="スケジューラー、Codex 実行、診断の既定値を管理します。"
       />
 
-      <SettingsSection
-        title="一般"
-        description="スケジュール作業を実行するか、いつ通知するかを決める全体設定です。"
-      >
+      <SettingsSection title="一般">
         <SettingRow
           label="スケジューラー"
           description="スケジュール済みタスクを自動的にキューへ入れるかを制御します。"
@@ -167,22 +183,21 @@ export default function SettingsPage() {
         </SettingRow>
         <SettingRow
           label="通知"
-          description="実行が失敗またはタイムアウトしたときにデスクトップ通知を送信します。"
+          description="実行が失敗したときにデスクトップ通知を送信します。"
           htmlFor="notifications-enabled"
           controlClassName="md:w-auto"
         >
           <Switch
             id="notifications-enabled"
             checked={form["notifications.enabled"]}
-            onCheckedChange={(checked) => update("notifications.enabled", checked)}
+            onCheckedChange={(checked) =>
+              update("notifications.enabled", checked)
+            }
           />
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection
-        title="実行"
-        description="新規タスクにコピーされる既定値と、ローカルデーモンで使う上限です。"
-      >
+      <SettingsSection title="実行">
         <SettingRow
           label="全体同時実行数"
           description="デーモンが同時に実行できるスケジューラー実行の最大数です。"
@@ -194,124 +209,94 @@ export default function SettingsPage() {
             min={1}
             value={form["daemon.global_concurrency"]}
             onChange={(event) =>
-              update("daemon.global_concurrency", Number(event.currentTarget.value))
+              update(
+                "daemon.global_concurrency",
+                Number(event.currentTarget.value),
+              )
             }
           />
         </SettingRow>
         <SettingRow
-          label="Codex パス"
-          description="Codex CLI を起動するコマンドまたは絶対パスです。"
-          htmlFor="codex-path"
+          label="Codex バイナリパスをカスタマイズ"
+          description="通常は PATH 上の codex を使います。必要な場合だけ、すべてのタスクで使うバイナリパスを指定します。"
+          htmlFor="customize-codex-path"
         >
-          <Input
-            id="codex-path"
-            value={form["runner.codex_path"]}
-            onChange={(event) => update("runner.codex_path", event.currentTarget.value)}
-          />
+          <div className="grid gap-3">
+            <label className="flex items-center justify-end gap-2 text-sm">
+              <input
+                id="customize-codex-path"
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={customizeCodexPath}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  setCustomizeCodexPath(checked);
+                  if (
+                    checked &&
+                    !hasCustomCodexPath(form["runner.codex_path"])
+                  ) {
+                    update("runner.codex_path", "");
+                  }
+                }}
+              />
+              カスタムパスを使う
+            </label>
+            {customizeCodexPath ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor="codex-path" className="sr-only">
+                  Codex バイナリパス
+                </Label>
+                <Input
+                  id="codex-path"
+                  value={form["runner.codex_path"]}
+                  placeholder="/opt/homebrew/bin/codex"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-invalid={!form["runner.codex_path"].trim() || undefined}
+                  onChange={(event) =>
+                    update("runner.codex_path", event.currentTarget.value)
+                  }
+                />
+                {!form["runner.codex_path"].trim() ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    カスタム Codex バイナリパスを入力してください。
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </SettingRow>
         <SettingRow
           label="既定モデル"
-          description="新規タスクへコピーされるモデル値です。"
+          description="新規タスクへコピーされる Codex フロンティアモデルです。"
           htmlFor="default-model"
         >
-          <Input
-            id="default-model"
+          <Select
             value={form["runner.default_model"]}
-            onChange={(event) =>
-              update("runner.default_model", event.currentTarget.value)
-            }
-          />
-        </SettingRow>
-      </SettingsSection>
-
-      <SettingsSection
-        title="権限"
-        description="新しい Codex 実行と隔離ワークツリーのクリーンアップに使う既定の安全設定です。"
-      >
-        <SettingRow
-          label="既定サンドボックス"
-          description="新規タスクへコピーされるファイルシステムアクセスモードです。"
-          htmlFor="default-sandbox-mode"
-        >
-          <Select
-            value={form["runner.default_sandbox_mode"]}
             onValueChange={(value) =>
               update(
-                "runner.default_sandbox_mode",
-                value as SchedulerSettings["runner.default_sandbox_mode"],
+                "runner.default_model",
+                value as SchedulerSettings["runner.default_model"],
               )
             }
           >
-            <SelectTrigger id="default-sandbox-mode">
+            <SelectTrigger id="default-model">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {sandboxModes.map((mode) => (
-                <SelectItem key={mode} value={mode}>
-                  {formatEnumLabel(mode)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingRow>
-        <SettingRow
-          label="既定承認ポリシー"
-          description="新規タスクへコピーされる承認動作です。"
-          htmlFor="default-approval-policy"
-        >
-          <Select
-            value={form["runner.default_approval_policy"]}
-            onValueChange={(value) =>
-              update(
-                "runner.default_approval_policy",
-                value as SchedulerSettings["runner.default_approval_policy"],
-              )
-            }
-          >
-            <SelectTrigger id="default-approval-policy">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {approvalPolicies.map((policy) => (
-                <SelectItem key={policy} value={policy}>
-                  {formatEnumLabel(policy)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingRow>
-        <SettingRow
-          label="ワークツリーのクリーンアップ"
-          description="隔離ワークツリー実行に使う既定のクリーンアップポリシーです。"
-          htmlFor="default-cleanup-policy"
-        >
-          <Select
-            value={form["worktree.default_cleanup_policy"]}
-            onValueChange={(value) =>
-              update(
-                "worktree.default_cleanup_policy",
-                value as SchedulerSettings["worktree.default_cleanup_policy"],
-              )
-            }
-          >
-            <SelectTrigger id="default-cleanup-policy">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {cleanupPolicies.map((policy) => (
-                <SelectItem key={policy} value={policy}>
-                  {formatEnumLabel(policy)}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {codexModelOptions.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    {model.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection
-        title="診断"
-        description="読み取り専用のローカルパスと、サポート作業用の診断エクスポートです。"
-      >
+      <SettingsSection title="診断">
         <SettingRow
           label="ソケットパス"
           description="デスクトップアプリがスケジューラーデーモンへ接続するための Unix ソケットです。"

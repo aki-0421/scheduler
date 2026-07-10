@@ -7,6 +7,14 @@ type DateTimeParts = {
   second: number;
 };
 
+export function getSystemTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 function parseLocalDateTime(dateValue: string, timeValue: string): DateTimeParts {
   const [year, month, day] = dateValue.split("-").map(Number);
   const [hour, minute] = timeValue.split(":").map(Number);
@@ -102,7 +110,7 @@ export function localDateTimeToUtcIso(
   const utcDate = new Date(utcMs);
   const resolvedParts = getPartsInTimeZone(utcDate, timeZone);
   if (!sameParts(localParts, resolvedParts)) {
-    throw new Error("選択したローカル時刻はこのタイムゾーンに存在しません。");
+    throw new Error("指定したローカル時刻は使用中のタイムゾーンに存在しません。");
   }
 
   return utcDate.toISOString();

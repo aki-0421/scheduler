@@ -34,6 +34,10 @@ function id(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function worktreeInstanceName() {
+  return `wt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -74,7 +78,6 @@ let tasks: TaskDto[] = [
     id: "task_daily_review",
     slug: "daily-review",
     name: "毎日のリポジトリレビュー",
-    description: "有効な scheduler ワークスペースのリスクを要約します。",
     status: "active",
     locked: true,
     kind: "cron",
@@ -89,30 +92,11 @@ let tasks: TaskDto[] = [
       baseRef: "main",
     },
     codex: {
-      model: "gpt-5-codex",
-      reasoningEffort: "default",
-      sandboxMode: "workspace-write",
-      approvalPolicy: "never",
+      model: "gpt-5.5",
+      reasoningEffort: "medium",
     },
     prompt: {
       body: "最新の scheduler 変更をレビューし、リグレッションを要約してください。",
-      injectSchedulerInstructions: true,
-    },
-    policies: {
-      allowScheduleCli: true,
-      missedPolicy: "latest_within_window",
-      overlapPolicy: "skip",
-      maxRuntimeSec: 7200,
-      scheduleCliCapabilities: [
-        "schedule:create",
-        "schedule:update-current",
-        "schedule:list",
-      ],
-      missedWindowDays: 7,
-      maxRetries: 1,
-      retryBackoffSec: 300,
-      cleanupPolicy: "keep",
-      maxCreatedSchedulesPerRun: 5,
     },
     auditEvents: [
       {
@@ -123,11 +107,11 @@ let tasks: TaskDto[] = [
         action: "task.update",
         beforeJson: {
           status: "paused",
-          codex: { sandboxMode: "read-only" },
+          codex: { model: "gpt-5.4" },
         },
         afterJson: {
           status: "active",
-          codex: { sandboxMode: "workspace-write" },
+          codex: { model: "gpt-5.5" },
         },
         reason: "デスクトップ UI から設定を調整",
         createdAt: minutesAgo(60),
@@ -149,7 +133,6 @@ let tasks: TaskDto[] = [
     id: "task_dependency_scan",
     slug: "dependency-scan",
     name: "依存関係スキャン",
-    description: "依存関係の更新を確認し、フォローアップスケジュールを作成します。",
     status: "paused",
     locked: false,
     kind: "cron",
@@ -158,39 +141,23 @@ let tasks: TaskDto[] = [
     timezone: "Asia/Tokyo",
     nextRunAt: undefined,
     target: {
-      mode: "repo-local",
+      mode: "repo-worktree",
       projectId: "proj_demo",
       repoPath: "/Users/aki-0421/conductor/workspaces/scheduler/davis-v2",
       baseRef: "main",
     },
     codex: {
-      model: "gpt-5-codex",
+      model: "gpt-5.4-mini",
       reasoningEffort: "low",
-      sandboxMode: "read-only",
-      approvalPolicy: "never",
     },
     prompt: {
       body: "古い依存関係を探し、安全な更新計画を提案してください。",
-      injectSchedulerInstructions: true,
-    },
-    policies: {
-      allowScheduleCli: true,
-      missedPolicy: "skip",
-      overlapPolicy: "queue",
-      maxRuntimeSec: 5400,
-      scheduleCliCapabilities: ["schedule:create", "schedule:update-current"],
-      missedWindowDays: 3,
-      maxRetries: 0,
-      retryBackoffSec: 300,
-      cleanupPolicy: "delete_on_success",
-      maxCreatedSchedulesPerRun: 5,
     },
   },
   {
     id: "task_release_notes",
     slug: "release-notes",
     name: "リリースノート下書き",
-    description: "次のローカルリリース向けの一度だけの実行です。",
     status: "active",
     locked: false,
     kind: "once",
@@ -200,26 +167,11 @@ let tasks: TaskDto[] = [
     nextRunAt: minutesFromNow(360),
     target: { mode: "chat", projectId: undefined, repoPath: undefined },
     codex: {
-      model: "gpt-5-codex",
+      model: "gpt-5.4",
       reasoningEffort: "medium",
-      sandboxMode: "read-only",
-      approvalPolicy: "never",
     },
     prompt: {
       body: "最新のマージ済み作業からリリースノートの下書きを作成してください。",
-      injectSchedulerInstructions: false,
-    },
-    policies: {
-      allowScheduleCli: false,
-      missedPolicy: "latest_within_window",
-      overlapPolicy: "skip",
-      maxRuntimeSec: 3600,
-      scheduleCliCapabilities: [],
-      missedWindowDays: 7,
-      maxRetries: 0,
-      retryBackoffSec: 300,
-      cleanupPolicy: "keep",
-      maxCreatedSchedulesPerRun: 5,
     },
   },
 ];
@@ -243,10 +195,11 @@ let runs: RunDto[] = [
     durationMs: 240_000,
     targetMode: "repo-worktree",
     workspacePath:
-      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/run_success",
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/wt-01900000-0000-7000-8000-000000000001",
     worktreePath:
-      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/run_success",
-    branchName: "codex-scheduler/daily-review/run_success",
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/wt-01900000-0000-7000-8000-000000000001",
+    branchName:
+      "codex-scheduler/daily-review/wt-01900000-0000-7000-8000-000000000001",
     baseRef: "main",
     commitBefore: "abc123",
     commitAfter: "def456",
@@ -279,10 +232,13 @@ let runs: RunDto[] = [
     startedAt: minutesAgo(89),
     endedAt: minutesAgo(84),
     durationMs: 300_000,
-    targetMode: "repo-local",
-    workspacePath: "/Users/aki-0421/conductor/workspaces/scheduler/davis-v2",
-    worktreePath: undefined,
-    branchName: undefined,
+    targetMode: "repo-worktree",
+    workspacePath:
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/dependency-scan/wt-01900000-0000-7000-8000-000000000002",
+    worktreePath:
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/dependency-scan/wt-01900000-0000-7000-8000-000000000002",
+    branchName:
+      "codex-scheduler/dependency-scan/wt-01900000-0000-7000-8000-000000000002",
     baseRef: "main",
     commitBefore: "feed01",
     commitAfter: undefined,
@@ -317,10 +273,11 @@ let runs: RunDto[] = [
     durationMs: undefined,
     targetMode: "repo-worktree",
     workspacePath:
-      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/run_running",
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/wt-01900000-0000-7000-8000-000000000003",
     worktreePath:
-      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/run_running",
-    branchName: "codex-scheduler/daily-review/run_running",
+      "/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/daily-review/wt-01900000-0000-7000-8000-000000000003",
+    branchName:
+      "codex-scheduler/daily-review/wt-01900000-0000-7000-8000-000000000003",
     baseRef: "main",
     commitBefore: "abc123",
     commitAfter: undefined,
@@ -442,6 +399,11 @@ function activeTaskCountForProject(project: ProjectDto) {
 
 function createRun(taskId: string, status: RunStatus = "queued") {
   const task = taskById(taskId);
+  const worktreeName =
+    task.target.mode === "repo-worktree" ? worktreeInstanceName() : undefined;
+  const worktreePath = worktreeName
+    ? `/Users/aki-0421/Library/Application Support/Codex Scheduler/worktrees/${task.slug}/${worktreeName}`
+    : undefined;
   const run: RunDto = {
     id: id("run"),
     taskId: task.id,
@@ -455,9 +417,11 @@ function createRun(taskId: string, status: RunStatus = "queued") {
     endedAt: undefined,
     durationMs: undefined,
     targetMode: task.target.mode,
-    workspacePath: task.target.repoPath,
-    worktreePath: undefined,
-    branchName: undefined,
+    workspacePath: worktreePath ?? task.target.repoPath,
+    worktreePath,
+    branchName: worktreeName
+      ? `codex-scheduler/${task.slug}/${worktreeName}`
+      : undefined,
     baseRef: task.target.baseRef,
     commitBefore: undefined,
     commitAfter: undefined,
@@ -502,7 +466,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const health: HealthDto = {
         ok: true,
         version: "dev-mock",
-        dbSchemaVersion: 1,
+        dbSchemaVersion: 6,
         schedulerEnabled: enabled,
         runningCount: runs.filter((run) => run.status === "running").length,
         queuedCount: runs.filter((run) => run.status === "queued").length,
@@ -518,7 +482,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       ) as boolean;
       const diagnostics: DaemonDiagnostics = {
         version: "dev-mock",
-        dbSchemaVersion: 1,
+        dbSchemaVersion: 6,
         dataDir: "/tmp/codex-scheduler",
         socketPath: "/tmp/codex-scheduler/scheduler.sock",
         dbSizeBytes: 4096,
@@ -630,7 +594,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
         id: id("proj"),
         name: path.split("/").filter(Boolean).at(-1) ?? "プロジェクト",
         path,
-        kind: path.includes(".git") ? "git" : "folder",
+        kind: "git",
         gitRoot: path,
         gitRemoteUrl: undefined,
         defaultBranch: "main",

@@ -7,7 +7,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::ipc::*;
 use scheduler_core::model::*;
 use scheduler_core::settings::SETTING_RETENTION_RUN_HISTORY_DAYS;
-use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
+use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
 use scheduler_core::util::sha256_hex;
 use schedulerd::executor::{MockBehavior, MockExecutor};
 use schedulerd::{
@@ -21,7 +21,7 @@ async fn start_test_daemon(behavior: MockBehavior) -> (TempDir, DaemonHandle, Mo
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let config = DaemonConfig::for_data_dir(temp_dir.path())
         .with_tick_interval(Duration::from_secs(3600))
-        .with_due_grace(Duration::from_secs(5))
+        .with_due_grace(Duration::from_secs(60))
         .with_shutdown_grace(Duration::from_millis(20));
     let executor = MockExecutor::new(behavior);
     let handle = start_daemon(config, Arc::new(executor.clone()))
@@ -43,7 +43,6 @@ fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
         id: String::new(),
         slug: slug.to_owned(),
         name: slug.to_owned(),
-        description: None,
         status: TaskStatus::Active,
         locked: false,
         kind,
@@ -60,29 +59,9 @@ fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
         codex: TaskCodexDto {
             model: None,
             reasoning_effort: None,
-            sandbox_mode: SandboxMode::ReadOnly,
-            approval_policy: ApprovalPolicy::Never,
         },
         prompt: TaskPromptDto {
             body: "Check project status.".to_owned(),
-            inject_scheduler_instructions: true,
-        },
-        policies: TaskPoliciesDto {
-            allow_schedule_cli: true,
-            missed_policy: MissedPolicy::LatestWithinWindow,
-            overlap_policy: OverlapPolicy::Skip,
-            max_runtime_sec: 7200,
-            max_created_schedules_per_run: Some(5),
-            schedule_cli_capabilities: Some(vec![
-                "schedule:create".to_owned(),
-                "schedule:update-current".to_owned(),
-                "schedule:list".to_owned(),
-            ]),
-            missed_window_days: Some(7),
-            max_retries: Some(0),
-            retry_backoff_sec: Some(300),
-            cleanup_policy: Some(CleanupPolicy::Keep),
-            cleanup_after_days: None,
         },
     }
 }
@@ -158,11 +137,9 @@ async fn source_token(
     handle: &DaemonHandle,
     executor: &MockExecutor,
     slug: &str,
-    capabilities: Vec<String>,
 ) -> (TaskDto, String, String) {
     let mut task = sample_task_dto(slug, TaskKind::Cron);
     task.next_run_at = Some(format_utc_rfc3339(Utc::now() - ChronoDuration::seconds(2)));
-    task.policies.schedule_cli_capabilities = Some(capabilities);
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
@@ -251,6 +228,58 @@ fn run_git(cwd: &Path, args: &[&str]) {
     );
 }
 
+fn init_repo_with_origin_main(temp: &TempDir) -> PathBuf {
+    let origin = temp.path().join("origin.git");
+    let repo = temp.path().join("repo");
+    std::fs::create_dir_all(&repo).expect("create repo");
+
+    run_git(temp.path(), &["init", "--bare", "origin.git"]);
+    run_git(
+        temp.path(),
+        &[
+            "--git-dir",
+            origin.to_str().expect("origin path"),
+            "symbolic-ref",
+            "HEAD",
+            "refs/heads/main",
+        ],
+    );
+    run_git(&repo, &["init"]);
+    run_git(&repo, &["config", "user.email", "scheduler@example.com"]);
+    run_git(&repo, &["config", "user.name", "Scheduler Test"]);
+    run_git(&repo, &["checkout", "-b", "main"]);
+    std::fs::write(repo.join("README.md"), "hello\n").expect("write readme");
+    run_git(&repo, &["add", "README.md"]);
+    run_git(&repo, &["commit", "-m", "initial"]);
+    run_git(
+        &repo,
+        &[
+            "remote",
+            "add",
+            "origin",
+            origin.to_str().expect("origin path"),
+        ],
+    );
+    run_git(&repo, &["push", "-u", "origin", "main"]);
+    run_git(&repo, &["checkout", "-b", "feature"]);
+    repo
+}
+
+fn init_repo_with_local_main(temp: &TempDir) -> PathBuf {
+    let repo = temp.path().join("local-repo");
+    std::fs::create_dir_all(&repo).expect("create local repo");
+
+    run_git(&repo, &["init"]);
+    run_git(&repo, &["config", "user.email", "scheduler@example.com"]);
+    run_git(&repo, &["config", "user.name", "Scheduler Test"]);
+    run_git(&repo, &["checkout", "-b", "main"]);
+    std::fs::write(repo.join("README.md"), "hello\n").expect("write readme");
+    run_git(&repo, &["add", "README.md"]);
+    run_git(&repo, &["commit", "-m", "initial"]);
+    run_git(&repo, &["checkout", "-b", "feature"]);
+    repo
+}
+
 #[tokio::test]
 async fn daemon_health_returns_shape_over_uds() {
     let (_temp, handle, _executor) =
@@ -265,7 +294,7 @@ async fn daemon_health_returns_shape_over_uds() {
     .expect("health rpc");
 
     assert!(health.ok);
-    assert_eq!(health.db_schema_version, 2);
+    assert_eq!(health.db_schema_version, 6);
     assert!(health.scheduler_enabled);
     assert_eq!(health.running_count, 0);
     assert_eq!(health.queued_count, 0);
@@ -287,7 +316,7 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
     .await
     .expect("diagnostics rpc");
 
-    assert_eq!(diagnostics.db_schema_version, 2);
+    assert_eq!(diagnostics.db_schema_version, 6);
     assert_eq!(
         diagnostics.data_dir,
         temp.path().to_string_lossy().into_owned()
@@ -300,6 +329,38 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
     assert_eq!(diagnostics.tick_interval_sec, 3600);
     assert!(diagnostics.last_tick_at.is_some());
     assert!(diagnostics.db_size_bytes > 0);
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn task_create_generates_unique_slug_for_duplicate_names() {
+    let (_temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+
+    let first: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams {
+            task: sample_task_dto("daily-review", TaskKind::Manual),
+            actor: None,
+        },
+    )
+    .await
+    .expect("create first task");
+    let second: TaskResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_TASK_CREATE,
+        TaskCreateParams {
+            task: sample_task_dto("daily-review", TaskKind::Manual),
+            actor: None,
+        },
+    )
+    .await
+    .expect("create duplicate task");
+
+    assert_eq!(first.task.slug, "daily-review");
+    assert_eq!(second.task.slug, "daily-review-2");
 
     handle.shutdown().await;
 }
@@ -389,10 +450,177 @@ async fn task_audit_list_returns_task_audit_events_over_uds() {
 }
 
 #[tokio::test]
+async fn project_trust_sets_default_branch_from_origin_main() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo = init_repo_with_origin_main(&temp);
+
+    let trusted: ProjectTrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: repo.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("trust project");
+
+    assert_eq!(trusted.project.kind, ProjectKind::Git);
+    assert_eq!(trusted.project.default_branch.as_deref(), Some("main"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn project_trust_sets_default_branch_from_local_main_without_origin() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo = init_repo_with_local_main(&temp);
+
+    let trusted: ProjectTrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: repo.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("trust project");
+
+    assert_eq!(trusted.project.kind, ProjectKind::Git);
+    assert_eq!(trusted.project.default_branch.as_deref(), Some("main"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn project_trust_reuses_a_legacy_project_registered_from_a_subdirectory() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo = init_repo_with_local_main(&temp);
+    let subdirectory = repo.join("packages/app");
+    std::fs::create_dir_all(&subdirectory).expect("create project subdirectory");
+    let canonical_repo = repo.canonicalize().expect("canonical repo");
+    let canonical_subdirectory = subdirectory
+        .canonicalize()
+        .expect("canonical project subdirectory");
+    let now = now_rfc3339();
+    let legacy_project = Project {
+        id: new_project_id(),
+        name: "legacy-subdirectory".to_owned(),
+        path: canonical_subdirectory.to_string_lossy().into_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some(canonical_repo.to_string_lossy().into_owned()),
+        git_remote_url: None,
+        default_branch: Some("main".to_owned()),
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    handle
+        .db()
+        .create_project(&legacy_project)
+        .await
+        .expect("create legacy project");
+
+    let trusted: ProjectTrustResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: subdirectory.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("trust existing project");
+
+    assert_eq!(trusted.project.id, legacy_project.id);
+    assert_eq!(handle.db().list_projects().await.unwrap().len(), 1);
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn project_trust_rejects_a_non_git_directory() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let folder = temp.path().join("plain-folder");
+    std::fs::create_dir_all(&folder).expect("create folder");
+
+    let denied = rpc::call_raw(
+        &handle.socket_path(),
+        METHOD_PROJECT_TRUST,
+        ProjectTrustParams {
+            path: folder.to_string_lossy().into_owned(),
+            actor: None,
+        },
+    )
+    .await
+    .expect("project trust response");
+
+    let error = denied.error.expect("validation error");
+    assert_eq!(error.code, JsonRpcErrorCode::ValidationFailed.code());
+    assert!(error.message.contains("Git repository"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn project_list_fills_missing_default_branch_from_detected_main() {
+    let (temp, handle, _executor) =
+        start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
+    let repo = std::fs::canonicalize(init_repo_with_origin_main(&temp)).expect("canonical repo");
+
+    let now = now_rfc3339();
+    let project = Project {
+        id: new_project_id(),
+        name: "repo".to_owned(),
+        path: repo.to_string_lossy().into_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some(repo.to_string_lossy().into_owned()),
+        git_remote_url: None,
+        default_branch: None,
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    handle
+        .db()
+        .create_project(&project)
+        .await
+        .expect("create project");
+
+    let listed: ProjectListResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_PROJECT_LIST,
+        ProjectListParams {},
+    )
+    .await
+    .expect("list projects");
+
+    let listed_project = listed
+        .projects
+        .iter()
+        .find(|item| item.id == project.id)
+        .expect("listed project");
+    assert_eq!(listed_project.default_branch.as_deref(), Some("main"));
+    let stored = handle
+        .db()
+        .get_project(&project.id)
+        .await
+        .expect("get project")
+        .expect("stored project");
+    assert_eq!(stored.default_branch.as_deref(), Some("main"));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn project_untrust_clears_trusted_at_in_project_list_and_counts_active_tasks() {
     let (temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
-    let project_path = temp.path().join("trusted-project");
-    std::fs::create_dir_all(&project_path).expect("create project dir");
+    let project_path = init_repo_with_local_main(&temp);
 
     let trusted: ProjectTrustResult = rpc::call(
         &handle.socket_path(),
@@ -407,8 +635,9 @@ async fn project_untrust_clears_trusted_at_in_project_list_and_counts_active_tas
     assert!(trusted.project.trusted_at.is_some());
 
     let mut task = sample_task_dto("untrust-affected", TaskKind::Manual);
-    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.mode = RunTargetMode::RepoWorktree;
     task.target.project_id = Some(trusted.project.id.clone());
+    task.target.repo_path = trusted.project.git_root.clone();
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
@@ -491,13 +720,8 @@ async fn project_untrust_clears_trusted_at_in_project_list_and_counts_active_tas
     assert_eq!(retrusted.project.id, trusted.project.id);
     assert!(retrusted.project.trusted_at.is_some());
 
-    let (source_task, token, run_id) = source_token(
-        &handle,
-        &executor,
-        "untrust-token-source",
-        vec!["schedule:update-any".to_owned()],
-    )
-    .await;
+    let (source_task, token, run_id) =
+        source_token(&handle, &executor, "untrust-token-source").await;
 
     let denied = rpc::call_raw(
         &handle.socket_path(),
@@ -669,7 +893,7 @@ async fn retention_cleanup_removes_expired_runs_logs_and_tokens() {
 }
 
 #[tokio::test]
-async fn retention_cleanup_removes_clean_delete_after_days_worktree_and_skips_dirty() {
+async fn retention_cleanup_keeps_worktrees_even_with_legacy_delete_policy() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
     let db = handle.db();
@@ -757,13 +981,11 @@ async fn retention_cleanup_removes_clean_delete_after_days_worktree_and_skips_di
     db.create_run(&dirty_run).await.expect("create dirty run");
 
     let paths = DaemonConfig::for_data_dir(temp.path()).paths;
-    let result = run_retention_cleanup(&db, &paths, now)
+    run_retention_cleanup(&db, &paths, now)
         .await
         .expect("retention cleanup");
 
-    assert_eq!(result.worktrees_deleted, 1);
-    assert_eq!(result.worktrees_skipped_dirty, 1);
-    assert!(!clean_worktree.exists());
+    assert!(clean_worktree.exists());
     assert!(dirty_worktree.exists());
     assert!(db
         .get_run(&clean_run.id)
@@ -771,7 +993,7 @@ async fn retention_cleanup_removes_clean_delete_after_days_worktree_and_skips_di
         .expect("clean run")
         .expect("clean run exists")
         .worktree_path
-        .is_none());
+        .is_some());
     assert!(db
         .get_run(&dirty_run.id)
         .await
@@ -780,6 +1002,15 @@ async fn retention_cleanup_removes_clean_delete_after_days_worktree_and_skips_di
         .worktree_path
         .is_some());
 
+    run_git(
+        &repo,
+        &[
+            "worktree",
+            "remove",
+            "--force",
+            clean_worktree.to_str().unwrap(),
+        ],
+    );
     run_git(
         &repo,
         &[
@@ -920,7 +1151,7 @@ async fn run_tail_log_reads_large_file_from_cursor_with_bounded_chunks() {
 }
 
 #[tokio::test]
-async fn missed_latest_catchup_creates_one_run_and_skipped_audit() {
+async fn missed_runs_are_skipped_even_if_legacy_policy_requests_catchup() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let config = DaemonConfig::for_data_dir(temp_dir.path())
         .with_tick_interval(Duration::from_secs(3600))
@@ -940,23 +1171,26 @@ async fn missed_latest_catchup_creates_one_run_and_skipped_audit() {
     let handle = start_daemon(config, Arc::new(executor.clone()))
         .await
         .expect("start");
-    assert!(executor.wait_for_calls(1, executor_call_timeout()).await);
+    assert!(!executor.wait_for_calls(1, Duration::from_millis(250)).await);
 
     let runs = handle
         .db()
         .list_runs_for_task(&task.id)
         .await
         .expect("runs");
-    assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0].trigger_type, TriggerType::Catchup);
-
-    let audits = handle
+    assert!(runs.is_empty());
+    let stored = handle
         .db()
-        .list_task_audit_events(&task.id)
+        .get_task(&task.id)
         .await
-        .expect("audits");
-    assert!(audits.iter().any(|audit| audit.action == "run.skipped"
-        && audit.reason.as_deref() == Some("missed_occurrence_skipped")));
+        .expect("get task")
+        .expect("task");
+    assert_eq!(stored.missed_policy, MissedPolicy::Skip);
+    assert!(
+        parse_utc_rfc3339(stored.next_run_at.as_deref().expect("next run"))
+            .expect("next run timestamp")
+            > Utc::now()
+    );
 
     handle.shutdown().await;
     drop(temp_dir);
@@ -983,6 +1217,7 @@ async fn overlap_skip_records_skipped_run_when_previous_is_running() {
         .await
         .expect("get task")
         .expect("task");
+    stored.overlap_policy = OverlapPolicy::Queue;
     stored.next_run_at = Some(format_utc_rfc3339(Utc::now() - ChronoDuration::seconds(1)));
     stored.updated_at = now_rfc3339();
     handle.db().update_task(&stored).await.expect("update task");
@@ -1189,18 +1424,9 @@ async fn setup_failure_marks_run_failed() {
 }
 
 #[tokio::test]
-async fn token_create_succeeds_and_max_create_limit_is_enforced() {
+async fn token_create_is_unlimited() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
-    let (source_task, token, run_id) = source_token(
-        &handle,
-        &executor,
-        "token-source",
-        vec![
-            "schedule:create".to_owned(),
-            "schedule:update-current".to_owned(),
-        ],
-    )
-    .await;
+    let (source_task, token, run_id) = source_token(&handle, &executor, "token-source").await;
 
     let create = sample_task_dto("token-created", TaskKind::Manual);
     let created: TaskResult = rpc::call(
@@ -1231,21 +1457,7 @@ async fn token_create_succeeds_and_max_create_limit_is_enforced() {
     assert_eq!(stored.created_by, "codex");
     assert_eq!(stored.created_by_run_id.as_deref(), Some(run_id.as_str()));
 
-    let mut token_row = handle
-        .db()
-        .get_schedule_capability_token_by_hash(&sha256_hex(token.as_bytes()))
-        .await
-        .expect("get token")
-        .expect("token row");
-    assert_eq!(token_row.create_count, 1);
-    token_row.max_creates = 1;
-    handle
-        .db()
-        .update_schedule_capability_token(&token_row)
-        .await
-        .expect("limit token");
-
-    let denied = rpc::call_raw(
+    let second: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
         with_invocation_metadata(
@@ -1263,20 +1475,27 @@ async fn token_create_succeeds_and_max_create_limit_is_enforced() {
         ),
     )
     .await
-    .expect("denied response");
-    let error = denied.error.expect("rpc error");
-    assert_eq!(error.code, JsonRpcErrorCode::PermissionDenied.code());
+    .expect("second token create");
+    assert_eq!(second.task.name, "token-created-2");
+
+    let token_row = handle
+        .db()
+        .get_schedule_capability_token_by_hash(&sha256_hex(token.as_bytes()))
+        .await
+        .expect("get token")
+        .expect("token row");
+    assert_eq!(token_row.create_count, 2);
+    assert_eq!(token_row.max_creates, 0);
 
     handle.shutdown().await;
 }
 
 #[tokio::test]
-async fn run_token_uses_task_max_created_schedules_per_run() {
+async fn issued_run_token_has_all_capabilities_and_no_create_limit() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
 
     let mut task = sample_task_dto("token-max-creates", TaskKind::Cron);
     task.next_run_at = Some(due_rfc3339());
-    task.policies.max_created_schedules_per_run = Some(17);
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
@@ -1298,7 +1517,16 @@ async fn run_token_uses_task_max_created_schedules_per_run() {
         .await
         .expect("get token")
         .expect("token");
-    assert_eq!(token_row.max_creates, 17);
+    assert_eq!(token_row.max_creates, 0);
+    let capabilities: Vec<String> =
+        serde_json::from_str(&token_row.capabilities_json).expect("capabilities");
+    assert_eq!(
+        capabilities,
+        SCHEDULE_CLI_CAPABILITIES
+            .iter()
+            .map(|capability| (*capability).to_owned())
+            .collect::<Vec<_>>()
+    );
 
     handle.shutdown().await;
 }
@@ -1306,13 +1534,19 @@ async fn run_token_uses_task_max_created_schedules_per_run() {
 #[tokio::test]
 async fn token_create_without_capability_is_denied() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
-    let (source_task, token, run_id) = source_token(
-        &handle,
-        &executor,
-        "token-no-create",
-        vec!["schedule:update-current".to_owned()],
-    )
-    .await;
+    let (source_task, token, run_id) = source_token(&handle, &executor, "token-no-create").await;
+    let mut token_row = handle
+        .db()
+        .get_schedule_capability_token_by_hash(&sha256_hex(token.as_bytes()))
+        .await
+        .expect("get token")
+        .expect("token row");
+    token_row.capabilities_json = r#"["schedule:update-current"]"#.to_owned();
+    handle
+        .db()
+        .update_schedule_capability_token(&token_row)
+        .await
+        .expect("narrow token for authorization test");
 
     let denied = rpc::call_raw(
         &handle.socket_path(),
@@ -1342,13 +1576,8 @@ async fn token_create_without_capability_is_denied() {
 #[tokio::test]
 async fn run_token_can_only_cancel_own_run_and_revokes_immediately() {
     let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
-    let (source_task, token, run_id) = source_token(
-        &handle,
-        &executor,
-        "token-cancel-source",
-        vec!["schedule:update-any".to_owned()],
-    )
-    .await;
+    let (source_task, token, run_id) =
+        source_token(&handle, &executor, "token-cancel-source").await;
 
     let source_table = handle
         .db()
@@ -1418,22 +1647,15 @@ async fn run_token_can_only_cancel_own_run_and_revokes_immediately() {
 }
 
 #[tokio::test]
-async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
+async fn scheduled_run_cannot_create_an_unregistered_project_target() {
     let (temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
-    let repo_path = temp.path().join("untrusted-repo");
-    std::fs::create_dir_all(&repo_path).expect("repo dir");
-    let (source_task, token, run_id) = source_token(
-        &handle,
-        &executor,
-        "token-untrusted",
-        vec!["schedule:create".to_owned()],
-    )
-    .await;
+    let repo_path = init_repo_with_local_main(&temp);
+    let (source_task, token, run_id) = source_token(&handle, &executor, "token-untrusted").await;
 
     let mut task = sample_task_dto("untrusted-created", TaskKind::Manual);
-    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.mode = RunTargetMode::RepoWorktree;
     task.target.repo_path = Some(repo_path.to_string_lossy().into_owned());
-    let created: TaskResult = rpc::call(
+    let denied = rpc::call_raw(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
         with_invocation_metadata(
@@ -1451,34 +1673,10 @@ async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
         ),
     )
     .await
-    .expect("create paused");
+    .expect("create response");
 
-    let stored = handle
-        .db()
-        .get_task(&created.task.id)
-        .await
-        .expect("get task")
-        .expect("task");
-    assert_eq!(stored.status, TaskStatus::Paused);
-    assert_eq!(
-        stored.repo_path.as_deref(),
-        Some(
-            repo_path
-                .canonicalize()
-                .expect("canonical")
-                .to_str()
-                .unwrap()
-        )
-    );
-    let audits = handle
-        .db()
-        .list_task_audit_events(&stored.id)
-        .await
-        .expect("audits");
-    assert!(audits
-        .iter()
-        .any(|audit| audit.action == "task.review_required"
-            && audit.reason.as_deref() == Some("untrusted_repo_path")));
+    let error = denied.error.expect("validation error");
+    assert_eq!(error.code, JsonRpcErrorCode::ValidationFailed.code());
 
     handle.shutdown().await;
 }
@@ -1487,11 +1685,10 @@ async fn scheduled_run_untrusted_repo_path_create_is_saved_paused() {
 async fn human_untrusted_repo_path_create_is_validation_error() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
-    let repo_path = temp.path().join("human-untrusted-repo");
-    std::fs::create_dir_all(&repo_path).expect("repo dir");
+    let repo_path = init_repo_with_local_main(&temp);
 
     let mut task = sample_task_dto("human-untrusted", TaskKind::Manual);
-    task.target.mode = RunTargetMode::RepoLocal;
+    task.target.mode = RunTargetMode::RepoWorktree;
     task.target.repo_path = Some(repo_path.to_string_lossy().into_owned());
     let denied = rpc::call_raw(
         &handle.socket_path(),
@@ -1514,17 +1711,16 @@ async fn human_untrusted_repo_path_create_is_validation_error() {
 }
 
 #[tokio::test]
-async fn permanent_failure_is_not_retried() {
+async fn failed_run_is_not_retried_automatically() {
     let (_temp, handle, _executor) = start_test_daemon(MockBehavior {
         delay: Duration::from_millis(10),
-        result: ExecutionResult::permanent_failed(),
+        result: ExecutionResult::failed(),
         hold_until_cancel: false,
     })
     .await;
 
-    let mut task = sample_task_dto("permanent-fail", TaskKind::Cron);
+    let mut task = sample_task_dto("no-auto-retry", TaskKind::Cron);
     task.next_run_at = Some(due_rfc3339());
-    task.policies.max_retries = Some(1);
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,
@@ -1549,7 +1745,7 @@ async fn permanent_failure_is_not_retried() {
 }
 
 #[tokio::test]
-async fn codex_executor_run_now_persists_runner_outcome_end_to_end() {
+async fn global_codex_path_applies_to_every_task_end_to_end() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let config = DaemonConfig::for_data_dir(temp_dir.path())
         .with_tick_interval(Duration::from_secs(3600))
@@ -1613,6 +1809,7 @@ async fn codex_executor_run_now_persists_runner_outcome_end_to_end() {
     assert_eq!(run.status, RunStatus::Succeeded);
     assert_eq!(run.exit_code, Some(0));
     assert_eq!(run.codex_session_id.as_deref(), Some("sess_dummy_success"));
+    assert!(run.codex_command_json.contains("dummy-codex-success.sh"));
     assert_eq!(run.result_summary.as_deref(), Some("done\n"));
     assert!(run
         .stdout_tail

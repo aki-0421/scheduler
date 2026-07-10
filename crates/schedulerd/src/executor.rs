@@ -9,9 +9,10 @@ use codex_runner::{
 };
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::model::{
-    new_run_artifact_id, new_run_event_id, Project, Run, RunArtifact, RunArtifactKind,
-    RunEventSource, RunStatus, SandboxMode, Task,
+    new_run_artifact_id, new_run_event_id, CleanupPolicy, Project, ProjectKind, Run, RunArtifact,
+    RunArtifactKind, RunEventSource, RunStatus, SandboxMode, Task,
 };
+use scheduler_core::settings::SETTING_RUNNER_CODEX_PATH;
 use scheduler_core::time::now_rfc3339;
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
@@ -40,16 +41,9 @@ pub enum ExecutionStatus {
     Canceled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FailureKind {
-    Transient,
-    Permanent,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionResult {
     pub status: ExecutionStatus,
-    pub failure_kind: Option<FailureKind>,
     pub exit_code: Option<i64>,
     pub signal: Option<String>,
     pub codex_session_id: Option<String>,
@@ -70,7 +64,6 @@ impl ExecutionResult {
     pub fn succeeded() -> Self {
         Self {
             status: ExecutionStatus::Succeeded,
-            failure_kind: None,
             exit_code: Some(0),
             signal: None,
             codex_session_id: None,
@@ -91,7 +84,6 @@ impl ExecutionResult {
     pub fn failed() -> Self {
         Self {
             status: ExecutionStatus::Failed,
-            failure_kind: Some(FailureKind::Transient),
             exit_code: Some(1),
             signal: None,
             codex_session_id: None,
@@ -109,31 +101,9 @@ impl ExecutionResult {
         }
     }
 
-    pub fn permanent_failed() -> Self {
-        Self {
-            status: ExecutionStatus::Failed,
-            failure_kind: Some(FailureKind::Permanent),
-            exit_code: Some(2),
-            signal: None,
-            codex_session_id: None,
-            workspace_path: None,
-            worktree_path: None,
-            branch_name: None,
-            base_ref: None,
-            commit_before: None,
-            commit_after: None,
-            codex_command_json: None,
-            warnings: Vec::new(),
-            stdout_tail: None,
-            stderr_tail: Some("mock permanent failure\n".to_owned()),
-            result_summary: Some("mock permanent failure".to_owned()),
-        }
-    }
-
     pub fn timed_out() -> Self {
         Self {
             status: ExecutionStatus::TimedOut,
-            failure_kind: Some(FailureKind::Transient),
             exit_code: None,
             signal: Some("SIGTERM".to_owned()),
             codex_session_id: None,
@@ -154,7 +124,6 @@ impl ExecutionResult {
     pub fn canceled() -> Self {
         Self {
             status: ExecutionStatus::Canceled,
-            failure_kind: Some(FailureKind::Permanent),
             exit_code: None,
             signal: Some("SIGTERM".to_owned()),
             codex_session_id: None,
@@ -303,26 +272,25 @@ impl CodexExecutor {
                 default_branch,
                 fetch_before_worktree: false,
                 worktree_parent: Some(self.paths.data_dir.join("worktrees")),
-                cleanup_policy: request.task.cleanup_policy,
-                cleanup_after_days: request.task.cleanup_after_days,
+                cleanup_policy: CleanupPolicy::Keep,
+                cleanup_after_days: None,
             },
             codex: CodexConfig {
                 codex_path,
                 model: self.model_for_task(&request.task).await?,
                 reasoning_effort: request.task.reasoning_effort.clone(),
-                sandbox_mode: Some(request.task.sandbox_mode),
-                approval_policy: request.task.approval_policy,
-                max_runtime_sec: request.task.max_runtime_sec.max(1) as u64,
-                allow_danger_full_access: request.task.sandbox_mode
-                    == SandboxMode::DangerFullAccess,
+                sandbox_mode: Some(SandboxMode::DangerFullAccess),
+                approval_policy: scheduler_core::model::ApprovalPolicy::Never,
+                max_runtime_sec: 0,
+                allow_danger_full_access: true,
             },
             scheduler: SchedulerContext {
                 app_version: self.version.clone(),
                 socket_path: Some(self.paths.socket_path.clone()),
                 run_token: request.schedule_token.clone(),
                 timezone: request.task.timezone.clone(),
-                inject_scheduler_instructions: request.task.inject_scheduler_instructions,
-                allow_schedule_cli: request.task.allow_schedule_cli,
+                inject_scheduler_instructions: true,
+                allow_schedule_cli: true,
                 schedule_cli_capabilities: request.schedule_capabilities.clone(),
             },
             paths: RunnerPaths {
@@ -336,7 +304,7 @@ impl CodexExecutor {
     async fn configured_codex_path(&self) -> Result<Option<PathBuf>, RunnerError> {
         let value = self
             .db
-            .get_setting::<String>("runner.codex_path")
+            .get_setting::<String>(SETTING_RUNNER_CODEX_PATH)
             .await
             .map_err(scheduler_error_to_runner_error)?;
         Ok(value.and_then(|value| normalize_codex_path_setting(&value)))
@@ -369,7 +337,11 @@ impl CodexExecutor {
             .map_err(scheduler_error_to_runner_error)?;
         Ok(projects
             .into_iter()
-            .filter(|project| project.trusted_at.is_some())
+            .filter(|project| {
+                project.trusted_at.is_some()
+                    && project.kind == ProjectKind::Git
+                    && project.git_root.is_some()
+            })
             .map(|project| {
                 project
                     .git_root
@@ -420,11 +392,6 @@ fn execution_result_from_outcome(outcome: RunOutcome) -> ExecutionResult {
         RunStatus::Canceled => ExecutionStatus::Canceled,
         _ => ExecutionStatus::Failed,
     };
-    let failure_kind = match status {
-        ExecutionStatus::Succeeded => None,
-        ExecutionStatus::Failed | ExecutionStatus::TimedOut => Some(FailureKind::Transient),
-        ExecutionStatus::Canceled => Some(FailureKind::Permanent),
-    };
     let codex_command_json = serde_json::to_string(&outcome.command).ok();
     let warnings = outcome
         .warnings
@@ -434,7 +401,6 @@ fn execution_result_from_outcome(outcome: RunOutcome) -> ExecutionResult {
 
     ExecutionResult {
         status,
-        failure_kind,
         exit_code: outcome.exit_code.map(i64::from),
         signal: outcome.signal,
         codex_session_id: outcome.codex_session_id,
@@ -468,7 +434,6 @@ fn execution_result_from_error(err: RunnerError) -> ExecutionResult {
     let message = err.to_string();
     ExecutionResult {
         status: ExecutionStatus::Failed,
-        failure_kind: Some(FailureKind::Permanent),
         exit_code: None,
         signal: None,
         codex_session_id: None,

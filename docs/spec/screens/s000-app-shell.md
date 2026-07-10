@@ -1,7 +1,7 @@
 ---
 title: S000 App Shell
 description: Codex Scheduler の global shell、sidebar、header、root navigation behavior を定義する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - desktop app shell、sidebar、header、global navigation、root redirect、task sidebar behavior を変更するとき。
   - scheduler health summary、task count indicator、settings entry、mobile navigation を変更するとき。
@@ -31,8 +31,9 @@ read_when:
 
 レイアウト領域:
 
+- sidebar の右側は header と page background が連続する content canvas とし、各 page の主内容を追加の panel surface で包まない。page-level hierarchy は spacing と separator で表現する。
 - sidebar 先頭 section は product title ではなく `プロジェクト` navigation item を表示する。`Codex Scheduler` の title section、brand mark、subtitle は sidebar に置かない。
-- プロジェクトを開いている場合、sidebar の project context と page header では GitHub repository は `user(org)/repo` 形式で表示する。GitHub remote を判定できない folder project は user-editable project name を表示する。
+- プロジェクトを開いている場合、sidebar の project context と page header では GitHub repository は `user(org)/repo` 形式で表示する。GitHub remote を判定できない Git project は user-editable project name を表示する。
 - sidebar section 間は separator line で区切る。
 - `ダッシュボード`、`タスク`、`実行履歴` の top-level navigation item は表示しない。
 - sidebar main section には active scheduled task を実行予定順で表示する。recurring task は次回実行 1 件だけを表示し、実行完了後に次の `nextRunAt` 位置へ移動する。
@@ -41,6 +42,7 @@ read_when:
 - sidebar 最下部には fixed icon toolbox section を置き、settings gear icon を含める。
 - sidebar 全体は `user-select: none` にする。
 - header は scheduler status badge と scheduler enabled toggle を表示しない。
+- header left area は current route の breadcrumb を表示する。breadcrumb は current page title、selected task name、selected run id を使い、長い値は truncate する。
 - header の running / queued summary は text sentence ではなく icon + number を使う。例: spinner / activity icon と `0`、queue icon と `0`。
 - header は primary action として `新規タスク` を持つ。
 - mobile navigation は同じ情報構造を drawer 内で表現する。
@@ -49,17 +51,19 @@ read_when:
 
 - Sidebar project item: icon + `プロジェクト` label。
 - Sidebar task item: task name、next run relative time、running spinner または next-run icon。
-- Archived item: folder icon + `アーカイブ済み` label、archived count。
+- Archived item: folder icon + `アーカイブ済み` label。archived count は sidebar に表示しない。
 - Toolbox: settings gear icon button。必要に応じて diagnostics などの icon-only controls を追加できる。
 - Header count: running count、queued count。長い `0件実行中 · 0件待機中` 形式は使わない。
+- Header breadcrumb: `プロジェクト`、`アーカイブ済み`、`アーカイブ済み / <task name>`、`アーカイブ済み / 新規タスク`、`実行履歴 / <run id>`、`設定`。
+- Page header: title cluster と action controls は同じ行内で垂直中央揃えにする。page-level explanation は常時 subtitle として表示せず、title 右の `?` help trigger の tooltip に置く。
 
 状態:
 
 - Loading: sidebar task section は compact skeleton rows を表示する。
 - Empty active tasks: main section に `予定されたタスクはありません` を表示し、`新規タスク` への compact action を出す。
 - Running task: spinner、`実行中` label、active style を表示する。
-- Archived exists: `アーカイブ済み` に count を表示する。
-- Archived empty: `アーカイブ済み` は disabled ではなく count `0` の neutral item として表示し、押すと empty archived list に遷移する。
+- Archived exists: `アーカイブ済み` を neutral item として表示し、押すと archived list に遷移する。
+- Archived empty: `アーカイブ済み` は disabled にせず、押すと empty archived list に遷移する。
 - Health unavailable: count は `--` ではなく `0` を表示し、icon に muted style を使う。
 
 バリデーションとエラー:
@@ -86,4 +90,6 @@ read_when:
 - running task は spinner と `実行中` text で判別できる。
 - completed one-shot task と paused task は sidebar main section に表示されず、`アーカイブ済み` から一覧できる。
 - header に `稼働中` badge と scheduler toggle が表示されない。
+- header に breadcrumb が表示される。
 - header count は icon + number で表示される。
+- sidebar の右側では page-level section、list、table、form、tab content に装飾目的の panel surface が表示されない。

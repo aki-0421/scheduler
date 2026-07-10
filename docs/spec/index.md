@@ -16,10 +16,10 @@ read_when:
 - [プロダクトスコープ](product-scope.md): product intent、user value、MVP 境界、現在の gap。
 - [アーキテクチャ](architecture.md): process layout、crate、desktop shell、sidecar、persistence、runtime path。
 - [データモデル](data-model.md): 永続化 entity、DTO、enum、settings、retention record。
-- [スケジューリングと実行](scheduling-and-execution.md): schedule calculation、daemon tick、run lifecycle、Codex runner behavior、log、retry、cleanup。
+- [スケジューリングと実行](scheduling-and-execution.md): schedule calculation、daemon tick、run lifecycle、Codex runner behavior、log、手動再実行、固定 cleanup。
 - [インターフェース](interfaces.md): desktop UI、Tauri command、daemon JSON-RPC、`codex-schedule` CLI surface。
 - [画面仕様](screens.md): desktop screen ID、screen-level requirement、state、control、validation、accessibility、acceptance criteria。
-- [セキュリティと運用](security-and-operations.md): local trust boundary、project scope、task lock、capability token、sandbox policy、diagnostics、release artifact、verification。
+- [セキュリティと運用](security-and-operations.md): local trust boundary、project scope、task lock、capability token、固定 execution profile、diagnostics、release artifact、verification。
 
 ## 読む順序
 

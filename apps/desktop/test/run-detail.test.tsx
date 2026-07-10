@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunDetail } from "@/components/run-detail";
@@ -20,30 +21,66 @@ const run: RunDto = {
   createdScheduleCount: 0,
 };
 
+async function openLogsTab() {
+  await userEvent.click(screen.getByRole("tab", { name: "ログ" }));
+}
+
 describe("RunDetail", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("renders stdout and stderr tail data", async () => {
-    const tailSpy = vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
-      runId: params.runId,
-      stream: params.stream,
-      cursor: params.cursor ?? 0,
-      nextCursor: 10,
-      eof: true,
-      data: params.stream === "stdout" ? "stdout log line\n" : "stderr log line\n",
-    }));
+    const tailSpy = vi
+      .spyOn(ipcClient, "runTailLog")
+      .mockImplementation(async (params) => ({
+        runId: params.runId,
+        stream: params.stream,
+        cursor: params.cursor ?? 0,
+        nextCursor: 10,
+        eof: true,
+        data:
+          params.stream === "stdout"
+            ? "stdout log line\n"
+            : "stderr log line\n",
+      }));
 
     renderWithClient(<RunDetail run={run} />);
+    await openLogsTab();
 
     expect(await screen.findByText(/stdout log line/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "stderr" }));
+    expect(await screen.findByText(/stderr log line/)).toBeInTheDocument();
     expect(tailSpy).toHaveBeenCalledWith({
       runId: "run_test",
       stream: "stdout",
       cursor: 0,
       limit: 16384,
     });
+  });
+
+  it("renders nested log tabs outside the selected log panel", async () => {
+    vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
+      runId: params.runId,
+      stream: params.stream,
+      cursor: params.cursor ?? 0,
+      nextCursor: 0,
+      eof: true,
+      data: "",
+    }));
+
+    renderWithClient(<RunDetail run={run} />);
+    await openLogsTab();
+
+    const logTabList = screen
+      .getByRole("tab", { name: "stdout" })
+      .closest('[role="tablist"]');
+    const stdoutPanel = screen.getByRole("tabpanel", { name: "stdout" });
+
+    expect(logTabList?.closest("section")).toBeNull();
+    expect(logTabList).toHaveClass("flex-wrap");
+    expect(logTabList).not.toHaveClass("overflow-x-auto");
+    expect(stdoutPanel.querySelector("section")).toBeInTheDocument();
   });
 
   it("renders log URLs as escaped text instead of links", async () => {
@@ -57,9 +94,14 @@ describe("RunDetail", () => {
     }));
 
     renderWithClient(<RunDetail run={run} />);
+    await openLogsTab();
 
-    expect(await screen.findByText(/https:\/\/example\.test\/log/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /example\.test/ })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/https:\/\/example\.test\/log/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /example\.test/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("resets rendered log state when switching runs", async () => {
@@ -76,6 +118,7 @@ describe("RunDetail", () => {
     }));
 
     const { rerender } = renderWithClient(<RunDetail run={run} />);
+    await openLogsTab();
 
     expect(await screen.findByText(/first run log/)).toBeInTheDocument();
 
@@ -85,5 +128,22 @@ describe("RunDetail", () => {
       expect(screen.queryByText(/first run log/)).not.toBeInTheDocument(),
     );
     expect(await screen.findByText(/second run log/)).toBeInTheDocument();
+  });
+
+  it("manually queues a new run from a failed session", async () => {
+    const user = userEvent.setup();
+    const runNow = vi.spyOn(ipcClient, "taskRunNow").mockResolvedValue({
+      id: "run_retry_manual",
+      taskId: "task_test",
+      triggerType: "manual",
+      status: "queued",
+      findingsCount: 0,
+      createdScheduleCount: 0,
+    });
+
+    renderWithClient(<RunDetail run={{ ...run, status: "failed" }} />);
+    await user.click(screen.getByRole("button", { name: "再実行" }));
+
+    await waitFor(() => expect(runNow).toHaveBeenCalledWith("task_test"));
   });
 });

@@ -6,10 +6,9 @@ use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::ipc::{JsonRpcErrorCode, METHOD_SETTINGS_SET};
 use scheduler_core::model::{
-    new_run_id, new_schedule_capability_token_id, ApprovalPolicy, AuditActorType, CleanupPolicy,
-    MissedPolicy, OverlapPolicy, Run, RunStatus, RunTargetMode, SandboxMode,
-    ScheduleCapabilityToken, Task, TaskCodexDto, TaskDto, TaskKind, TaskPoliciesDto, TaskPromptDto,
-    TaskStatus, TaskTargetDto, TriggerType,
+    new_run_id, new_schedule_capability_token_id, AuditActorType, Run, RunStatus, RunTargetMode,
+    ScheduleCapabilityToken, Task, TaskCodexDto, TaskDto, TaskKind, TaskPromptDto, TaskStatus,
+    TaskTargetDto, TriggerType,
 };
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
 use scheduler_core::util::sha256_hex;
@@ -35,6 +34,8 @@ fn cli_output(temp_dir: &TempDir, args: &[&str]) -> Output {
         .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
         .env_remove("CODEX_SCHEDULER")
         .env_remove("CODEX_SCHEDULER_APP_VERSION")
+        .env_remove("CODEX_SCHEDULER_DB")
+        .env_remove("CODEX_SCHEDULER_SOCKET")
         .env_remove("CODEX_SCHEDULER_CURRENT_TASK_ID")
         .env_remove("CODEX_SCHEDULER_CURRENT_RUN_ID")
         .env_remove("CODEX_SCHEDULER_RUN_TOKEN")
@@ -128,7 +129,6 @@ fn sample_task_dto() -> TaskDto {
         id: String::new(),
         slug: "fallback-task".to_owned(),
         name: "fallback task".to_owned(),
-        description: None,
         status: TaskStatus::Active,
         locked: false,
         kind: TaskKind::Manual,
@@ -145,26 +145,36 @@ fn sample_task_dto() -> TaskDto {
         codex: TaskCodexDto {
             model: None,
             reasoning_effort: None,
-            sandbox_mode: SandboxMode::ReadOnly,
-            approval_policy: ApprovalPolicy::Never,
         },
         prompt: TaskPromptDto {
             body: "Fallback prompt.".to_owned(),
-            inject_scheduler_instructions: true,
         },
-        policies: TaskPoliciesDto {
-            allow_schedule_cli: true,
-            missed_policy: MissedPolicy::LatestWithinWindow,
-            overlap_policy: OverlapPolicy::Skip,
-            max_runtime_sec: 7200,
-            max_created_schedules_per_run: Some(5),
-            schedule_cli_capabilities: Some(vec!["schedule:list".to_owned()]),
-            missed_window_days: Some(7),
-            max_retries: Some(0),
-            retry_backoff_sec: Some(300),
-            cleanup_policy: Some(CleanupPolicy::Keep),
-            cleanup_after_days: None,
-        },
+    }
+}
+
+#[test]
+fn task_help_hides_global_and_fixed_execution_fields() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+
+    for args in [["create", "--help"], ["update", "--help"]] {
+        let output = cli_output(&temp_dir, &args);
+        assert!(output.status.success());
+        let help = String::from_utf8_lossy(&output.stdout);
+        assert!(!help.contains("--description"));
+        assert!(!help.contains("--clear-description"));
+        assert!(!help.contains("--codex-path"));
+        assert!(!help.contains("--clear-codex-path"));
+        for fixed_flag in [
+            "--sandbox",
+            "--approval-policy",
+            "--allow-schedule-cli",
+            "--max-runtime-sec",
+            "--max-created-schedules",
+            "--missed-policy",
+            "--overlap-policy",
+        ] {
+            assert!(!help.contains(fixed_flag), "unexpected flag: {fixed_flag}");
+        }
     }
 }
 
@@ -309,6 +319,38 @@ async fn create_once_create_cron_and_list_json() {
         .expect("tasks")
         .iter()
         .all(|task| task.get("prompt").is_none()));
+
+    handle.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn repo_target_always_uses_project_worktree_mode() {
+    let (temp_dir, handle) = start_test_daemon().await;
+    let repo = temp_dir.path().join("repo");
+    init_git_repo(&repo);
+
+    let created = cli_output(
+        &temp_dir,
+        &[
+            "create",
+            "--name",
+            "project review",
+            "--manual",
+            "--repo",
+            repo.to_str().expect("repo path"),
+            "--prompt",
+            "Review the project in an isolated worktree.",
+            "--json",
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&created.stdout),
+        String::from_utf8_lossy(&created.stderr),
+    );
+    let value = json_stdout(&created);
+    assert_eq!(value["task"]["targetMode"], "repo-worktree");
 
     handle.shutdown().await;
 }
@@ -552,7 +594,6 @@ async fn scheduled_run_project_trust_and_settings_set_are_denied() {
             "--manual",
             "--repo",
             repo_path.to_str().expect("repo path"),
-            "--worktree",
             "--prompt",
             "Repo prompt.",
             "--json",
@@ -648,8 +689,6 @@ async fn create_manual_chat_falls_back_to_sqlite_with_direct_db_flag() {
             "--chat",
             "--prompt",
             "Fallback without daemon.",
-            "--max-created-schedules",
-            "12",
             "--json",
         ],
     );
@@ -668,7 +707,9 @@ async fn create_manual_chat_falls_back_to_sqlite_with_direct_db_flag() {
     let task = db.get_task(task_id).await.expect("get task").expect("task");
     assert_eq!(task.name, "sqlite fallback");
     assert_eq!(task.created_by, "cli");
-    assert_eq!(task.max_created_schedules_per_run, 12);
+    assert_eq!(task.max_created_schedules_per_run, 0);
+    assert_eq!(task.max_runtime_sec, 0);
+    assert_eq!(task.max_retries, 0);
     let audits = db
         .list_task_audit_events(task_id)
         .await
@@ -835,6 +876,18 @@ fn clap_invalid_args_exit_2() {
 }
 
 #[test]
+fn removed_project_execution_flags_are_rejected() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    for removed_flag in ["--local", "--worktree"] {
+        let output = cli_output(&temp_dir, &["create", removed_flag, "--json"]);
+        assert_eq!(output.status.code(), Some(2), "flag={removed_flag}");
+        let value = json_stdout(&output);
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["error"]["code"], "invalid_arguments");
+    }
+}
+
+#[test]
 fn update_current_without_token_exits_4() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let output = Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
@@ -872,4 +925,33 @@ fn scheduled_write_without_token_exits_4_locally() {
     let value = json_stdout(&output);
     assert_eq!(value["ok"], false);
     assert_eq!(value["error"]["code"], "permission_denied");
+}
+
+fn init_git_repo(path: &std::path::Path) {
+    std::fs::create_dir_all(path).expect("create repo");
+    for args in [
+        vec!["init"],
+        vec!["config", "user.name", "Scheduler Test"],
+        vec!["config", "user.email", "scheduler@example.invalid"],
+    ] {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(path)
+            .output()
+            .expect("run git");
+        assert!(output.status.success());
+    }
+    std::fs::write(path.join("README.md"), "test\n").expect("write readme");
+    let add = Command::new("git")
+        .args(["add", "README.md"])
+        .current_dir(path)
+        .output()
+        .expect("git add");
+    assert!(add.status.success());
+    let commit = Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(path)
+        .output()
+        .expect("git commit");
+    assert!(commit.status.success());
 }

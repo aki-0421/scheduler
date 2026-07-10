@@ -207,7 +207,7 @@ impl SchedulerDb {
         self.validate_task(task).await?;
         sqlx::query(
             "INSERT INTO tasks (
-                id, slug, name, description, status, locked, kind, cron_expr, run_at, timezone,
+                id, slug, name, status, locked, kind, cron_expr, run_at, timezone,
                 next_run_at, last_scheduled_for, schedule_status, schedule_error, prompt_body,
                 prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
                 base_ref, model, reasoning_effort, sandbox_mode, approval_policy,
@@ -216,14 +216,15 @@ impl SchedulerDb {
                 retry_backoff_sec, cleanup_policy, cleanup_after_days, created_by,
                 created_by_run_id, created_at, updated_at, deleted_at
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )",
         )
         .bind(&task.id)
         .bind(&task.slug)
         .bind(&task.name)
-        .bind(&task.description)
         .bind(task.status)
         .bind(task.locked)
         .bind(task.kind)
@@ -290,7 +291,7 @@ impl SchedulerDb {
         self.validate_task(task).await?;
         let result = sqlx::query(
             "UPDATE tasks SET
-                slug = ?, name = ?, description = ?, status = ?, locked = ?, kind = ?, cron_expr = ?,
+                slug = ?, name = ?, status = ?, locked = ?, kind = ?, cron_expr = ?,
                 run_at = ?, timezone = ?, next_run_at = ?, last_scheduled_for = ?,
                 schedule_status = ?, schedule_error = ?, prompt_body = ?, prompt_hash = ?,
                 inject_scheduler_instructions = ?, target_mode = ?, project_id = ?,
@@ -304,7 +305,6 @@ impl SchedulerDb {
         )
         .bind(&task.slug)
         .bind(&task.name)
-        .bind(&task.description)
         .bind(task.status)
         .bind(task.locked)
         .bind(task.kind)
@@ -514,22 +514,6 @@ impl SchedulerDb {
         ))
         .bind(succeeded_cutoff)
         .bind(failed_cutoff)
-        .fetch_all(&self.pool)
-        .await?)
-    }
-
-    pub async fn list_delete_after_days_worktree_runs(&self) -> Result<Vec<Run>> {
-        Ok(sqlx::query_as::<_, Run>(&format!(
-            "{RUN_SELECT_ALIASED}
-             JOIN tasks t ON t.id = r.task_id
-             WHERE t.cleanup_policy = 'delete_after_days'
-               AND r.worktree_path IS NOT NULL
-               AND r.ended_at IS NOT NULL
-               AND r.status IN (
-                 'succeeded', 'failed', 'canceled', 'skipped', 'interrupted', 'timed_out'
-               )
-             ORDER BY r.ended_at ASC, r.id ASC"
-        ))
         .fetch_all(&self.pool)
         .await?)
     }
@@ -1036,9 +1020,13 @@ impl SchedulerDb {
             return Err(SchedulerError::Validation(ValidationError::MissingCronExpr));
         }
 
-        if task.target_mode != RunTargetMode::Chat
-            && empty_opt(task.project_id.as_deref())
-            && empty_opt(task.repo_path.as_deref())
+        if task.target_mode == RunTargetMode::RepoLocal {
+            return Err(SchedulerError::Validation(
+                ValidationError::ProjectTargetRequiresWorktree,
+            ));
+        }
+
+        if task.target_mode == RunTargetMode::RepoWorktree && empty_opt(task.project_id.as_deref())
         {
             return Err(SchedulerError::Validation(ValidationError::MissingTarget));
         }
@@ -1055,10 +1043,19 @@ impl SchedulerDb {
             };
 
             let project = self.get_project(project_id).await?;
-            if !matches!(project.map(|project| project.kind), Some(ProjectKind::Git)) {
+            let Some(project) = project.filter(|project| {
+                project.kind == ProjectKind::Git && !empty_opt(project.git_root.as_deref())
+            }) else {
                 return Err(SchedulerError::Validation(
                     ValidationError::RepoWorktreeRequiresGitProject,
                 ));
+            };
+            if let Some(repo_path) = task.repo_path.as_deref() {
+                if Some(repo_path) != project.git_root.as_deref() {
+                    return Err(SchedulerError::Validation(
+                        ValidationError::ProjectTargetPathMismatch,
+                    ));
+                }
             }
         }
 
@@ -1193,7 +1190,7 @@ async fn has_pending_migration(pool: &SqlitePool) -> Result<bool> {
     Ok(false)
 }
 
-const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, description, status, locked, kind, cron_expr,
+const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
     base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
@@ -1202,7 +1199,7 @@ const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, description, status, loc
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
     FROM tasks WHERE id = ?";
 
-const TASK_SELECT_BY_SLUG: &str = "SELECT id, slug, name, description, status, locked, kind, cron_expr,
+const TASK_SELECT_BY_SLUG: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
     base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
@@ -1211,7 +1208,7 @@ const TASK_SELECT_BY_SLUG: &str = "SELECT id, slug, name, description, status, l
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
     FROM tasks WHERE slug = ?";
 
-const TASK_SELECT_ALL: &str = "SELECT id, slug, name, description, status, locked, kind, cron_expr,
+const TASK_SELECT_ALL: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
     base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
@@ -1220,7 +1217,7 @@ const TASK_SELECT_ALL: &str = "SELECT id, slug, name, description, status, locke
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
     FROM tasks ORDER BY updated_at DESC, id DESC";
 
-const TASK_SELECT_ACTIVE_DUE: &str = "SELECT id, slug, name, description, status, locked, kind, cron_expr,
+const TASK_SELECT_ACTIVE_DUE: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
     base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
@@ -1263,15 +1260,6 @@ const RUN_SELECT: &str = "SELECT id, task_id, trigger_type, scheduled_for, attem
     last_message_path, stdout_tail, stderr_tail, result_summary, findings_count,
     created_schedule_count, created_at, updated_at
     FROM runs";
-
-const RUN_SELECT_ALIASED: &str = "SELECT r.id, r.task_id, r.trigger_type, r.scheduled_for,
-    r.attempt, r.status, r.status_reason, r.queued_at, r.started_at, r.ended_at, r.duration_ms,
-    r.target_mode, r.workspace_path, r.worktree_path, r.branch_name, r.base_ref,
-    r.commit_before, r.commit_after, r.codex_command_json, r.codex_session_id, r.pid,
-    r.exit_code, r.signal, r.stdout_log_path, r.stderr_log_path, r.events_jsonl_path,
-    r.last_message_path, r.stdout_tail, r.stderr_tail, r.result_summary, r.findings_count,
-    r.created_schedule_count, r.created_at, r.updated_at
-    FROM runs r";
 
 const TERMINAL_RUN_HISTORY_SUBQUERY: &str = "SELECT id FROM runs
     WHERE ended_at IS NOT NULL

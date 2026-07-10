@@ -1,7 +1,7 @@
 ---
 title: 画面仕様
 description: Codex Scheduler の desktop screen specification convention、stable screen ID registry、per-screen spec link を定義する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - desktop app page、dialog、task wizard behavior、screen copy、validation、loading state、empty state、navigation を変更するとき。
   - Codex Scheduler desktop screen に割り当てられた stable screen ID を探すとき。
@@ -32,6 +32,13 @@ read_when:
 - Known gaps: 意図的に未実装の behavior または schema-backed limitation。
 
 この item set は外部の UI specification と requirements guidance に基づく。UI spec は logical flow、display contents、access points、fields、defaults、values、exception cases を document すべきであり、acceptance criteria は testable であるべきで、error state は visible かつ constructive であるべきで、form validation は可能な限り field の近くに置くべきであり、accessibility documentation は interaction state と inclusive behavior を含めるべきである。review した source: [Bridging the Gap UI specification template](https://www.bridging-the-gap.com/how-to-create-a-user-interface-specification/)、[Wikipedia UI specification structure summary](https://en.wikipedia.org/wiki/User_interface_specification)、[AltexSoft acceptance criteria guidance](https://www.altexsoft.com/blog/functional-and-non-functional-requirements-specification-and-types/)、[NN/g error message guidelines](https://www.nngroup.com/articles/error-message-guidelines/)、[NN/g form error guidelines](https://www.nngroup.com/articles/errors-forms-design-guidelines/)、[Stephanie Walter accessibility and interaction documentation guidance](https://stephaniewalter.design/blog/a-designers-guide-to-documenting-accessibility-user-interactions/)。
+
+## 共通レイアウト規約
+
+- sidebar の右側は page background が連続する 1 枚の content canvas とする。page-level section、list、table、form、tab content を、装飾目的の rounded border、別背景、shadow、内側 padding を組み合わせた panel で囲まない。
+- content の階層は page header、section heading、spacing、separator、table header、row divider で示す。外枠を外しても section と row の境界、hover / selected state、keyboard focus は判別できる状態を保つ。
+- tab list は選択中 content の直上に配置し、tab content 自体には外側の bordered panel を置かない。nested tabs も同じ規約を使う。
+- input、selectable radio card、code / log block、chat bubble、status / alert、popover、dialog など、操作または内容の識別に surface が必要な局所要素はこの規約の対象外とする。
 
 ## Screen ID registry
 

@@ -4,11 +4,11 @@
 //! interface. A process that can connect to that socket is treated as a human
 //! terminal with local scheduler authority unless it explicitly presents
 //! scheduled-run metadata and a run-scoped capability token. True isolation for
-//! scheduled Codex executions is enforced by the Codex sandbox/runner layer, not
-//! by attempting to distinguish same-UID Unix processes at the JSON-RPC layer.
+//! scheduled Codex executions is enforced by run-scoped scheduler capabilities
+//! and project worktree isolation, not by attempting to distinguish same-UID
+//! Unix processes at the JSON-RPC layer.
 
 use std::collections::{BTreeMap, HashMap};
-use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
@@ -21,26 +21,22 @@ use scheduler_core::db::{RunHistoryCleanupCounts, SchedulerDb};
 use scheduler_core::ipc::*;
 use scheduler_core::model::*;
 use scheduler_core::schedule::{
-    compute_next_run_at, decide_overlap, retry_decision, select_missed_runs, MissedRunCursor,
-    MissedRunOptions, OverlapDecision,
+    compute_next_run_at, select_missed_runs, MissedRunCursor, MissedRunOptions,
 };
 use scheduler_core::settings::{SETTING_RUNNER_CODEX_PATH, SETTING_SCHEDULER_ENABLED};
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
-use scheduler_core::util::sha256_hex;
+use scheduler_core::util::{sha256_hex, unique_slug};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::process::Command as TokioCommand;
 use tokio::sync::{broadcast, Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::config::DaemonConfig;
-use crate::executor::{
-    ExecutionRequest, ExecutionResult, ExecutionStatus, FailureKind, RunExecutor,
-};
+use crate::executor::{ExecutionRequest, ExecutionResult, ExecutionStatus, RunExecutor};
 use crate::rpc::parse_params;
 
 const CAP_SCHEDULE_CREATE: &str = "schedule:create";
@@ -62,7 +58,6 @@ pub struct DaemonEvent {
 
 #[derive(Debug)]
 struct ActiveRun {
-    task_id: String,
     cancel: CancellationToken,
 }
 
@@ -110,9 +105,6 @@ pub struct RetentionCleanupResult {
     pub capability_tokens_deleted: u64,
     pub log_dirs_deleted: u64,
     pub log_dirs_skipped: u64,
-    pub worktrees_deleted: u64,
-    pub worktrees_skipped_dirty: u64,
-    pub worktrees_skipped: u64,
     pub run_history: RunHistoryCleanupCounts,
 }
 
@@ -130,7 +122,7 @@ impl DaemonHandle {
     }
 
     pub fn request_tick(&self) {
-        self.state.notify_tick.notify_waiters();
+        self.state.notify_tick.notify_one();
     }
 
     pub async fn shutdown(self) {
@@ -178,7 +170,7 @@ pub async fn start_daemon(
         tokio::spawn(async move { rpc_server_loop(rpc_state, listener).await }),
     ];
 
-    state.notify_tick.notify_waiters();
+    state.notify_tick.notify_one();
     Ok(DaemonHandle { state, joins })
 }
 
@@ -222,9 +214,6 @@ async fn retention_cleanup_loop(state: Arc<DaemonState>) {
                     capability_tokens_deleted = result.capability_tokens_deleted,
                     log_dirs_deleted = result.log_dirs_deleted,
                     log_dirs_skipped = result.log_dirs_skipped,
-                    worktrees_deleted = result.worktrees_deleted,
-                    worktrees_skipped_dirty = result.worktrees_skipped_dirty,
-                    worktrees_skipped = result.worktrees_skipped,
                     task_run_references_cleared = result.run_history.task_run_references_cleared,
                     run_events_deleted = result.run_history.run_events_deleted,
                     run_artifacts_deleted = result.run_history.run_artifacts_deleted,
@@ -261,8 +250,6 @@ pub async fn run_retention_cleanup(
     let log_candidates = db
         .list_runs_for_log_cleanup(&succeeded_logs_cutoff, &failed_logs_cutoff)
         .await?;
-    let worktree_candidates = db.list_delete_after_days_worktree_runs().await?;
-
     let capability_tokens_deleted = db
         .delete_expired_schedule_capability_tokens(&token_cutoff)
         .await?;
@@ -283,18 +270,6 @@ pub async fn run_retention_cleanup(
                     error = %err,
                     "retention cleanup skipped run logs dir"
                 );
-            }
-        }
-    }
-
-    for run in worktree_candidates {
-        match cleanup_delete_after_days_worktree(db, paths, run, now).await {
-            Ok(WorktreeCleanupOutcome::Deleted) => result.worktrees_deleted += 1,
-            Ok(WorktreeCleanupOutcome::SkippedDirty) => result.worktrees_skipped_dirty += 1,
-            Ok(WorktreeCleanupOutcome::Skipped) => result.worktrees_skipped += 1,
-            Err(err) => {
-                result.worktrees_skipped += 1;
-                warn!(error = %err, "worktree retention cleanup failed");
             }
         }
     }
@@ -328,141 +303,6 @@ fn remove_run_logs_dir(logs_root: &Path, run_id: &str) -> anyhow::Result<bool> {
 
     fs::remove_dir_all(&canonical_run_dir)?;
     Ok(true)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WorktreeCleanupOutcome {
-    Deleted,
-    SkippedDirty,
-    Skipped,
-}
-
-async fn cleanup_delete_after_days_worktree(
-    db: &SchedulerDb,
-    paths: &crate::config::AppPaths,
-    mut run: Run,
-    now: DateTime<Utc>,
-) -> anyhow::Result<WorktreeCleanupOutcome> {
-    let Some(ended_at) = run
-        .ended_at
-        .as_deref()
-        .and_then(|value| parse_utc_rfc3339(value).ok())
-    else {
-        return Ok(WorktreeCleanupOutcome::Skipped);
-    };
-    let Some(task) = db.get_task(&run.task_id).await? else {
-        return Ok(WorktreeCleanupOutcome::Skipped);
-    };
-    let cleanup_after_days = task.cleanup_after_days.unwrap_or(1).max(0);
-    if ended_at + ChronoDuration::days(cleanup_after_days) > now {
-        return Ok(WorktreeCleanupOutcome::Skipped);
-    }
-
-    let Some(worktree_path) = run.worktree_path.as_deref().map(PathBuf::from) else {
-        return Ok(WorktreeCleanupOutcome::Skipped);
-    };
-    if !worktree_path.exists() {
-        run.worktree_path = None;
-        run.updated_at = now_rfc3339();
-        db.update_run(&run).await?;
-        return Ok(WorktreeCleanupOutcome::Deleted);
-    }
-
-    let worktrees_root = paths.data_dir.join("worktrees");
-    let canonical_root = fs::canonicalize(&worktrees_root)?;
-    let canonical_worktree = fs::canonicalize(&worktree_path)?;
-    if !canonical_worktree.starts_with(&canonical_root) {
-        warn!(
-            run_id = %run.id,
-            worktree_path = %canonical_worktree.display(),
-            worktrees_root = %canonical_root.display(),
-            "worktree cleanup skipped path outside scheduler worktrees root"
-        );
-        return Ok(WorktreeCleanupOutcome::Skipped);
-    }
-
-    let status = cleanup_git_output(
-        &canonical_worktree,
-        [OsString::from("status"), OsString::from("--porcelain=v1")],
-    )
-    .await?;
-    if !status.trim().is_empty() {
-        warn!(
-            run_id = %run.id,
-            worktree_path = %canonical_worktree.display(),
-            "worktree cleanup skipped dirty worktree"
-        );
-        return Ok(WorktreeCleanupOutcome::SkippedDirty);
-    }
-
-    let Some(repo_path) = repo_path_for_worktree_cleanup(db, &task).await? else {
-        warn!(run_id = %run.id, "worktree cleanup skipped because repo path is unavailable");
-        return Ok(WorktreeCleanupOutcome::Skipped);
-    };
-    let canonical_repo = fs::canonicalize(repo_path)?;
-    cleanup_git_output(
-        &canonical_repo,
-        [
-            OsString::from("worktree"),
-            OsString::from("remove"),
-            canonical_worktree.as_os_str().to_os_string(),
-        ],
-    )
-    .await?;
-
-    run.worktree_path = None;
-    run.updated_at = now_rfc3339();
-    db.update_run(&run).await?;
-    Ok(WorktreeCleanupOutcome::Deleted)
-}
-
-async fn repo_path_for_worktree_cleanup(
-    db: &SchedulerDb,
-    task: &Task,
-) -> scheduler_core::Result<Option<PathBuf>> {
-    if let Some(path) = task
-        .repo_path
-        .as_deref()
-        .filter(|path| !path.trim().is_empty())
-    {
-        return Ok(Some(PathBuf::from(path)));
-    }
-    let Some(project_id) = task.project_id.as_deref() else {
-        return Ok(None);
-    };
-    let Some(project) = db.get_project(project_id).await? else {
-        return Ok(None);
-    };
-    Ok(project
-        .git_root
-        .as_deref()
-        .or(Some(project.path.as_str()))
-        .map(PathBuf::from))
-}
-
-async fn cleanup_git_output<I, S>(cwd: &Path, args: I) -> anyhow::Result<String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let args = args
-        .into_iter()
-        .map(|arg| arg.as_ref().to_os_string())
-        .collect::<Vec<_>>();
-    let output = TokioCommand::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(&args)
-        .output()
-        .await?;
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
-    }
-    anyhow::bail!(
-        "git {:?} failed: {}",
-        args,
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
 }
 
 fn next_tick_delay(interval: Duration) -> Duration {
@@ -553,6 +393,8 @@ async fn process_due_cron_task(
     now: DateTime<Utc>,
     due_until: DateTime<Utc>,
 ) -> anyhow::Result<()> {
+    task.missed_policy = MissedPolicy::Skip;
+    task.missed_window_days = 0;
     let Some(previous_next_run_at) = task.next_run_at.as_deref() else {
         return recompute_task_schedule(state, &mut task, now).await;
     };
@@ -749,31 +591,22 @@ async fn start_available_runs(state: &Arc<DaemonState>) -> anyhow::Result<()> {
         let same_task_running =
             count_running_for_task(&state.db, &task.id, Some(&run.id)).await? > 0;
         if same_task_running {
-            match decide_overlap(task.overlap_policy, true) {
-                OverlapDecision::Skip { reason } => {
-                    let mut skipped = run;
-                    skipped.status = RunStatus::Skipped;
-                    skipped.status_reason = Some(reason.as_str().to_owned());
-                    skipped.ended_at = Some(now_rfc3339());
-                    skipped.updated_at = now_rfc3339();
-                    state.db.update_run(&skipped).await?;
-                    create_run_event(
-                        &state.db,
-                        &skipped.id,
-                        "warn",
-                        "run.skipped",
-                        Some(reason.as_str().to_owned()),
-                        None,
-                    )
-                    .await?;
-                    continue;
-                }
-                OverlapDecision::Queue => continue,
-                OverlapDecision::CancelPrevious => {
-                    cancel_active_runs_for_task(state, &task.id).await;
-                }
-                OverlapDecision::Start => {}
-            }
+            let mut skipped = run;
+            skipped.status = RunStatus::Skipped;
+            skipped.status_reason = Some("previous_run_still_running".to_owned());
+            skipped.ended_at = Some(now_rfc3339());
+            skipped.updated_at = now_rfc3339();
+            state.db.update_run(&skipped).await?;
+            create_run_event(
+                &state.db,
+                &skipped.id,
+                "warn",
+                "run.skipped",
+                Some("previous_run_still_running".to_owned()),
+                None,
+            )
+            .await?;
+            continue;
         }
 
         if count_running(&state.db).await? >= limits.global {
@@ -803,27 +636,22 @@ async fn issue_run_token(
     run: &Run,
     task: &Task,
 ) -> scheduler_core::Result<Option<IssuedRunToken>> {
-    if !task.allow_schedule_cli {
-        return Ok(None);
-    }
-
-    let capabilities =
-        serde_json::from_str::<Vec<String>>(&task.schedule_cli_capabilities).unwrap_or_default();
-    if capabilities.is_empty() {
-        return Ok(None);
-    }
+    let capabilities = SCHEDULE_CLI_CAPABILITIES
+        .iter()
+        .map(|capability| (*capability).to_owned())
+        .collect::<Vec<_>>();
 
     let plaintext = new_schedule_capability_token_id();
     let now = Utc::now();
-    let expires_at = now + ChronoDuration::seconds(task.max_runtime_sec.max(0) + 3600);
+    let expires_at = "9999-12-31T23:59:59Z".to_owned();
     let token = ScheduleCapabilityToken {
         id: new_schedule_capability_token_id(),
         run_id: run.id.clone(),
         task_id: task.id.clone(),
         token_hash: sha256_hex(plaintext.as_bytes()),
         capabilities_json: serde_json::to_string(&capabilities)?,
-        expires_at: format_utc_rfc3339(expires_at),
-        max_creates: task.max_created_schedules_per_run.clamp(1, 100),
+        expires_at,
+        max_creates: 0,
         create_count: 0,
         revoked_at: None,
         created_at: format_utc_rfc3339(now),
@@ -955,7 +783,6 @@ async fn prepare_run_execution(
     state.active_runs.lock().await.insert(
         run.id.clone(),
         ActiveRun {
-            task_id: task.id.clone(),
             cancel: cancel.clone(),
         },
     );
@@ -1070,59 +897,7 @@ async fn finish_run(
         json!({ "status": run.status.as_str() }),
     );
 
-    if matches!(run.status, RunStatus::Failed | RunStatus::TimedOut)
-        && result.failure_kind != Some(FailureKind::Permanent)
-    {
-        schedule_retry_if_needed(state, &task, &run, ended_at).await?;
-    }
-
-    state.notify_tick.notify_waiters();
-    Ok(())
-}
-
-async fn schedule_retry_if_needed(
-    state: &Arc<DaemonState>,
-    task: &Task,
-    run: &Run,
-    failed_at: DateTime<Utc>,
-) -> anyhow::Result<()> {
-    let decision = retry_decision(
-        task.max_retries,
-        task.retry_backoff_sec,
-        run.attempt,
-        failed_at,
-    )?;
-    if !decision.should_retry {
-        return Ok(());
-    }
-
-    let retry = new_run_for_task(
-        task,
-        TriggerType::Retry,
-        run.scheduled_for.clone(),
-        decision.next_attempt.unwrap_or(run.attempt + 1),
-        format_utc_rfc3339(decision.retry_at.unwrap_or(failed_at)),
-        RunStatus::Queued,
-        Some("retry_backoff"),
-    )?;
-
-    match state.db.create_run(&retry).await {
-        Ok(()) => {
-            create_run_event(
-                &state.db,
-                &run.id,
-                "info",
-                "run.retry_scheduled",
-                Some(format!("retry {}", retry.attempt)),
-                Some(json!({ "retryRunId": retry.id, "queuedAt": retry.queued_at })),
-            )
-            .await?;
-        }
-        Err(err) => {
-            warn!(error = %err, run_id = %run.id, "failed to schedule retry");
-        }
-    }
-
+    state.notify_tick.notify_one();
     Ok(())
 }
 
@@ -1336,16 +1111,7 @@ async fn route_rpc(
             let params: RunTailLogParams = parse_params(request.params)?;
             to_value(rpc_run_tail_log(state, params).await?)
         }
-        METHOD_PROJECT_LIST => to_value(ProjectListResult {
-            projects: state
-                .db
-                .list_projects()
-                .await
-                .map_err(map_core_error)?
-                .iter()
-                .map(ProjectDto::from)
-                .collect(),
-        }),
+        METHOD_PROJECT_LIST => to_value(rpc_project_list(state).await?),
         METHOD_PROJECT_TRUST => {
             let metadata = RpcMetadata::from_value(request.params.as_ref());
             let params: ProjectTrustParams = parse_params(request.params)?;
@@ -1434,7 +1200,7 @@ async fn rpc_diagnostics(
 }
 
 async fn rpc_tick_now(state: &Arc<DaemonState>) -> DaemonTickNowResult {
-    state.notify_tick.notify_waiters();
+    state.notify_tick.notify_one();
     DaemonTickNowResult {
         ok: true,
         triggered: true,
@@ -1661,7 +1427,10 @@ fn ensure_task_unlocked_for_actor(
     if task.locked && actor_type != AuditActorType::User {
         return Err(JsonRpcError::new(
             JsonRpcErrorCode::PermissionDenied,
-            format!("{operation} is blocked because task `{}` is locked", task.id),
+            format!(
+                "{operation} is blocked because task `{}` is locked",
+                task.id
+            ),
         ));
     }
     Ok(())
@@ -1676,7 +1445,10 @@ fn ensure_lock_change_allowed(
     if before.locked != after.locked && actor_type != AuditActorType::User {
         return Err(JsonRpcError::new(
             JsonRpcErrorCode::PermissionDenied,
-            format!("{operation} cannot change lock state for task `{}`", before.id),
+            format!(
+                "{operation} cannot change lock state for task `{}`",
+                before.id
+            ),
         ));
     }
     Ok(())
@@ -1691,7 +1463,7 @@ async fn reserve_token_create_slot(
         UPDATE schedule_capability_tokens
         SET create_count = create_count + 1
         WHERE id = ?
-          AND create_count < max_creates
+          AND (max_creates <= 0 OR create_count < max_creates)
           AND revoked_at IS NULL
         "#,
     )
@@ -1778,7 +1550,11 @@ async fn path_is_under_trusted_project(
     let projects = db.list_projects().await?;
     Ok(projects
         .iter()
-        .filter(|project| project.trusted_at.is_some())
+        .filter(|project| {
+            project.trusted_at.is_some()
+                && project.kind == ProjectKind::Git
+                && project.git_root.is_some()
+        })
         .any(|project| {
             let root = project.git_root.as_deref().unwrap_or(&project.path);
             path.starts_with(Path::new(root))
@@ -1818,6 +1594,12 @@ async fn rpc_task_create(
     let authorization = authorize_task_create(state, params.actor, &metadata).await?;
     let actor = authorization.actor.clone();
     let mut task = Task::try_from(params.task).map_err(map_core_error)?;
+    let existing_tasks = state.db.list_tasks().await.map_err(map_core_error)?;
+    task.slug = unique_slug(
+        &task.name,
+        existing_tasks.iter().map(|existing| existing.slug.as_str()),
+    )
+    .map_err(map_core_error)?;
     let trust = apply_repo_path_trust_policy(&state.db, &mut task, actor.actor_type).await?;
     prepare_task_schedule(&mut task);
     if let Some(token) = &authorization.token {
@@ -1851,7 +1633,7 @@ async fn rpc_task_create(
     .await
     .map_err(map_core_error)?;
     record_trust_audit(&state.db, &task, trust, &metadata).await?;
-    state.notify_tick.notify_waiters();
+    state.notify_tick.notify_one();
     Ok(TaskResult {
         task: TaskDto::from(&task),
     })
@@ -1895,7 +1677,7 @@ async fn rpc_task_update(
     .await
     .map_err(map_core_error)?;
     record_trust_audit(&state.db, &task, trust, &metadata).await?;
-    state.notify_tick.notify_waiters();
+    state.notify_tick.notify_one();
     Ok(TaskResult {
         task: TaskDto::from(&task),
     })
@@ -1986,7 +1768,7 @@ async fn rpc_task_status(
     )
     .await
     .map_err(map_core_error)?;
-    state.notify_tick.notify_waiters();
+    state.notify_tick.notify_one();
     Ok(TaskResult {
         task: TaskDto::from(&task),
     })
@@ -2030,7 +1812,7 @@ async fn rpc_task_run_now(
     )
     .await
     .map_err(map_core_error)?;
-    state.notify_tick.notify_waiters();
+    state.notify_tick.notify_one();
     Ok(RunResult {
         run: RunDto::from(&run),
         artifacts: Vec::new(),
@@ -2139,24 +1921,30 @@ async fn rpc_project_trust(
             format!("unable to canonicalize project path: {err}"),
         )
     })?;
-    let path = path_to_string(&canonical);
-    let git_root = detect_git_root(&canonical);
+    let git_root = detect_git_root(&canonical).ok_or_else(|| {
+        JsonRpcError::new(
+            JsonRpcErrorCode::ValidationFailed,
+            "project path must be inside a Git repository",
+        )
+    })?;
+    let path = git_root.clone();
+    let detected_default_branch = detect_project_default_branch(Path::new(&git_root));
     let now = now_rfc3339();
-    let mut existing = state
-        .db
-        .list_projects()
-        .await
-        .map_err(map_core_error)?
-        .into_iter()
-        .find(|project| project.path == path);
+    let projects = state.db.list_projects().await.map_err(map_core_error)?;
+    let exact_match = projects
+        .iter()
+        .find(|project| project.path == path)
+        .cloned();
+    let mut existing = exact_match.or_else(|| {
+        projects
+            .into_iter()
+            .find(|project| project.git_root.as_deref() == Some(path.as_str()))
+    });
 
     let project = if let Some(mut project) = existing.take() {
-        project.kind = if git_root.is_some() {
-            ProjectKind::Git
-        } else {
-            ProjectKind::Folder
-        };
-        project.git_root = git_root.clone();
+        project.kind = ProjectKind::Git;
+        project.git_root = Some(git_root.clone());
+        project.default_branch = project.default_branch.or(detected_default_branch.clone());
         project.trusted_at = Some(now.clone());
         project.updated_at = now.clone();
         state
@@ -2168,20 +1956,16 @@ async fn rpc_project_trust(
     } else {
         let project = Project {
             id: new_project_id(),
-            name: canonical
+            name: Path::new(&git_root)
                 .file_name()
                 .and_then(|value| value.to_str())
                 .unwrap_or("Project")
                 .to_owned(),
             path: path.clone(),
-            kind: if git_root.is_some() {
-                ProjectKind::Git
-            } else {
-                ProjectKind::Folder
-            },
-            git_root,
+            kind: ProjectKind::Git,
+            git_root: Some(git_root),
             git_remote_url: None,
-            default_branch: None,
+            default_branch: detected_default_branch,
             trusted_at: Some(now.clone()),
             created_at: now.clone(),
             updated_at: now.clone(),
@@ -2208,6 +1992,36 @@ async fn rpc_project_trust(
     Ok(ProjectTrustResult {
         project: ProjectDto::from(&project),
     })
+}
+
+async fn rpc_project_list(state: &Arc<DaemonState>) -> Result<ProjectListResult, JsonRpcError> {
+    let mut projects = state.db.list_projects().await.map_err(map_core_error)?;
+    for project in &mut projects {
+        fill_missing_project_default_branch(&state.db, project).await?;
+    }
+
+    Ok(ProjectListResult {
+        projects: projects.iter().map(ProjectDto::from).collect(),
+    })
+}
+
+async fn fill_missing_project_default_branch(
+    db: &SchedulerDb,
+    project: &mut Project,
+) -> Result<(), JsonRpcError> {
+    if project.kind != ProjectKind::Git || project.default_branch.is_some() {
+        return Ok(());
+    }
+
+    let root = project.git_root.as_deref().unwrap_or(&project.path);
+    let Some(default_branch) = detect_project_default_branch(Path::new(root)) else {
+        return Ok(());
+    };
+
+    project.default_branch = Some(default_branch);
+    project.updated_at = now_rfc3339();
+    db.update_project(project).await.map_err(map_core_error)?;
+    Ok(())
 }
 
 async fn rpc_project_untrust(
@@ -2314,7 +2128,7 @@ async fn rpc_settings_set(
     )
     .await
     .map_err(map_core_error)?;
-    state.notify_tick.notify_waiters();
+    state.notify_tick.notify_one();
     Ok(SettingsSetResult {
         setting: SettingDto::from(&setting),
     })
@@ -2362,13 +2176,6 @@ async fn cancel_run(
         run: RunDto::from(&run),
         artifacts: Vec::new(),
     })
-}
-
-async fn cancel_active_runs_for_task(state: &Arc<DaemonState>, task_id: &str) {
-    let active = state.active_runs.lock().await;
-    for run in active.values().filter(|run| run.task_id == task_id) {
-        run.cancel.cancel();
-    }
 }
 
 fn prepare_task_schedule(task: &mut Task) {
@@ -2762,6 +2569,30 @@ fn detect_git_root(path: &Path) -> Option<String> {
     } else {
         Some(root)
     }
+}
+
+fn detect_project_default_branch(git_root: &Path) -> Option<String> {
+    [
+        ("refs/remotes/origin/main", "main"),
+        ("refs/remotes/origin/master", "master"),
+        ("refs/heads/main", "main"),
+        ("refs/heads/master", "master"),
+    ]
+    .into_iter()
+    .find_map(|(reference, branch)| git_ref_exists(git_root, reference).then(|| branch.to_owned()))
+}
+
+fn git_ref_exists(git_root: &Path, reference: &str) -> bool {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(git_root)
+        .arg("show-ref")
+        .arg("--verify")
+        .arg("--quiet")
+        .arg(reference)
+        .output()
+        .ok()
+        .is_some_and(|output| output.status.success())
 }
 
 fn path_to_string(path: &Path) -> String {

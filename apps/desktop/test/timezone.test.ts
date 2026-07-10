@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { localDateTimeToUtcIso } from "@/lib/timezone";
+import { getSystemTimezone, localDateTimeToUtcIso } from "@/lib/timezone";
 
 describe("timezone conversion", () => {
+  it("resolves the current PC timezone", () => {
+    expect(getSystemTimezone()).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    );
+  });
+
   it("converts selected IANA timezone local time to UTC", () => {
     expect(localDateTimeToUtcIso("2026-07-08", "09:30", "Asia/Tokyo")).toBe(
       "2026-07-08T00:30:00.000Z",

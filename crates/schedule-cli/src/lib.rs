@@ -17,14 +17,14 @@ use scheduler_core::ipc::{
     METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
 };
 use scheduler_core::model::{
-    new_task_audit_event_id, ApprovalPolicy, AuditActorType, CleanupPolicy, MissedPolicy,
-    OverlapPolicy, Project, ProjectKind, RunDto, RunStatus, RunTargetMode, SandboxMode,
-    ScheduleStatus, Task, TaskAuditEvent, TaskCodexDto, TaskDto, TaskKind, TaskPoliciesDto,
+    new_task_audit_event_id, AuditActorType, Project, ProjectKind, RunDto, RunStatus,
+    RunTargetMode, ScheduleStatus, Task, TaskAuditEvent, TaskCodexDto, TaskDto, TaskKind,
     TaskPromptDto, TaskStatus, TaskTargetDto,
 };
 use scheduler_core::schedule::{
     compute_next_run_at, parse_rfc3339_utc, validate_cron, validate_iana_timezone,
 };
+use scheduler_core::settings::SETTING_RUNNER_CODEX_PATH;
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
 use scheduler_core::util::unique_slug;
 use serde::de::DeserializeOwned;
@@ -35,7 +35,6 @@ use tokio::net::UnixStream;
 
 const PROMPT_MAX_BYTES: usize = 200 * 1024;
 const DEFAULT_TIMEZONE: &str = "UTC";
-const DEFAULT_MAX_RUNTIME_SEC: i64 = 7_200;
 const RPC_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub fn cli_name() -> &'static str {
@@ -135,9 +134,6 @@ struct TaskFields {
     name: Option<String>,
 
     #[arg(long)]
-    description: Option<String>,
-
-    #[arg(long)]
     prompt: Option<String>,
 
     #[arg(long)]
@@ -162,12 +158,6 @@ struct TaskFields {
     repo: Option<PathBuf>,
 
     #[arg(long)]
-    worktree: bool,
-
-    #[arg(long)]
-    local: bool,
-
-    #[arg(long)]
     base_ref: Option<String>,
 
     #[arg(long)]
@@ -177,28 +167,7 @@ struct TaskFields {
     reasoning_effort: Option<String>,
 
     #[arg(long)]
-    sandbox: Option<String>,
-
-    #[arg(long)]
-    approval_policy: Option<String>,
-
-    #[arg(long)]
-    allow_schedule_cli: Option<bool>,
-
-    #[arg(long)]
     paused: bool,
-
-    #[arg(long)]
-    max_runtime_sec: Option<i64>,
-
-    #[arg(long = "max-created-schedules")]
-    max_created_schedules: Option<i64>,
-
-    #[arg(long)]
-    missed_policy: Option<String>,
-
-    #[arg(long)]
-    overlap_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Args, Default)]
@@ -208,9 +177,6 @@ struct ClearFlags {
 
     #[arg(long)]
     clear_cron: bool,
-
-    #[arg(long)]
-    clear_description: bool,
 
     #[arg(long)]
     clear_base_ref: bool,
@@ -1260,14 +1226,18 @@ async fn apply_repo_path_trust_policy_sqlite(
         )));
     };
 
-    if task.target_mode == RunTargetMode::RepoWorktree {
-        if project.kind != ProjectKind::Git {
-            return Err(CliError::validation(
-                "repo-worktree target requires a git repository",
-            ));
-        }
-        task.project_id = Some(project.id);
-    }
+    let Some(git_root) = project
+        .git_root
+        .clone()
+        .filter(|root| project.kind == ProjectKind::Git && !root.trim().is_empty())
+    else {
+        return Err(CliError::validation(
+            "project target requires a registered git repository",
+        ));
+    };
+    task.target_mode = RunTargetMode::RepoWorktree;
+    task.project_id = Some(project.id);
+    task.repo_path = Some(git_root);
     Ok(())
 }
 
@@ -1278,7 +1248,11 @@ async fn trusted_project_for_path(
     let projects = db.list_projects().await.map_err(scheduler_error_to_cli)?;
     Ok(projects
         .into_iter()
-        .filter(|project| project.trusted_at.is_some())
+        .filter(|project| {
+            project.trusted_at.is_some()
+                && project.kind == ProjectKind::Git
+                && project.git_root.is_some()
+        })
         .find(|project| {
             let root = project.git_root.as_deref().unwrap_or(&project.path);
             path.starts_with(Path::new(root))
@@ -1355,12 +1329,13 @@ async fn complete_project_fields(
             add_invocation_metadata(params, reason),
         )
         .await?;
-    if project.project.kind != ProjectKind::Git {
+    if project.project.kind != ProjectKind::Git || project.project.git_root.is_none() {
         return Err(CliError::validation(
             "repo-worktree target requires a git repository",
         ));
     }
     task.target.project_id = Some(project.project.id);
+    task.target.repo_path = project.project.git_root;
     Ok(())
 }
 
@@ -1387,7 +1362,6 @@ fn build_create_task(fields: &TaskFields, slug: String) -> Result<TaskDto, CliEr
         id: String::new(),
         slug,
         name,
-        description: fields.description.clone(),
         status: if fields.paused {
             TaskStatus::Paused
         } else {
@@ -1403,34 +1377,8 @@ fn build_create_task(fields: &TaskFields, slug: String) -> Result<TaskDto, CliEr
         codex: TaskCodexDto {
             model: fields.model.clone(),
             reasoning_effort: fields.reasoning_effort.clone(),
-            sandbox_mode: parse_enum_or_default::<SandboxMode>(fields.sandbox.as_deref())?,
-            approval_policy: parse_enum_or_default::<ApprovalPolicy>(
-                fields.approval_policy.as_deref(),
-            )?,
         },
-        prompt: TaskPromptDto {
-            body: prompt,
-            inject_scheduler_instructions: true,
-        },
-        policies: TaskPoliciesDto {
-            allow_schedule_cli: fields.allow_schedule_cli.unwrap_or(true),
-            missed_policy: parse_enum_or_default::<MissedPolicy>(fields.missed_policy.as_deref())?,
-            overlap_policy: parse_enum_or_default::<OverlapPolicy>(
-                fields.overlap_policy.as_deref(),
-            )?,
-            max_runtime_sec: fields.max_runtime_sec.unwrap_or(DEFAULT_MAX_RUNTIME_SEC),
-            max_created_schedules_per_run: Some(max_created_schedules_value(fields)),
-            schedule_cli_capabilities: Some(vec![
-                "schedule:create".to_owned(),
-                "schedule:update-current".to_owned(),
-                "schedule:list".to_owned(),
-            ]),
-            missed_window_days: Some(7),
-            max_retries: Some(0),
-            retry_backoff_sec: Some(300),
-            cleanup_policy: Some(CleanupPolicy::Keep),
-            cleanup_after_days: None,
-        },
+        prompt: TaskPromptDto { body: prompt },
     })
 }
 
@@ -1442,12 +1390,6 @@ fn apply_task_patch(
     if let Some(name) = &fields.name {
         validate_name(name)?;
         task.name = name.clone();
-    }
-    if clear.clear_description {
-        task.description = None;
-    }
-    if let Some(description) = &fields.description {
-        task.description = Some(description.clone());
     }
     if fields.prompt.is_some() || fields.prompt_file.is_some() {
         task.prompt.body = read_prompt(fields)?;
@@ -1493,30 +1435,6 @@ fn apply_task_patch(
     }
     if clear.clear_reasoning_effort {
         task.codex.reasoning_effort = None;
-    }
-    if let Some(sandbox) = &fields.sandbox {
-        task.codex.sandbox_mode = parse_enum::<SandboxMode>(sandbox, "sandbox")?;
-    }
-    if let Some(approval_policy) = &fields.approval_policy {
-        task.codex.approval_policy =
-            parse_enum::<ApprovalPolicy>(approval_policy, "approval-policy")?;
-    }
-    if let Some(allow_schedule_cli) = fields.allow_schedule_cli {
-        task.policies.allow_schedule_cli = allow_schedule_cli;
-    }
-    if let Some(max_runtime_sec) = fields.max_runtime_sec {
-        validate_positive(max_runtime_sec, "max-runtime-sec")?;
-        task.policies.max_runtime_sec = max_runtime_sec;
-    }
-    if fields.max_created_schedules.is_some() {
-        task.policies.max_created_schedules_per_run = Some(max_created_schedules_value(fields));
-    }
-    if let Some(missed_policy) = &fields.missed_policy {
-        task.policies.missed_policy = parse_enum::<MissedPolicy>(missed_policy, "missed-policy")?;
-    }
-    if let Some(overlap_policy) = &fields.overlap_policy {
-        task.policies.overlap_policy =
-            parse_enum::<OverlapPolicy>(overlap_policy, "overlap-policy")?;
     }
     if fields.paused {
         task.status = TaskStatus::Paused;
@@ -1607,18 +1525,8 @@ fn target_from_fields(
     }
     if let Some(repo) = &fields.repo {
         let repo_path = normalize_repo_path(repo)?;
-        let mode = if fields.worktree {
-            RunTargetMode::RepoWorktree
-        } else if fields.local {
-            RunTargetMode::RepoLocal
-        } else {
-            existing
-                .map(|task| task.target.mode)
-                .filter(|mode| *mode != RunTargetMode::Chat)
-                .unwrap_or(RunTargetMode::RepoLocal)
-        };
         return Ok(TaskTargetDto {
-            mode,
+            mode: RunTargetMode::RepoWorktree,
             project_id: None,
             repo_path: Some(repo_path),
             base_ref: fields
@@ -1629,6 +1537,9 @@ fn target_from_fields(
     }
     if let Some(task) = existing {
         let mut target = task.target.clone();
+        if target.mode != RunTargetMode::Chat {
+            target.mode = RunTargetMode::RepoWorktree;
+        }
         if fields.base_ref.is_some() {
             target.base_ref = fields.base_ref.clone();
         }
@@ -1692,16 +1603,6 @@ fn validate_task_fields(fields: &TaskFields, mode: ValidationMode) -> Result<(),
             "--chat and --repo are mutually exclusive",
         ));
     }
-    if fields.worktree && fields.local {
-        return Err(CliError::validation(
-            "--worktree and --local are mutually exclusive",
-        ));
-    }
-    if (fields.worktree || fields.local) && fields.repo.is_none() {
-        return Err(CliError::validation(
-            "--worktree and --local require --repo",
-        ));
-    }
     if mode == ValidationMode::Create && !fields.chat && fields.repo.is_none() {
         return Err(CliError::validation("create requires --chat or --repo"));
     }
@@ -1713,14 +1614,6 @@ fn validate_task_fields(fields: &TaskFields, mode: ValidationMode) -> Result<(),
         let prompt = read_prompt(fields)?;
         validate_prompt_size(&prompt)?;
     }
-    if let Some(max_runtime_sec) = fields.max_runtime_sec {
-        validate_positive(max_runtime_sec, "max-runtime-sec")?;
-    }
-    parse_optional_enum::<SandboxMode>(fields.sandbox.as_deref(), "sandbox")?;
-    parse_optional_enum::<ApprovalPolicy>(fields.approval_policy.as_deref(), "approval-policy")?;
-    parse_optional_enum::<MissedPolicy>(fields.missed_policy.as_deref(), "missed-policy")?;
-    parse_optional_enum::<OverlapPolicy>(fields.overlap_policy.as_deref(), "overlap-policy")?;
-
     Ok(())
 }
 
@@ -1730,11 +1623,6 @@ fn validate_clear_flags(clear: &ClearFlags, fields: &TaskFields) -> Result<(), C
     }
     if clear.clear_cron && fields.cron.is_some() {
         return Err(CliError::validation("--clear-cron conflicts with --cron"));
-    }
-    if clear.clear_description && fields.description.is_some() {
-        return Err(CliError::validation(
-            "--clear-description conflicts with --description",
-        ));
     }
     if clear.clear_base_ref && fields.base_ref.is_some() {
         return Err(CliError::validation(
@@ -1774,18 +1662,6 @@ fn validate_prompt_size(prompt: &str) -> Result<(), CliError> {
             json!({ "bytes": len, "maxBytes": PROMPT_MAX_BYTES }),
         ))
     }
-}
-
-fn validate_positive(value: i64, field: &str) -> Result<(), CliError> {
-    if value > 0 {
-        Ok(())
-    } else {
-        Err(CliError::validation(format!("{field} must be positive")))
-    }
-}
-
-fn max_created_schedules_value(fields: &TaskFields) -> i64 {
-    fields.max_created_schedules.unwrap_or(5).clamp(1, 100)
 }
 
 fn validate_count(count: usize) -> Result<(), CliError> {
@@ -1848,7 +1724,7 @@ fn has_schedule_patch(fields: &TaskFields) -> bool {
 }
 
 fn has_target_patch(fields: &TaskFields) -> bool {
-    fields.chat || fields.repo.is_some() || fields.worktree || fields.local
+    fields.chat || fields.repo.is_some()
 }
 
 fn parse_optional_enum<T>(value: Option<&str>, field: &str) -> Result<Option<T>, CliError>
@@ -1857,17 +1733,6 @@ where
     T::Err: std::fmt::Display,
 {
     value.map(|value| parse_enum(value, field)).transpose()
-}
-
-fn parse_enum_or_default<T>(value: Option<&str>) -> Result<T, CliError>
-where
-    T: FromStr + Default,
-    T::Err: std::fmt::Display,
-{
-    value
-        .map(|value| parse_enum(value, "value"))
-        .transpose()
-        .map(|value| value.unwrap_or_default())
 }
 
 fn parse_enum<T>(value: &str, field: &str) -> Result<T, CliError>
@@ -2162,7 +2027,7 @@ async fn configured_codex_path(paths: &AppPaths) -> Option<String> {
         .call::<SettingsGetResult, _>(
             METHOD_SETTINGS_GET,
             SettingsGetParams {
-                key: Some("runner.codex_path".to_owned()),
+                key: Some(SETTING_RUNNER_CODEX_PATH.to_owned()),
             },
         )
         .await
@@ -2177,7 +2042,7 @@ async fn configured_codex_path(paths: &AppPaths) -> Option<String> {
     }
     let db = db(paths).await.ok()?;
     let setting = db
-        .get_setting_row("runner.codex_path")
+        .get_setting_row(SETTING_RUNNER_CODEX_PATH)
         .await
         .ok()
         .flatten()?;

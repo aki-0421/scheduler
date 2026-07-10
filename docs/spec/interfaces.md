@@ -1,7 +1,7 @@
 ---
 title: インターフェース
 description: 実装済み desktop UI、Tauri command、daemon JSON-RPC、codex-schedule CLI interface を定義する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - UI page、IPC schema、Tauri command、daemon RPC method、codex-schedule behavior を変更するとき。
   - Codex Scheduler と通信する automation を書くとき。
@@ -24,9 +24,11 @@ frontend は daemon data を受け入れる前に typed IPC helper と Zod schem
 
 `/` は dashboard を表示せず `/projects` に redirect する。sidebar は project entry、next-run order の task entry、archived task entry、bottom toolbox を持つ。header は scheduler badge と scheduler toggle を表示せず、running / queued を icon + number で表示する。
 
-task creation、editing、duplication は wizard で扱う。field は prompt、name、description、schedule、target、project selection、base ref、model、reasoning effort、sandbox、approval policy、schedule CLI permission、max runtime、retry count、missed-run policy、overlap policy、cleanup policy、lock state を含む。cron preview は immediate user feedback のため frontend で計算される。
+task creation、editing、duplication は wizard で扱う。実行先は radio card の `チャット` と `プロジェクト` から選ぶ。`プロジェクト` は登録済み Git project を必須とし、実行ごとに isolated worktree を作る。field は prompt、name、schedule、project selection、base ref、model、思考レベル、lock state、開始状態を含む。task description field と task 固有 Codex binary path は持たず、内容は name と prompt で表す。cron calculation は validation と next-run data にだけ使い、実行タイミングの preview は表示しない。
 
-危険な full-filesystem access は task wizard で明示的な confirmation を必要とし、task list では warning badge として表示される。
+Codex binary path は Settings の global customization checkbox を選択したときだけ `runner.codex_path` input で設定し、すべての task に共通適用する。未選択時は `PATH` 上の `codex` を使う。
+
+full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持、Scheduler CLI の全 action と作成数無制限は app-wide invariant であり、task wizard と Settings には選択肢や warning を表示しない。
 
 task detail は `/tasks?task=<taskId>` で開き、session history、prompt、settings、audit log を tab で表示する。session row は `/runs?run=<runId>` に遷移し、run detail は chat UI で prompt、assistant output、tool usage、daemon event を表示する。
 
@@ -101,12 +103,12 @@ global option には `--json`、`--data-dir`、`--db`、`--socket`、`--allow-di
 
 task field flag には次が含まれる。
 
-- Identity and prompt: `--name`, `--description`, `--prompt`, `--prompt-file`
+- Identity and prompt: `--name`, `--prompt`, `--prompt-file`
 - Schedule: `--at`, `--cron`, `--timezone`, `--manual`
-- Target: `--chat`, `--repo`, `--worktree`, `--local`, `--base-ref`
-- Codex: `--model`, `--reasoning-effort`, `--sandbox`, `--approval-policy`
-- Scheduler permissions and policy: `--allow-schedule-cli`, `--paused`, `--max-runtime-sec`, `--max-created-schedules`, `--missed-policy`, `--overlap-policy`
-- Update clears: `--clear-run-at`, `--clear-cron`, `--clear-description`, `--clear-base-ref`, `--clear-model`, `--clear-reasoning-effort`
+- Target: `--chat`, `--repo`, `--base-ref`。`--repo` は登録または検出した Git project の isolated worktree を常に使用する。
+- Codex: `--model`, `--reasoning-effort`
+- State: `--paused`
+- Update clears: `--clear-run-at`, `--clear-cron`, `--clear-base-ref`, `--clear-model`, `--clear-reasoning-effort`
 
 `--json` は machine-readable command result を返す。human output は concise で terminal-oriented のままにする。
 
@@ -128,4 +130,4 @@ scheduled Codex session は次を使う。
 - `CODEX_SCHEDULER_RUN_TOKEN`
 - `CODEX_SCHEDULER_SOCKET`
 
-token-backed session は capability list と create-count limit で許可された action だけを実行できる。project add / update / remove と settings write は scheduled session では denied される。
+token-backed session は schedule create、current / any task update、current task pause、run-now、list action を利用でき、schedule 作成数は制限しない。project add / update / remove と settings write は scheduled session では denied される。

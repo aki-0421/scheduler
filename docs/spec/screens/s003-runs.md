@@ -1,7 +1,7 @@
 ---
 title: S003 Task Sessions
 description: Task Session screen の chat UI、tool usage display、history filter、log tail、export、cancel、follow-up requirement を定義する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - Runs page、task session page、run filtering、chat transcript、tool usage display、artifact action、cancel/retry/follow-up flow を変更するとき。
 ---
@@ -28,13 +28,15 @@ read_when:
 
 レイアウト領域:
 
-- status filter と task filter を持つ header。
-- count、preset button、list row を持つ run history section。
+- status filter と task filter を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
+- preset button、list row を持つ run history section。list count の説明文は表示しない。
 - `/runs?run=<runId>` は session detail page として開く。
 - session detail header は task name、run status、trigger、scheduled / started time、parent task link を持つ。
-- primary content は chat UI。system / user prompt、assistant output、tool call、tool result、daemon event を時系列 bubble として表示する。
+- selected session detail は `概要`、`チャット`、`プロンプト`、`出力`、`ログ`、`成果物` の tabs で表示する。
+- session detail と `ログ` 内の nested tabs は tab list を選択中 content の直上に配置し、横スクロール領域にはしない。利用可能な幅に収まらない tab は複数行へ折り返し、選択中の tab content は page canvas に直接表示する。
+- `チャット` tab は system / user prompt、assistant output、tool call、tool result、daemon event を時系列 bubble として表示する。
 - right or top action area は workspace / follow-up / cancel / retry / export logs を持つ。
-- technical tabs: `チャット`、`ログ`、`成果物`、`メタデータ`。default は `チャット`。
+- tab content の先頭には、tab label と同義の section heading や説明文を置かない。
 
 フィールドとコントロール:
 
@@ -42,13 +44,15 @@ read_when:
 - Status filter: all run statuses。
 - Task filter: all tasks または specific task。
 - Session actions: open workspace、create follow-up task、cancel active run、retry、export logs、copy prompt / output / logs、show artifact in Finder。
+- Run list row の trigger、scheduled time、duration、exit code は icon と semantic color を持つ compact token で表示する。exit code `0` は success、non-zero は error、未記録は muted とする。
+- Run status と review state は text だけでなく icon と color tone で区別できる。
 - Chat transcript: prompt bubble、assistant message bubble、tool call row、tool output disclosure、daemon event row。
 - Logs tabs: stdout、stderr、events。
 
 状態:
 
 - Loading route fallback: `Loading runs...`。
-- Empty filtered list: `No matching runs` と open-tasks action。
+- Empty filtered list: 表示領域を埋める高さで `No matching runs` と open-tasks action を表示する。
 - Selected session loading: page skeleton。
 - Review badge は failed、timed out、interrupted、findings、created schedules の場合に表示される。
 - Active run は 3 秒ごとに log を poll する。
@@ -72,7 +76,7 @@ read_when:
 セキュリティと安全性:
 
 - Finder open action は run DTO または artifact が返した path だけを使う。
-- follow-up task prefill は source run context を task description に保持する。
+- follow-up task prefill は source run ID の文脈を task prompt 冒頭に保持する。
 
 受け入れ条件:
 
@@ -82,7 +86,11 @@ read_when:
 - session detail はチャット UI で prompt、assistant output、tool usage、daemon event を確認できる。
 - active run が selected の場合、run が active status を離れるまで log が poll される。
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。
+- failed / interrupted / timed-out session の `再実行` は新しい manual run を enqueue する。scheduler 自身は自動 retry を作成しない。
 - export logs が成功した場合、user は exported local path を見る。
+- `ログ` tab の stdout、stderr、events を切り替えた場合、nested tab list の直下に選択した log と copy / export action が panel surface なしで表示される。
+- session detail と nested log の tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
+- run history list と session detail は page-level panel surface を持たず、row divider と section spacing で情報を判別できる。
 
 既知の gap:
 

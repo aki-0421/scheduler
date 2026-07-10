@@ -1,7 +1,7 @@
 ---
 title: S001 Tasks
 description: Tasks screen の archived list、task detail、task run history、tabbed operations、lock behavior を定義する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - Tasks page、archived task list、task detail、task action、edit dialog、duplicate flow、lock behavior、audit display を変更するとき。
 ---
@@ -27,16 +27,21 @@ read_when:
 レイアウト領域:
 
 - `/tasks?view=archived`: archived task list。completed one-shot、paused / stopped、deleted task を execution newest-first で表示する。
-- `/tasks?task=<taskId>`: task detail page。left / main column に task run history と tabbed content、right column に actions を置く。
+- `/tasks?task=<taskId>`: task detail page。`概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作` の tabs で 1 機能ずつ表示する。常時表示の right action panel は置かない。
+- header の文脈説明は title 右の `?` tooltip に置く。subtitle として常時表示しない。list section には title と同義の補足説明文や count 説明文を置かない。
 - detail header: task name、status、lock state、target、next run。
-- tabs: `実行履歴`、`プロンプト`、`設定`、`監査ログ`。タスクに対してできる操作は tab ではなく right column action として表示する。
+- tabs: `概要`、`実行履歴`、`プロンプト`、`設定`、`監査ログ`、`操作`。タスク操作は `操作` tab に集約する。tab list は横スクロール領域にせず、利用可能な幅に収まらない場合は複数行へ折り返す。
+- archived list と task detail の tab content は page canvas に直接配置し、外側の rounded border、別背景、shadow、内側 padding を持つ panel で囲まない。list row、definition item、audit event の区切りは divider と spacing で示す。
+- tab content の先頭には、tab label を繰り返すだけの section heading や説明文を置かない。
 - run history row は status、trigger、scheduled/start time、duration、result summary を表示し、押すと `/runs?run=<runId>` へ遷移する。
+- Archived list row の target、schedule、last status、duration は icon と semantic color を持つ compact token を優先し、文字だけの cell を避ける。
+- task description は表示しない。Archived list の補助行には target detail を使い、task detail の概要は status、ID、schedule、target、execution setting に集中する。
 - edit / duplicate flow は right column action から開始する。
 
 フィールドとコントロール:
 
 - Archived sort: 実行の新しい順。実行がない archived task は updatedAt または createdAt の新しい順で末尾に置く。
-- Detail actions: run now、pause / resume、edit、duplicate、lock / unlock、delete。
+- Detail actions: `操作` tab 内の run now、pause / resume、edit、duplicate、lock / unlock、delete。
 - Lock: locked task は AI / scheduled-run actor からの edit、delete、pause、resume を拒否する。user actor は unlock 後に変更できる。
 - Delete confirmation: run history を保持し、active schedule から task を削除する。
 - Prompt and path copy buttons は tab content 内に置く。
@@ -44,10 +49,9 @@ read_when:
 状態:
 
 - Loading route fallback: `Loading tasks...`。
-- Empty archived list: `アーカイブ済みタスクはありません` と active task creation action。
+- Empty archived list: 表示領域を埋める高さで `アーカイブ済みタスクはありません` と active task creation action を表示する。
 - Selected task loading: page skeleton。
-- Selected task populated: summary、session history、tabbed prompt / settings / audit log、right actions。
-- Full filesystem access: row と detail に warning badge が表示される。
+- Selected task populated: summary、session history、prompt、settings、audit log、actions を tabs で切り替える。
 - Locked task: lock badge、edit / delete disabled state、unlock action を表示する。
 
 バリデーションとエラー:
@@ -60,12 +64,11 @@ read_when:
 
 - tablist は keyboard navigation を持つ。
 - run history row は task-session link として識別できる accessible name を持つ。
-- right column actions は task-specific label を持つ。
+- `操作` tab の actions は task-specific label を持つ。
 - delete confirmation は明確な cancel label と destructive action label を持つ。
 
 セキュリティと安全性:
 
-- `danger-full-access` task は `Full access` warning badge を表示する必要がある。
 - locked task は scheduled Codex session と CLI actor による destructive / mutating action を拒否する。lock / unlock は audit event に記録する。
 - audit event は actor、action、timestamp、任意の before / after JSON detail を表示する。
 
@@ -78,6 +81,9 @@ read_when:
 - `Run now` が成功した場合、app は scheduler data を invalidate し、`Run queued` toast を表示する。
 - locked task の edit / delete action は disabled で、unlock action が visible である。
 - delete が confirmed された場合、run history は Runs から引き続き discoverable である。
+- task detail の tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
+- archived list と task detail の各 tab content は page-level panel surface を持たず、row divider と section spacing で情報を判別できる。
+- archived list、task detail、edit / duplicate flow のいずれにも task description は表示されない。
 
 既知の gap:
 

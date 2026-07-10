@@ -1,7 +1,7 @@
 ---
 title: アーキテクチャ
 description: 実装済み Codex Scheduler の process layout、crate、app shell、sidecar、storage、runtime path を説明する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - desktop shell、daemon process、sidecar packaging、Rust workspace、IPC、persistent runtime path を変更するとき。
   - UI、daemon、CLI、runner、SQLite database がどう接続されるか debug するとき。
@@ -37,7 +37,7 @@ Tauri backend は daemon sidecar を管理する。
 
 `codex-schedulerd` は same-user local service である。app data directory 配下の Unix domain socket に bind し、migration を実行し、interrupted run を recover し、scheduler loop と retention cleanup loop を開始し、newline-delimited JSON-RPC request を受け付ける。
 
-daemon socket は local control surface である。same-UID caller は、scheduled-run metadata と run-scoped token を提示しない限り local user として扱われる。scheduled Codex session の restriction は、capability check、task configuration、runner sandbox によって enforcement される。
+daemon socket は local control surface である。same-UID caller は、scheduled-run metadata と run-scoped token を提示しない限り local user として扱われる。scheduled Codex session の scheduler mutation restriction は capability check と task lock、project file isolation は run 固有 worktree によって enforcement される。Codex 自体は固定 full-access profile で実行する。
 
 ## 実行時パス
 
@@ -52,7 +52,7 @@ default app data directory は次である。
 - `scheduler.sqlite3`: SQLite database。
 - `scheduler.sock`: daemon Unix socket。
 - `logs/`: run ごとの log directory。
-- `worktrees/`: isolated Git worktree。
+- `worktrees/<task-slug>/wt-<UUIDv7>`: taskごとに整理され、実行ごとに timestamp-ordered random name を持つ isolated Git worktree。
 - `chat-workspaces/`: temporary chat-only workspace。
 
 desktop backend は logs、worktrees、chat workspaces、registered project roots 配下の path だけを open する。

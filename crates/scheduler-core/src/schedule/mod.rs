@@ -47,18 +47,6 @@ pub enum ScheduleError {
 
     #[error("missed occurrence scan exceeded {limit} occurrences")]
     MissedOccurrenceLimitExceeded { limit: usize },
-
-    #[error("retry attempt must be positive: {0}")]
-    InvalidRetryAttempt(i64),
-
-    #[error("retry backoff seconds must be non-negative: {0}")]
-    InvalidRetryBackoff(i64),
-
-    #[error("retry backoff overflow for attempt {attempt} and backoff {retry_backoff_sec}")]
-    RetryBackoffOverflow {
-        attempt: i64,
-        retry_backoff_sec: i64,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,13 +149,6 @@ impl OverlapSkipReason {
             Self::PreviousRunStillRunning => "previous_run_still_running",
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RetryDecision {
-    pub should_retry: bool,
-    pub next_attempt: Option<i64>,
-    pub retry_at: Option<DateTime<Utc>>,
 }
 
 pub fn validate_cron(expr: &str) -> Result<CronSchedule> {
@@ -376,54 +357,6 @@ pub fn decide_overlap(policy: OverlapPolicy, previous_run_running: bool) -> Over
         OverlapPolicy::Queue => OverlapDecision::Queue,
         OverlapPolicy::CancelPrevious => OverlapDecision::CancelPrevious,
     }
-}
-
-pub fn retry_decision(
-    max_retries: i64,
-    retry_backoff_sec: i64,
-    attempt: i64,
-    failed_at: DateTime<Utc>,
-) -> Result<RetryDecision> {
-    if attempt <= 0 {
-        return Err(ScheduleError::InvalidRetryAttempt(attempt));
-    }
-
-    if max_retries <= 0 || attempt > max_retries {
-        return Ok(RetryDecision {
-            should_retry: false,
-            next_attempt: None,
-            retry_at: None,
-        });
-    }
-
-    Ok(RetryDecision {
-        should_retry: true,
-        next_attempt: Some(attempt + 1),
-        retry_at: Some(next_retry_at(failed_at, retry_backoff_sec, attempt)?),
-    })
-}
-
-pub fn next_retry_at(
-    failed_at: DateTime<Utc>,
-    retry_backoff_sec: i64,
-    attempt: i64,
-) -> Result<DateTime<Utc>> {
-    if attempt <= 0 {
-        return Err(ScheduleError::InvalidRetryAttempt(attempt));
-    }
-    if retry_backoff_sec < 0 {
-        return Err(ScheduleError::InvalidRetryBackoff(retry_backoff_sec));
-    }
-
-    let delay_sec =
-        retry_backoff_sec
-            .checked_mul(attempt)
-            .ok_or(ScheduleError::RetryBackoffOverflow {
-                attempt,
-                retry_backoff_sec,
-            })?;
-
-    Ok(failed_at + Duration::seconds(delay_sec))
 }
 
 fn next_cron_after(

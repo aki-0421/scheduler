@@ -11,6 +11,7 @@ import { ipcClient } from "@/lib/ipc";
 import {
   defaultSettings,
   settingsToRecord,
+  type ProjectDto,
   type RunStatus,
   type SchedulerSettings,
   type SettingDto,
@@ -110,6 +111,7 @@ export function useProjects() {
   return useQuery({
     queryKey: queryKeys.projects,
     queryFn: () => ipcClient.projectList(),
+    select: (projects) => projects.filter((project) => project.trustedAt),
   });
 }
 
@@ -144,7 +146,13 @@ export function useDeleteTask() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => ipcClient.taskDelete(id),
-    onSuccess: () => invalidateSchedulerData(queryClient),
+    onSuccess: (_deleted, id) => {
+      queryClient.removeQueries({ queryKey: queryKeys.task(id) });
+      queryClient.setQueriesData<TaskDto[]>({ queryKey: ["tasks"] }, (tasks) =>
+        tasks?.filter((task) => task.id !== id),
+      );
+      invalidateSchedulerData(queryClient);
+    },
   });
 }
 
@@ -214,7 +222,10 @@ export function useUntrustProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (projectId: string) => ipcClient.projectUntrust(projectId),
-    onSuccess: () => {
+    onSuccess: (result) => {
+      queryClient.setQueryData<ProjectDto[]>(queryKeys.projects, (projects) =>
+        projects?.filter((project) => project.id !== result.project.id),
+      );
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
     },
   });

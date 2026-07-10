@@ -26,7 +26,6 @@ pub struct Task {
     pub id: String,
     pub slug: String,
     pub name: String,
-    pub description: Option<String>,
     pub status: TaskStatus,
     pub locked: bool,
     pub kind: TaskKind,

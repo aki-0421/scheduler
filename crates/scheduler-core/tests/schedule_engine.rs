@@ -19,7 +19,6 @@ fn sample_task(kind: TaskKind, cron_expr: Option<&str>, run_at: Option<&str>) ->
         id: "task_01900000-0000-7000-8000-000000000000".to_owned(),
         slug: "sample-task".to_owned(),
         name: "Sample Task".to_owned(),
-        description: None,
         status: TaskStatus::Active,
         locked: false,
         kind,
@@ -411,34 +410,6 @@ fn overlap_policy_decisions_reflect_running_state() {
     assert_eq!(
         decide_overlap(OverlapPolicy::CancelPrevious, true),
         OverlapDecision::CancelPrevious
-    );
-}
-
-#[test]
-fn retry_backoff_uses_attempt_multiplier_and_honors_max_retries() {
-    let failed_at = dt("2026-07-07T00:00:00Z");
-
-    assert_eq!(
-        next_retry_at(failed_at, 300, 2).expect("retry at"),
-        dt("2026-07-07T00:10:00Z")
-    );
-
-    assert_eq!(
-        retry_decision(2, 300, 2, failed_at).expect("decision"),
-        RetryDecision {
-            should_retry: true,
-            next_attempt: Some(3),
-            retry_at: Some(dt("2026-07-07T00:10:00Z")),
-        }
-    );
-
-    assert_eq!(
-        retry_decision(2, 300, 3, failed_at).expect("decision"),
-        RetryDecision {
-            should_retry: false,
-            next_attempt: None,
-            retry_at: None,
-        }
     );
 }
 

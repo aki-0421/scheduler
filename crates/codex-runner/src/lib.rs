@@ -18,8 +18,9 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
-const INSTRUCTIONS_VERSION: &str = "2026-07-07";
+const INSTRUCTIONS_VERSION: &str = "2026-07-10";
 const INSTRUCTIONS_LANGUAGE: &str = "ja";
 const MIN_FREE_SPACE_BYTES: u64 = 1024 * 1024 * 1024;
 const TAIL_BYTES: usize = 8 * 1024;
@@ -52,8 +53,6 @@ pub enum RunnerError {
     BaseRefUnresolved(String),
     #[error("not enough free disk space at {path}: {available_bytes} bytes available")]
     InsufficientDiskSpace { path: PathBuf, available_bytes: u64 },
-    #[error("max_runtime_sec must be greater than zero")]
-    InvalidRuntime,
     #[error("danger-full-access requires allow_danger_full_access=true")]
     DangerousSandboxNotAllowed,
     #[error("failed to spawn codex: {0}")]
@@ -599,9 +598,6 @@ fn validate_required_flags(capabilities: &CodexCapabilities) -> Result<()> {
 }
 
 fn validate_runtime(codex: &CodexConfig) -> Result<()> {
-    if codex.max_runtime_sec == 0 {
-        return Err(RunnerError::InvalidRuntime);
-    }
     if codex.sandbox_mode == Some(SandboxMode::DangerFullAccess) && !codex.allow_danger_full_access
     {
         return Err(RunnerError::DangerousSandboxNotAllowed);
@@ -647,7 +643,7 @@ async fn prepare_workspace(
 ) -> Result<WorkspacePrepared> {
     match request.target.mode {
         RunTargetMode::Chat => prepare_chat_workspace(request).await,
-        RunTargetMode::RepoLocal => prepare_repo_local_workspace(request).await,
+        RunTargetMode::RepoLocal => prepare_repo_worktree_workspace(request, warnings).await,
         RunTargetMode::RepoWorktree => prepare_repo_worktree_workspace(request, warnings).await,
     }
 }
@@ -663,27 +659,6 @@ async fn prepare_chat_workspace(request: &RunRequest) -> Result<WorkspacePrepare
         branch_name: None,
         base_ref: None,
         git_before: None,
-        git_after: None,
-        cleanup_performed: false,
-    })
-}
-
-async fn prepare_repo_local_workspace(request: &RunRequest) -> Result<WorkspacePrepared> {
-    let repo_path = validate_repo_path(request)?;
-    ensure_trusted_git_root(request, &git_toplevel(&repo_path).await?)?;
-    let git_before = Some(GitSnapshot {
-        status_porcelain: Some(git_output(&repo_path, ["status", "--porcelain=v1"]).await?),
-        ..GitSnapshot::default()
-    });
-
-    Ok(WorkspacePrepared {
-        mode: RunTargetMode::RepoLocal,
-        workspace_path: repo_path.clone(),
-        repo_path: Some(repo_path),
-        worktree_path: None,
-        branch_name: None,
-        base_ref: request.target.base_ref.clone(),
-        git_before,
         git_after: None,
         cleanup_performed: false,
     })
@@ -714,16 +689,16 @@ async fn prepare_repo_worktree_workspace(
         .unwrap_or_else(|| request.paths.app_data_dir.join("worktrees"));
     let canonical_worktree_root = ensure_canonical_dir(&worktree_root).await?;
 
+    let instance_name = format!("wt-{}", Uuid::now_v7());
     let branch_base = format!(
         "codex-scheduler/{}/{}",
         sanitize_branch_part(&request.task_slug),
-        sanitize_branch_part(&request.run_id)
+        instance_name
     );
     let task_dir_name = sanitize_path_part(&request.task_slug);
     let canonical_task_dir =
         ensure_safe_child_dir(&canonical_worktree_root, &task_dir_name).await?;
-    let run_dir_name = sanitize_path_part(&request.run_id);
-    let path_base = checked_child_path(&canonical_task_dir, [run_dir_name.clone()])?;
+    let path_base = checked_child_path(&canonical_task_dir, [instance_name.clone()])?;
 
     let mut last_error = None;
     for attempt in 0..10 {
@@ -735,7 +710,7 @@ async fn prepare_repo_worktree_workspace(
         let worktree_path = if attempt == 0 {
             path_base.clone()
         } else {
-            checked_child_path(&canonical_task_dir, [format!("{run_dir_name}-{attempt}")])?
+            checked_child_path(&canonical_task_dir, [format!("{instance_name}-{attempt}")])?
         };
         if worktree_path.exists() {
             continue;
@@ -1027,14 +1002,23 @@ fn build_command_record(
         }
     }
 
-    if request.codex.reasoning_effort.is_some() && !capabilities.supports_flag("--reasoning-effort")
-    {
-        warnings.push(RunnerWarning::new(
-            "unsupported_flag",
-            "codex exec does not support --reasoning-effort; configured reasoning effort was not passed",
-        ));
-    } else if let Some(reasoning_effort) = &request.codex.reasoning_effort {
-        argv.extend(["--reasoning-effort".to_owned(), reasoning_effort.clone()]);
+    if let Some(reasoning_effort) = &request.codex.reasoning_effort {
+        if capabilities.supports_flag("--reasoning-effort") {
+            argv.extend(["--reasoning-effort".to_owned(), reasoning_effort.clone()]);
+        } else if capabilities.supports_flag("--config") {
+            argv.extend([
+                "--config".to_owned(),
+                format!(
+                    "model_reasoning_effort={}",
+                    serde_json::to_string(reasoning_effort)?
+                ),
+            ]);
+        } else {
+            warnings.push(RunnerWarning::new(
+                "unsupported_flag",
+                "codex exec cannot receive the configured reasoning effort",
+            ));
+        }
     }
 
     argv.extend(["--sandbox".to_owned(), sandbox.as_str().to_owned()]);
@@ -1235,7 +1219,7 @@ async fn execute_codex(
             status = &mut wait_future => {
                 exit_status = Some(status?);
             }
-            _ = sleep(Duration::from_secs(max_runtime_sec)) => {
+            _ = sleep(Duration::from_secs(max_runtime_sec)), if max_runtime_sec > 0 => {
                 terminal_status = RunStatus::TimedOut;
             }
             _ = cancellation.cancelled() => {
@@ -1685,13 +1669,7 @@ fn prompt_workspace_hint(request: &RunRequest) -> String {
             .join(&request.run_id)
             .to_string_lossy()
             .to_string(),
-        RunTargetMode::RepoLocal => request
-            .target
-            .repo_path
-            .as_ref()
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_else(|| "<repo_path missing>".to_owned()),
-        RunTargetMode::RepoWorktree => request
+        RunTargetMode::RepoLocal | RunTargetMode::RepoWorktree => request
             .target
             .worktree_parent
             .as_ref()
@@ -1707,7 +1685,7 @@ fn render_scheduler_instructions(request: &RunRequest) -> String {
     let can_update_current = capabilities
         .iter()
         .any(|cap| cap == "schedule:update-current");
-    let can_repo = capabilities.iter().any(|cap| cap == "repo");
+    let can_repo = request.target.mode != RunTargetMode::Chat;
 
     let mut text = format!(
         "あなたは Codex Scheduler によって起動されたローカル macOS 上の Codex CLI セッションです。\n\n\
@@ -1731,7 +1709,7 @@ fn render_scheduler_instructions(request: &RunRequest) -> String {
         );
         if can_repo {
             examples.push(
-                "Git リポジトリで毎週 worktree 実行する:\n`codex-schedule create --name \"weekly review\" --cron \"0 9 * * 1\" --repo \"$PWD\" --worktree --prompt \"最近の変更をレビューし、リスクを要約してください。\" --json`"
+                "Git リポジトリで毎週 worktree 実行する:\n`codex-schedule create --name \"weekly review\" --cron \"0 9 * * 1\" --repo \"$PWD\" --prompt \"最近の変更をレビューし、リスクを要約してください。\" --json`"
                     .to_owned(),
             );
         }
@@ -1759,13 +1737,12 @@ fn render_scheduler_instructions(request: &RunRequest) -> String {
     text.push_str("安全上の注意:\n");
     if can_repo {
         text.push_str(
-            "- Git リポジトリを変更する可能性があるタスクは `--worktree` を優先してください。\n",
+            "- `--repo` を使うタスクは登録済み Git プロジェクトの isolated worktree で実行されます。\n",
         );
     }
     text.push_str(
         "- 不確実または影響が大きいタスクは `--paused` で作り、ユーザーが確認できるようにしてください。\n\
-- ユーザーの依頼と無関係なスケジュールは作成しないでください。\n\
-- ユーザーが明示しない限り `danger-full-access` を使わないでください。",
+- ユーザーの依頼と無関係なスケジュールは作成しないでください。",
     );
 
     text

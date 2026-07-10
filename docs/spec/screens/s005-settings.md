@@ -1,7 +1,7 @@
 ---
 title: S005 Settings
-description: Settings screen の global scheduler、notification、execution default、permission default、diagnostics control を定義する。
-updated: 2026-07-08
+description: Settings screen の global scheduler、notification、Codex default、diagnostics control を定義する。
+updated: 2026-07-10
 read_when:
   - Settings page、settings key、scheduler default、notification default、diagnostics export、schema display を変更するとき。
 ---
@@ -10,7 +10,7 @@ read_when:
 
 ルート: `/settings`
 
-目的: global scheduler behavior、desktop notification、Codex execution default、permission default、local diagnostics、schema visibility を設定する。
+目的: global scheduler behavior、desktop notification、Codex binary / model default、local diagnostics、schema visibility を設定する。
 
 入口: `Settings` navigation item。
 
@@ -25,11 +25,11 @@ read_when:
 
 レイアウト領域:
 
-- settings purpose を持つ header。
-- General section。
-- Execution section。
-- Permissions section。
-- Diagnostics section。
+- `設定` title を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
+- General section。section heading 直下の補足説明文は表示しない。
+- Execution section。section heading 直下の補足説明文は表示しない。
+- Diagnostics section。section heading 直下の補足説明文は表示しない。
+- 各 settings section と setting row は page canvas に直接配置し、section 全体を rounded border、別背景、shadow、内側 padding を持つ panel で囲まない。section と row は separator で区切る。
 - bottom の sticky save bar。
 
 フィールドとコントロール:
@@ -37,11 +37,8 @@ read_when:
 - Scheduler switch は `scheduler.enabled` を control する。
 - Notifications switch は `notifications.enabled` を control する。
 - Global concurrency number input は `daemon.global_concurrency` を control する。
-- Codex path input は `runner.codex_path` を control する。
-- Default model input は `runner.default_model` を control する。
-- Default sandbox select は `runner.default_sandbox_mode` を control する。
-- Default approval policy select は `runner.default_approval_policy` を control する。
-- Worktree cleanup select は `worktree.default_cleanup_policy` を control する。
+- `Codex バイナリパスをカスタマイズ` checkbox は global control として配置する。未選択時は `PATH` 上の `codex` を使い、選択時だけ `runner.codex_path` input を表示する。保存した custom path はすべての task に共通適用し、task 固有 override は持たない。
+- Default model select は `runner.default_model` を control し、Codex frontier model のみを選択肢として表示する。
 - read-only socket path と database path。
 - schema version display。
 - export diagnostics button。
@@ -58,6 +55,7 @@ read_when:
 バリデーションとエラー:
 
 - global concurrency は input minimum `1` を持つ。
+- Codex binary path customization を選択した場合、空の path は保存できない。
 - save は既知の settings key をすべて送信し、すべての mutation 完了時に 1 つの success toast を表示する。
 - save failure は settings error toast を表示し、query rollback は previous settings data を使う。
 - diagnostics failure は diagnostics error toast を表示する。
@@ -70,7 +68,7 @@ read_when:
 
 セキュリティと安全性:
 
-- permission default は general setting とは別に group 化される。
+- sandbox、approval policy、worktree cleanup、runtime、retry、overlap、missed-run、Scheduler CLI permission は固定規則であり、Settings に表示しない。
 - diagnostic export は user-initiated であり、local file に書き込む。
 - socket path と database path は read-only display value である。
 
@@ -80,7 +78,5 @@ read_when:
 - setting save のいずれかが失敗した場合、user は error toast を見て、previous cached settings が restored される。
 - diagnostics export が path を返した場合、その path は success toast に表示される。
 - diagnostics export が canceled の場合、user は cancellation info toast を見る。
-
-既知の gap:
-
-- frontend が表示する一部の setting は、initial migration で seed されていない場合も default である。
+- settings section は page-level panel surface を持たず、separator と alignment でまとまりを判別できる。
+- Codex binary path customization を選択すると path input が表示され、保存した global value がすべての task execution に使用される。未選択時は task execution ごとの `PATH` lookup を使う。

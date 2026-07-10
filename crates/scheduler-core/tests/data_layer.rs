@@ -3,7 +3,7 @@ use scheduler_core::model::*;
 use scheduler_core::time::now_rfc3339;
 use scheduler_core::util::{prompt_hash, unique_slug};
 use scheduler_core::{SchedulerError, ValidationError};
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::fs;
 use tempfile::TempDir;
@@ -22,7 +22,6 @@ fn sample_task(slug: &str) -> Task {
         id: new_task_id(),
         slug: slug.to_owned(),
         name: "Status Summary".to_owned(),
-        description: None,
         status: TaskStatus::Active,
         locked: false,
         kind: TaskKind::Manual,
@@ -40,20 +39,20 @@ fn sample_task(slug: &str) -> Task {
         project_id: None,
         repo_path: None,
         base_ref: None,
-        model: Some("gpt-5-codex".to_owned()),
-        reasoning_effort: Some("default".to_owned()),
-        sandbox_mode: SandboxMode::ReadOnly,
+        model: Some("gpt-5.5".to_owned()),
+        reasoning_effort: Some("medium".to_owned()),
+        sandbox_mode: SandboxMode::DangerFullAccess,
         approval_policy: ApprovalPolicy::Never,
         allow_schedule_cli: true,
-        schedule_cli_capabilities:
-            r#"["schedule:create","schedule:update-current","schedule:list"]"#.to_owned(),
-        max_created_schedules_per_run: 5,
-        missed_policy: MissedPolicy::LatestWithinWindow,
-        missed_window_days: 7,
+        schedule_cli_capabilities: serde_json::to_string(SCHEDULE_CLI_CAPABILITIES)
+            .expect("capabilities"),
+        max_created_schedules_per_run: 0,
+        missed_policy: MissedPolicy::Skip,
+        missed_window_days: 0,
         overlap_policy: OverlapPolicy::Skip,
-        max_runtime_sec: 7200,
+        max_runtime_sec: 0,
         max_retries: 0,
-        retry_backoff_sec: 300,
+        retry_backoff_sec: 0,
         cleanup_policy: CleanupPolicy::Keep,
         cleanup_after_days: None,
         created_by: "user".to_owned(),
@@ -105,14 +104,29 @@ fn sample_run(task_id: &str, scheduled_for: &str) -> Run {
 }
 
 #[tokio::test]
-async fn migration_creates_v2_schema() {
+async fn migration_creates_v6_schema() {
     let (_temp_dir, db) = temp_db().await;
 
     let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(db.pool())
         .await
         .expect("user_version");
-    assert_eq!(user_version, 2);
+    assert_eq!(user_version, 6);
+
+    let description_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'description'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .expect("task columns");
+    assert_eq!(description_columns, 0);
+    let codex_path_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'codex_path'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .expect("codex path column");
+    assert_eq!(codex_path_columns, 0);
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master
@@ -171,6 +185,393 @@ async fn migration_creates_v2_schema() {
 }
 
 #[tokio::test]
+async fn v6_migration_discards_task_paths_and_preserves_the_global_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db_path = temp_dir.path().join("scheduler.sqlite3");
+    let db = SchedulerDb::connect(&db_path).await.expect("connect db");
+    let task = sample_task("legacy-task-codex-path");
+    db.create_task(&task).await.expect("create task");
+    db.set_setting("runner.codex_path", &"/opt/global/bin/codex")
+        .await
+        .expect("set global path");
+
+    sqlx::query("ALTER TABLE tasks ADD COLUMN codex_path TEXT")
+        .execute(db.pool())
+        .await
+        .expect("restore v5 codex path column");
+    sqlx::query("UPDATE tasks SET codex_path = '/tmp/task-codex' WHERE id = ?")
+        .bind(&task.id)
+        .execute(db.pool())
+        .await
+        .expect("seed task path");
+    sqlx::query(
+        "INSERT INTO task_audit_events (
+            id, task_id, actor_type, action, before_json, after_json, created_at
+         ) VALUES (?, ?, 'user', 'task.update', ?, ?, ?)",
+    )
+    .bind(new_task_audit_event_id())
+    .bind(&task.id)
+    .bind(r#"{"codex":{"codexPath":"/tmp/before"}}"#)
+    .bind(r#"{"codex":{"codexPath":"/tmp/after"}}"#)
+    .bind(now_rfc3339())
+    .execute(db.pool())
+    .await
+    .expect("seed task audit paths");
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 6")
+        .execute(db.pool())
+        .await
+        .expect("rewind v6 migration record");
+    sqlx::query("PRAGMA user_version = 5")
+        .execute(db.pool())
+        .await
+        .expect("rewind user version");
+    drop(db);
+
+    let migrated = SchedulerDb::connect(&db_path)
+        .await
+        .expect("apply v6 migration");
+    let codex_path_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'codex_path'",
+    )
+    .fetch_one(migrated.pool())
+    .await
+    .expect("codex path column after migration");
+    assert_eq!(codex_path_columns, 0);
+    assert_eq!(
+        migrated
+            .get_setting::<String>("runner.codex_path")
+            .await
+            .expect("get global path")
+            .as_deref(),
+        Some("/opt/global/bin/codex")
+    );
+
+    let audit = migrated
+        .list_task_audit_events(&task.id)
+        .await
+        .expect("audit")
+        .into_iter()
+        .find(|event| event.action == "task.update")
+        .expect("audit event");
+    for snapshot in [audit.before_json, audit.after_json] {
+        let value: Value =
+            serde_json::from_str(snapshot.as_deref().expect("snapshot")).expect("snapshot json");
+        assert!(value["codex"].get("codexPath").is_none());
+    }
+}
+
+#[tokio::test]
+async fn v3_and_v4_migrations_update_targets_and_remove_descriptions() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db_path = temp_dir.path().join("scheduler.sqlite3");
+    let db = SchedulerDb::connect(&db_path).await.expect("connect db");
+    let now = now_rfc3339();
+    let git_project = Project {
+        id: new_project_id(),
+        name: "git-project".to_owned(),
+        path: "/tmp/git-project".to_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some("/tmp/git-project".to_owned()),
+        git_remote_url: None,
+        default_branch: Some("main".to_owned()),
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    };
+    let folder_project = Project {
+        id: new_project_id(),
+        name: "folder-project".to_owned(),
+        path: "/tmp/folder-project".to_owned(),
+        kind: ProjectKind::Folder,
+        git_root: None,
+        git_remote_url: None,
+        default_branch: None,
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    db.create_project(&git_project).await.expect("git project");
+    db.create_project(&folder_project)
+        .await
+        .expect("folder project");
+
+    let git_task = sample_task("legacy-git-task");
+    let worktree_task = sample_task("legacy-worktree-task");
+    let folder_task = sample_task("legacy-folder-task");
+    db.create_task(&git_task).await.expect("git task");
+    db.create_task(&worktree_task).await.expect("worktree task");
+    db.create_task(&folder_task).await.expect("folder task");
+    sqlx::query(
+        "UPDATE tasks SET target_mode = 'repo-local', project_id = ?, repo_path = ? WHERE id = ?",
+    )
+    .bind(&git_project.id)
+    .bind(&git_project.path)
+    .bind(&git_task.id)
+    .execute(db.pool())
+    .await
+    .expect("legacy git target");
+    sqlx::query(
+        "UPDATE tasks SET target_mode = 'repo-worktree', project_id = ?, repo_path = ? WHERE id = ?",
+    )
+    .bind(&git_project.id)
+    .bind("/tmp/git-project/subdirectory")
+    .bind(&worktree_task.id)
+    .execute(db.pool())
+    .await
+    .expect("legacy worktree target");
+    sqlx::query(
+        "UPDATE tasks SET target_mode = 'repo-local', project_id = ?, repo_path = ? WHERE id = ?",
+    )
+    .bind(&folder_project.id)
+    .bind(&folder_project.path)
+    .bind(&folder_task.id)
+    .execute(db.pool())
+    .await
+    .expect("legacy folder target");
+    sqlx::query("ALTER TABLE tasks ADD COLUMN description TEXT")
+        .execute(db.pool())
+        .await
+        .expect("restore legacy description column");
+    sqlx::query("UPDATE tasks SET description = 'legacy description'")
+        .execute(db.pool())
+        .await
+        .expect("seed legacy descriptions");
+    sqlx::query(
+        "INSERT INTO task_audit_events (
+            id, task_id, actor_type, action, before_json, after_json, created_at
+         ) VALUES (?, ?, 'user', 'task.update', ?, ?, ?)",
+    )
+    .bind(new_task_audit_event_id())
+    .bind(&git_task.id)
+    .bind(r#"{"name":"before","description":"legacy before"}"#)
+    .bind(r#"{"name":"after","description":"legacy after"}"#)
+    .bind(now_rfc3339())
+    .execute(db.pool())
+    .await
+    .expect("seed legacy audit snapshot");
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version IN (3, 4)")
+        .execute(db.pool())
+        .await
+        .expect("rewind migration records");
+    sqlx::query("PRAGMA user_version = 2")
+        .execute(db.pool())
+        .await
+        .expect("rewind user version");
+    drop(db);
+
+    let migrated = SchedulerDb::connect(&db_path)
+        .await
+        .expect("apply v3 and v4 migrations");
+    let migrated_git = migrated
+        .get_task(&git_task.id)
+        .await
+        .expect("get git task")
+        .expect("git task");
+    assert_eq!(migrated_git.target_mode, RunTargetMode::RepoWorktree);
+    assert_eq!(migrated_git.status, TaskStatus::Active);
+    assert_eq!(
+        migrated_git.repo_path.as_deref(),
+        git_project.git_root.as_deref()
+    );
+    let migrated_worktree = migrated
+        .get_task(&worktree_task.id)
+        .await
+        .expect("get worktree task")
+        .expect("worktree task");
+    assert_eq!(migrated_worktree.target_mode, RunTargetMode::RepoWorktree);
+    assert_eq!(migrated_worktree.status, TaskStatus::Active);
+    assert_eq!(
+        migrated_worktree.repo_path.as_deref(),
+        git_project.git_root.as_deref()
+    );
+
+    let migrated_folder = migrated
+        .get_task(&folder_task.id)
+        .await
+        .expect("get folder task")
+        .expect("folder task");
+    assert_eq!(migrated_folder.target_mode, RunTargetMode::RepoLocal);
+    assert_eq!(migrated_folder.status, TaskStatus::Paused);
+    assert_eq!(migrated_folder.schedule_status, ScheduleStatus::Invalid);
+    assert!(migrated_folder.schedule_error.is_some());
+
+    let description_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'description'",
+    )
+    .fetch_one(migrated.pool())
+    .await
+    .expect("task columns after migration");
+    assert_eq!(description_columns, 0);
+
+    let (before_json, after_json): (String, String) = sqlx::query_as(
+        "SELECT before_json, after_json
+         FROM task_audit_events
+         WHERE task_id = ? AND action = 'task.update'",
+    )
+    .bind(&git_task.id)
+    .fetch_one(migrated.pool())
+    .await
+    .expect("migrated audit snapshot");
+    let before: serde_json::Value = serde_json::from_str(&before_json).expect("before json");
+    let after: serde_json::Value = serde_json::from_str(&after_json).expect("after json");
+    assert_eq!(before["name"], json!("before"));
+    assert_eq!(after["name"], json!("after"));
+    assert!(before.get("description").is_none());
+    assert!(after.get("description").is_none());
+}
+
+#[tokio::test]
+async fn v5_and_v6_migrations_normalize_execution_profile_and_remove_task_codex_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db_path = temp_dir.path().join("scheduler.sqlite3");
+    let db = SchedulerDb::connect(&db_path).await.expect("connect db");
+    let task = sample_task("legacy-execution-profile");
+    db.create_task(&task).await.expect("create task");
+    let run = sample_run(&task.id, &now_rfc3339());
+    db.create_run(&run).await.expect("create run");
+
+    sqlx::query(
+        "UPDATE tasks SET
+            sandbox_mode = 'read-only', approval_policy = 'on-request',
+            inject_scheduler_instructions = 0, allow_schedule_cli = 0,
+            schedule_cli_capabilities = '[]', max_created_schedules_per_run = 17,
+            missed_policy = 'latest_within_window', missed_window_days = 7,
+            overlap_policy = 'queue', max_runtime_sec = 7200, max_retries = 3,
+            retry_backoff_sec = 300, cleanup_policy = 'delete_after_days',
+            cleanup_after_days = 14
+         WHERE id = ?",
+    )
+    .bind(&task.id)
+    .execute(db.pool())
+    .await
+    .expect("seed legacy profile");
+
+    let token = ScheduleCapabilityToken {
+        id: new_schedule_capability_token_id(),
+        run_id: run.id.clone(),
+        task_id: task.id.clone(),
+        token_hash: "legacy-token-hash".to_owned(),
+        capabilities_json: r#"["schedule:create"]"#.to_owned(),
+        expires_at: "2099-01-01T00:00:00Z".to_owned(),
+        max_creates: 17,
+        create_count: 2,
+        revoked_at: None,
+        created_at: now_rfc3339(),
+    };
+    db.create_schedule_capability_token(&token)
+        .await
+        .expect("create token");
+    for key in [
+        "runner.default_sandbox_mode",
+        "runner.default_approval_policy",
+        "worktree.default_cleanup_policy",
+    ] {
+        db.set_setting(key, &"legacy")
+            .await
+            .expect("seed obsolete setting");
+    }
+    sqlx::query(
+        "INSERT INTO task_audit_events (
+            id, task_id, actor_type, action, before_json, after_json, created_at
+         ) VALUES (?, ?, 'user', 'task.update', ?, ?, ?)",
+    )
+    .bind(new_task_audit_event_id())
+    .bind(&task.id)
+    .bind(
+        r#"{"codex":{"model":"gpt-5.4","codexPath":"/tmp/legacy-before","sandboxMode":"read-only","approvalPolicy":"on-request"},"prompt":{"body":"before","injectSchedulerInstructions":false},"policies":{"maxRuntimeSec":7200}}"#,
+    )
+    .bind(
+        r#"{"codex":{"model":"gpt-5.5","codexPath":"/tmp/legacy-after","sandboxMode":"workspace-write","approvalPolicy":"never"},"prompt":{"body":"after","injectSchedulerInstructions":true},"policies":{"maxRetries":3}}"#,
+    )
+    .bind(now_rfc3339())
+    .execute(db.pool())
+    .await
+    .expect("seed legacy audit");
+
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version IN (5, 6)")
+        .execute(db.pool())
+        .await
+        .expect("rewind migration records");
+    sqlx::query("PRAGMA user_version = 4")
+        .execute(db.pool())
+        .await
+        .expect("rewind user version");
+    drop(db);
+
+    let migrated = SchedulerDb::connect(&db_path)
+        .await
+        .expect("apply v5 and v6 migrations");
+    let task = migrated
+        .get_task(&task.id)
+        .await
+        .expect("get task")
+        .expect("task");
+    assert_eq!(task.sandbox_mode, SandboxMode::DangerFullAccess);
+    assert_eq!(task.approval_policy, ApprovalPolicy::Never);
+    assert!(task.inject_scheduler_instructions);
+    assert!(task.allow_schedule_cli);
+    assert_eq!(task.max_created_schedules_per_run, 0);
+    assert_eq!(task.missed_policy, MissedPolicy::Skip);
+    assert_eq!(task.overlap_policy, OverlapPolicy::Skip);
+    assert_eq!(task.max_runtime_sec, 0);
+    assert_eq!(task.max_retries, 0);
+    assert_eq!(task.cleanup_policy, CleanupPolicy::Keep);
+    assert!(task.cleanup_after_days.is_none());
+
+    let codex_path_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'codex_path'",
+    )
+    .fetch_one(migrated.pool())
+    .await
+    .expect("codex path column after migration");
+    assert_eq!(codex_path_columns, 0);
+
+    let migrated_token = migrated
+        .get_schedule_capability_token_by_hash("legacy-token-hash")
+        .await
+        .expect("get token")
+        .expect("token");
+    assert_eq!(migrated_token.max_creates, 0);
+    let capabilities: Vec<String> =
+        serde_json::from_str(&migrated_token.capabilities_json).expect("capabilities");
+    assert_eq!(
+        capabilities,
+        SCHEDULE_CLI_CAPABILITIES
+            .iter()
+            .map(|capability| (*capability).to_owned())
+            .collect::<Vec<_>>()
+    );
+    for key in [
+        "runner.default_sandbox_mode",
+        "runner.default_approval_policy",
+        "worktree.default_cleanup_policy",
+    ] {
+        assert!(migrated
+            .get_setting_row(key)
+            .await
+            .expect("get setting")
+            .is_none());
+    }
+
+    let audit = migrated
+        .list_task_audit_events(&task.id)
+        .await
+        .expect("audit")
+        .into_iter()
+        .find(|event| event.action == "task.update")
+        .expect("audit event");
+    for snapshot in [audit.before_json, audit.after_json] {
+        let value: Value =
+            serde_json::from_str(snapshot.as_deref().expect("snapshot")).expect("snapshot json");
+        assert!(value["codex"].get("sandboxMode").is_none());
+        assert!(value["codex"].get("approvalPolicy").is_none());
+        assert!(value["codex"].get("codexPath").is_none());
+        assert!(value["prompt"].get("injectSchedulerInstructions").is_none());
+        assert!(value.get("policies").is_none());
+    }
+}
+
+#[tokio::test]
 async fn task_crud_and_validation() {
     let (_temp_dir, db) = temp_db().await;
     let mut task = sample_task("status-summary");
@@ -222,10 +623,10 @@ async fn task_crud_and_validation() {
     let err = db
         .create_task(&invalid_target)
         .await
-        .expect_err("repo target required");
+        .expect_err("local project targets are rejected");
     assert!(matches!(
         err,
-        SchedulerError::Validation(ValidationError::MissingTarget)
+        SchedulerError::Validation(ValidationError::ProjectTargetRequiresWorktree)
     ));
 
     let mut invalid_worktree = sample_task("invalid-worktree");
@@ -237,7 +638,65 @@ async fn task_crud_and_validation() {
         .expect_err("repo-worktree requires a git project_id");
     assert!(matches!(
         err,
+        SchedulerError::Validation(ValidationError::MissingTarget)
+    ));
+
+    let now = now_rfc3339();
+    let folder_project = Project {
+        id: new_project_id(),
+        name: "folder".to_owned(),
+        path: "/tmp/folder".to_owned(),
+        kind: ProjectKind::Folder,
+        git_root: None,
+        git_remote_url: None,
+        default_branch: None,
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    db.create_project(&folder_project)
+        .await
+        .expect("create legacy folder project");
+    let mut invalid_folder_project = sample_task("invalid-folder-project");
+    invalid_folder_project.target_mode = RunTargetMode::RepoWorktree;
+    invalid_folder_project.project_id = Some(folder_project.id);
+    invalid_folder_project.repo_path = Some("/tmp/folder".to_owned());
+    let err = db
+        .create_task(&invalid_folder_project)
+        .await
+        .expect_err("project worktree requires git");
+    assert!(matches!(
+        err,
         SchedulerError::Validation(ValidationError::RepoWorktreeRequiresGitProject)
+    ));
+
+    let now = now_rfc3339();
+    let git_project = Project {
+        id: new_project_id(),
+        name: "git".to_owned(),
+        path: "/tmp/git".to_owned(),
+        kind: ProjectKind::Git,
+        git_root: Some("/tmp/git".to_owned()),
+        git_remote_url: None,
+        default_branch: Some("main".to_owned()),
+        trusted_at: Some(now.clone()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    db.create_project(&git_project)
+        .await
+        .expect("create git project");
+    let mut mismatched_project_path = sample_task("mismatched-project-path");
+    mismatched_project_path.target_mode = RunTargetMode::RepoWorktree;
+    mismatched_project_path.project_id = Some(git_project.id);
+    mismatched_project_path.repo_path = Some("/tmp/other".to_owned());
+    let err = db
+        .create_task(&mismatched_project_path)
+        .await
+        .expect_err("project path must match registered git root");
+    assert!(matches!(
+        err,
+        SchedulerError::Validation(ValidationError::ProjectTargetPathMismatch)
     ));
 
     let deleted_at = now_rfc3339();
@@ -426,22 +885,20 @@ fn task_and_run_dto_serialize_to_spec_camel_case_shape() {
     task.project_id = Some("proj_01900000-0000-7000-8000-000000000000".to_owned());
     task.repo_path = Some("/Users/alice/src/my-app".to_owned());
     task.base_ref = Some("main".to_owned());
-    task.sandbox_mode = SandboxMode::WorkspaceWrite;
 
     let task_value = serde_json::to_value(TaskDto::from(&task)).expect("task dto json");
+    assert!(task_value.get("description").is_none());
     assert_eq!(task_value["cronExpr"], json!("0 9 * * 1-5"));
     assert_eq!(task_value["nextRunAt"], json!("2026-07-08T00:00:00Z"));
     assert_eq!(task_value["target"]["mode"], json!("repo-worktree"));
     assert_eq!(task_value["target"]["projectId"], json!(task.project_id));
-    assert_eq!(task_value["codex"]["sandboxMode"], json!("workspace-write"));
-    assert_eq!(
-        task_value["policies"]["missedPolicy"],
-        json!("latest_within_window")
-    );
-    assert_eq!(
-        task_value["policies"]["maxCreatedSchedulesPerRun"],
-        json!(5)
-    );
+    assert!(task_value["codex"].get("codexPath").is_none());
+    assert!(task_value["codex"].get("sandboxMode").is_none());
+    assert!(task_value["codex"].get("approvalPolicy").is_none());
+    assert!(task_value["prompt"]
+        .get("injectSchedulerInstructions")
+        .is_none());
+    assert!(task_value.get("policies").is_none());
     assert!(task_value.get("cron_expr").is_none());
     assert!(task_value["target"].get("project_id").is_none());
 

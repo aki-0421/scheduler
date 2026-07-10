@@ -28,10 +28,11 @@ import { cn } from "@/lib/utils";
 type TaskRowActionsProps = {
   task: TaskDto;
   onEdit?: (task: TaskDto) => void;
+  onDeleted?: (task: TaskDto) => void;
   className?: string;
 };
 
-export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps) {
+export function TaskRowActions({ task, onEdit, onDeleted, className }: TaskRowActionsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
@@ -44,9 +45,17 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
   const canPause = task.status === "active" && !task.locked;
   const canResume = (task.status === "paused" || task.status === "completed") && !task.locked;
 
-  function withToast<T>(promise: Promise<T>, success: string, failure: string) {
+  function withToast<T>(
+    promise: Promise<T>,
+    success: string,
+    failure: string,
+    onSuccess?: () => void,
+  ) {
     promise
-      .then(() => toast.success(success))
+      .then(() => {
+        toast.success(success);
+        onSuccess?.();
+      })
       .catch((error) =>
         toast.error(failure, {
           description:
@@ -265,6 +274,7 @@ export function TaskRowActions({ task, onEdit, className }: TaskRowActionsProps)
                   deleteTask.mutateAsync(task.id),
                   "タスクを削除しました",
                   "タスクを削除できませんでした",
+                  () => onDeleted?.(task),
                 )
               }
             >
