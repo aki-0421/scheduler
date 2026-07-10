@@ -35,8 +35,10 @@ read_when:
 
 ## 共通レイアウト規約
 
-- tabbed surface は tab list を content panel の外側、直上に配置する。
-- 選択中の tab content は bordered panel として表示する。nested tabs も同じ階層を保ち、親 panel の内側に tab list だけを置かない。
+- sidebar の右側は page background が連続する 1 枚の content canvas とする。page-level section、list、table、form、tab content を、装飾目的の rounded border、別背景、shadow、内側 padding を組み合わせた panel で囲まない。
+- content の階層は page header、section heading、spacing、separator、table header、row divider で示す。外枠を外しても section と row の境界、hover / selected state、keyboard focus は判別できる状態を保つ。
+- tab list は選択中 content の直上に配置し、tab content 自体には外側の bordered panel を置かない。nested tabs も同じ規約を使う。
+- input、selectable radio card、code / log block、chat bubble、status / alert、popover、dialog など、操作または内容の識別に surface が必要な局所要素はこの規約の対象外とする。
 
 ## Screen ID registry
 

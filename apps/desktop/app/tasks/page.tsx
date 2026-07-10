@@ -89,7 +89,7 @@ function TaskScreen({ taskId }: { taskId: string }) {
 
   if (!task.data) {
     return (
-      <div className="rounded-lg border bg-surface/70 p-4 text-sm text-muted-foreground">
+      <div className="py-4 text-sm text-muted-foreground">
         タスクを読み込めませんでした。
       </div>
     );
@@ -158,7 +158,7 @@ function TasksPageContent() {
       />
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-surface/70">
+        <div className="flex min-h-0 flex-1 flex-col border-y">
           {archivedTasks.length ? (
             archivedTasks.map((task) => {
               const lastRun = taskLastRun(task, runList);

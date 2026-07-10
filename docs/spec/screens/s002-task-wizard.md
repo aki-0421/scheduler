@@ -36,7 +36,7 @@ read_when:
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - validation failure 時の error summary alert。
 - tabs: `タスク`、`詳細`。従来の `基本`、`実行先`、`スケジュール` は `タスク` tab に統合する。
-- tab list は content panel の外側、直上に配置する。横スクロール領域にはせず、利用可能な幅に収まらない場合は複数行へ折り返す。選択中の tab content と footer action は、1つの bordered panel 内に表示する。
+- tab list は選択中 content の直上に配置する。横スクロール領域にはせず、利用可能な幅に収まらない場合は複数行へ折り返す。選択中の tab content と footer action は page canvas に直接配置し、外側の bordered panel とその内側 padding を置かない。
 - `タスク` tab: task name、prompt、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、schedule selector、schedule-specific fields、PC timezone indicator、preview を同じ画面にまとめる。task description field は置かない。desktop width では task content と execution condition を 2 column に分け、狭い width では 1 column に戻す。
 - prompt textarea は resize 可能なまま compact な初期高にし、next-five-runs preview は複数列で表示できる幅では 2 column にして縦方向の占有を抑える。
 - `詳細` tab: 任意の Codex binary path customization、Codex model、reasoning effort、lock / pause controls。field は 2 column の compact layout で表示し、policy 説明や固定値の summary を置かない。
@@ -114,7 +114,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - create が成功した場合、user は `/tasks?task=<newTaskId>` に遷移する。
 - duplicate が成功した場合、lock state は unlocked で作成される。
 - edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
-- create、follow-up、duplicate、edit のすべてで、`タスク` / `詳細` の tab list は content panel の外にあり、選択中の tab content は panel として表示される。
+- create、follow-up、duplicate、edit のすべてで、`タスク` / `詳細` の tab content と footer action は page-level panel surface なしで表示される。
 - tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
 - desktop width の `タスク` tab は主要フィールドを 2 column に分け、既定の chat / weekdays state を過度な縦スクロールなしで確認できる。
 - create、follow-up、duplicate、edit のいずれにも task description input は表示されず、保存 DTO に description field を含めない。

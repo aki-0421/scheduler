@@ -35,9 +35,7 @@ function SettingsSection({
       <div>
         <h2 className="text-base font-semibold text-balance">{title}</h2>
       </div>
-      <div className="overflow-hidden rounded-lg border bg-surface/70 px-4">
-        {children}
-      </div>
+      <div>{children}</div>
     </section>
   );
 }

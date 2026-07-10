@@ -31,6 +31,7 @@ read_when:
 
 レイアウト領域:
 
+- sidebar の右側は header と page background が連続する content canvas とし、各 page の主内容を追加の panel surface で包まない。page-level hierarchy は spacing と separator で表現する。
 - sidebar 先頭 section は product title ではなく `プロジェクト` navigation item を表示する。`Codex Scheduler` の title section、brand mark、subtitle は sidebar に置かない。
 - プロジェクトを開いている場合、sidebar の project context と page header では GitHub repository は `user(org)/repo` 形式で表示する。GitHub remote を判定できない Git project は user-editable project name を表示する。
 - sidebar section 間は separator line で区切る。
@@ -91,3 +92,4 @@ read_when:
 - header に `稼働中` badge と scheduler toggle が表示されない。
 - header に breadcrumb が表示される。
 - header count は icon + number で表示される。
+- sidebar の右側では page-level section、list、table、form、tab content に装飾目的の panel surface が表示されない。

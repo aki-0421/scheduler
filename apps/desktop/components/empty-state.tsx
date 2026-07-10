@@ -26,12 +26,12 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex min-h-48 items-center justify-center rounded-lg border bg-surface/70 p-8",
+        "flex min-h-40 items-center justify-center px-4 py-8",
         className,
       )}
     >
       <div className="mx-auto flex max-w-md flex-col items-center text-center">
-        <div className="flex size-11 items-center justify-center rounded-md border bg-background text-muted-foreground shadow-sm shadow-foreground/[0.02]">
+        <div className="flex size-10 items-center justify-center text-muted-foreground">
           <Icon className="size-5" aria-hidden="true" />
         </div>
         <h3 className="mt-4 text-sm font-semibold text-balance">{title}</h3>

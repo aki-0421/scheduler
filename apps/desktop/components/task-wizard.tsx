@@ -15,7 +15,6 @@ import { toast } from "sonner";
 import { Field } from "@/components/field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -739,8 +738,7 @@ export function TaskWizard({
           <TabsTrigger value="advanced">詳細</TabsTrigger>
         </TabsList>
 
-        <Card>
-          <CardContent className="grid gap-5 p-4">
+        <div className="grid gap-5">
             <TabsContent value="task" className="mt-0">
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
                 <section
@@ -1172,8 +1170,7 @@ export function TaskWizard({
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+        </div>
       </Tabs>
     </div>
   );

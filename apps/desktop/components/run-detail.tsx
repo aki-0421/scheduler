@@ -88,29 +88,16 @@ function formatBytes(value: number | undefined) {
 }
 
 function DetailSection({
-  title,
   actions,
   children,
 }: {
-  title?: string;
   actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="grid gap-3 rounded-lg border bg-surface/70 p-4">
-      {title || actions ? (
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-          {title ? (
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold text-balance">{title}</h2>
-            </div>
-          ) : null}
-          {actions ? (
-            <div className="flex w-full shrink-0 flex-wrap gap-2 sm:w-auto sm:justify-end">
-              {actions}
-            </div>
-          ) : null}
-        </div>
+    <section className="grid gap-3">
+      {actions ? (
+        <div className="flex w-full flex-wrap justify-end gap-2">{actions}</div>
       ) : null}
       {children}
     </section>
@@ -129,9 +116,7 @@ function MetadataItem({
   className?: string;
 }) {
   return (
-    <div
-      className={cn("min-w-0 rounded-md border bg-background p-3", className)}
-    >
+    <div className={cn("min-w-0 border-t pt-3", className)}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-1 min-w-0 text-sm font-medium">{value}</dd>
       {detail ? (
@@ -354,7 +339,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
       </TabsList>
 
       <TabsContent value="overview">
-        <section className="grid gap-4 rounded-lg border bg-surface/70 p-4">
+        <section className="grid gap-4">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -552,7 +537,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
           {promptText ? (
             <TextBlock>{promptText}</TextBlock>
           ) : (
-            <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+            <p className="py-3 text-sm text-muted-foreground">
               この実行ではプロンプト本文を利用できません。
             </p>
           )}
@@ -565,11 +550,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
         >
           <div className="grid gap-3">
             {outputText ? (
-              <div className="rounded-md bg-background p-3 text-sm leading-6 text-pretty">
+              <div className="text-sm leading-6 text-pretty">
                 {outputText}
               </div>
             ) : (
-              <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+              <p className="py-3 text-sm text-muted-foreground">
                 最終メッセージはまだ記録されていません。
               </p>
             )}
@@ -616,11 +601,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
             >
               <div className="min-h-64 rounded-md bg-muted p-3">
                 {eventLines.length ? (
-                  <div className="grid gap-2">
+                  <div className="divide-y">
                     {eventLines.map((event) => (
                       <div
                         key={event.id}
-                        className="rounded-md border bg-background p-3"
+                        className="py-3 first:pt-0 last:pb-0"
                       >
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           <Badge variant="outline">
@@ -653,11 +638,11 @@ export function RunDetail({ run, task }: RunDetailProps) {
       <TabsContent value="artifacts">
         <DetailSection>
           {artifacts.length ? (
-            <div className="grid gap-2">
+            <div className="divide-y">
               {artifacts.map((artifact) => (
                 <div
                   key={artifact.id}
-                  className="flex flex-col justify-between gap-3 rounded-md border p-3 xl:flex-row xl:items-center"
+                  className="flex flex-col justify-between gap-3 py-3 first:pt-0 last:pb-0 xl:flex-row xl:items-center"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">

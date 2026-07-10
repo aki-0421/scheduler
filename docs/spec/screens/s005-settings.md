@@ -29,6 +29,7 @@ read_when:
 - General section。section heading 直下の補足説明文は表示しない。
 - Execution section。section heading 直下の補足説明文は表示しない。
 - Diagnostics section。section heading 直下の補足説明文は表示しない。
+- 各 settings section と setting row は page canvas に直接配置し、section 全体を rounded border、別背景、shadow、内側 padding を持つ panel で囲まない。section と row は separator で区切る。
 - bottom の sticky save bar。
 
 フィールドとコントロール:
@@ -76,3 +77,4 @@ read_when:
 - setting save のいずれかが失敗した場合、user は error toast を見て、previous cached settings が restored される。
 - diagnostics export が path を返した場合、その path は success toast に表示される。
 - diagnostics export が canceled の場合、user は cancellation info toast を見る。
+- settings section は page-level panel surface を持たず、separator と alignment でまとまりを判別できる。

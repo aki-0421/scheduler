@@ -7,7 +7,6 @@ import {
   LockKeyhole,
   LockOpen,
   PlusCircle,
-  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,48 +35,16 @@ type TaskDetailProps = {
 };
 
 function DetailSection({
-  title,
-  description,
-  icon: Icon,
   actions,
   children,
 }: {
-  title?: string;
-  description?: string;
-  icon?: LucideIcon;
   actions?: ReactNode;
   children: ReactNode;
 }) {
-  const hasHeader = title || description || Icon || actions;
-
   return (
-    <section className="grid gap-3 rounded-lg border bg-surface/70 p-4">
-      {hasHeader ? (
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              {Icon ? (
-                <Icon
-                  className="size-4 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              ) : null}
-              {title ? (
-                <h2 className="text-base font-semibold text-balance">
-                  {title}
-                </h2>
-              ) : null}
-            </div>
-            {description ? (
-              <p className="mt-1 text-sm text-muted-foreground text-pretty">
-                {description}
-              </p>
-            ) : null}
-          </div>
-          {actions ? (
-            <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
-          ) : null}
-        </div>
+    <section className="grid gap-3">
+      {actions ? (
+        <div className="flex flex-wrap justify-end gap-2">{actions}</div>
       ) : null}
       {children}
     </section>
@@ -96,9 +63,7 @@ function DefinitionItem({
   className?: string;
 }) {
   return (
-    <div
-      className={cn("min-w-0 rounded-md border bg-background p-3", className)}
-    >
+    <div className={cn("min-w-0 border-t pt-3", className)}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-1 min-w-0 text-sm font-medium">{value}</dd>
       {detail ? (
@@ -165,7 +130,7 @@ function AuditPayloadDetails({
   }
 
   return (
-    <details className="rounded-md border bg-muted/30 p-3">
+    <details className="border-t pt-3">
       <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
         {label}
       </summary>
@@ -178,7 +143,7 @@ function AuditPayloadDetails({
 
 function AuditEventRow({ event }: { event: TaskAuditEvent }) {
   return (
-    <div className="grid gap-3 rounded-md border p-3">
+    <div className="grid gap-3 py-4 first:pt-0 last:pb-0">
       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -312,7 +277,7 @@ export function TaskDetail({
 
       <TabsContent value="history">
         <DetailSection>
-          <div className="overflow-hidden rounded-md border">
+          <div className="border-y">
             <div className="hidden grid-cols-[8rem_12rem_8rem_minmax(0,1fr)] gap-3 bg-muted px-3 py-2 text-xs font-medium text-muted-foreground md:grid">
               <span>状態</span>
               <span>予定時刻</span>
@@ -457,7 +422,7 @@ export function TaskDetail({
 
       <TabsContent value="audit">
         <DetailSection>
-          <div className="grid gap-3 text-sm">
+          <div className="divide-y text-sm">
             {auditEvents.length ? (
               auditEvents.map((event) => (
                 <AuditEventRow key={event.id} event={event} />

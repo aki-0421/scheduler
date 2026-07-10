@@ -83,7 +83,7 @@ function ProjectKindIcon({ kind }: { kind: ProjectDto["kind"] }) {
   return (
     <span
       title={formatProjectKind(kind)}
-      className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-background text-muted-foreground"
+      className="flex size-7 shrink-0 items-center justify-center text-muted-foreground"
     >
       <Icon className="size-4" aria-hidden="true" />
     </span>
@@ -301,7 +301,7 @@ export default function ProjectsPage() {
 
       <section className="flex min-h-0 flex-1 flex-col gap-3">
         {sortedProjects.length ? (
-          <div className="overflow-x-auto overflow-y-hidden rounded-lg border bg-surface/70">
+          <div className="border-y">
             <Table className="min-w-[640px] table-fixed">
               <TableHeader>
                 <TableRow>

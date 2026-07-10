@@ -27,6 +27,7 @@ read_when:
 
 - `プロジェクト` title と `Gitプロジェクトを追加` action を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - registered project table。`プロジェクト一覧` のような title と同義の section heading や count 説明文は表示しない。
+- registered project table は page canvas に直接配置し、rounded border、別背景、shadow、内側 padding を組み合わせた外側 panel で囲まない。table header と row divider は維持する。
 - project table row は読み取り専用で、row click または settings icon から project settings dialog を開く。
 - project settings dialog。
 - remove project confirmation dialog。
@@ -86,6 +87,7 @@ read_when:
 - GitHub remote がない project は display name を編集できる。
 - project が追加された後、別途 trust / untrust action または `信頼済み` badge が表示されない。
 - project removal が confirmed された場合、affected active task count が success toast に表示される。
+- Projects table と empty state は page-level panel surface を持たない。
 
 既知の gap:
 

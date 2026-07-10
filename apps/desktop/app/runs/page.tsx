@@ -316,7 +316,7 @@ function RunsPageContent() {
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-surface/70">
+          <div className="flex min-h-0 flex-1 flex-col border-y">
             {displayedRunList.length ? (
               displayedRunList.map((run) => (
                 <RunRow
@@ -346,7 +346,7 @@ function RunsPageContent() {
               task={taskById.get(selectedRun.data.taskId)}
             />
           ) : (
-            <div className="rounded-lg border bg-surface/70 p-4 text-sm text-muted-foreground">
+            <div className="py-4 text-sm text-muted-foreground">
               選択した実行を読み込んでいます。
             </div>
           )
