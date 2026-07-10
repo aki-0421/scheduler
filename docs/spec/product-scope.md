@@ -20,7 +20,7 @@ app は、汎用 admin dashboard ではなく、AI work の local automation con
 - scheduler task の作成、編集、一時停止、再開、削除、手動実行。
 - manual、once、cron task の作成。
 - chat workspace、または登録済み Git project から実行ごとに作成する isolated worktree を対象にする。project root を直接変更する実行 mode は提供しない。
-- task prompt、model、reasoning effort、lock、開始状態の設定。timezone は PC の現在値を自動使用する。Codex binary path は Settings の global value を全 task で共有する。
+- task prompt、model、思考レベル、lock、開始状態の設定。timezone は PC の現在値を自動使用する。Codex binary path は Settings の global value を全 task で共有する。
 - すべての task を full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持で実行する。Scheduler CLI は全 action を作成数上限なしで常に利用できる。
 - task list、task detail、run history、run detail、log tail、artifact、audit event、daemon diagnostics の確認。
 - local Git repository を project として追加し、scheduler-owned worktree の source として使う。

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
-  CalendarClock,
   FileText,
   FolderGit2,
   FolderOpen,
@@ -19,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -35,7 +35,6 @@ import {
   reasoningEffortOptionsForModel,
 } from "@/lib/codex-options";
 import { getCronPreview } from "@/lib/cron";
-import { formatDateTime } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
 import {
   buildTaskDto,
@@ -47,7 +46,7 @@ import {
   type StepErrors,
   type TaskDraft,
 } from "@/lib/task-draft";
-import { getSystemTimezone, localDateTimeToUtcIso } from "@/lib/timezone";
+import { getSystemTimezone } from "@/lib/timezone";
 import type { TaskDto } from "@/lib/types";
 import {
   useCreateTask,
@@ -97,10 +96,6 @@ const weekdayOptions = [
   { value: "6", label: "土曜日" },
 ];
 
-const weekdayByValue = Object.fromEntries(
-  weekdayOptions.map((option) => [option.value, option.label]),
-);
-
 const japaneseErrorMessages: Record<string, string> = {
   name: "タスク名は必須です。",
   prompt: "プロンプトは必須です。",
@@ -108,7 +103,7 @@ const japaneseErrorMessages: Record<string, string> = {
   onceDate: "有効な日付と時刻を選択してください。",
   onceTime: "有効な日付と時刻を選択してください。",
   model: "モデルは必須です。",
-  reasoningEffort: "推論 effort は必須です。",
+  reasoningEffort: "思考レベルは必須です。",
 };
 
 const errorFieldOrder = [
@@ -130,7 +125,7 @@ const errorLabelByKey: Record<string, string> = {
   onceTime: "時刻",
   cronPreview: "カスタム cron 式",
   model: "モデル",
-  reasoningEffort: "推論 effort",
+  reasoningEffort: "思考レベル",
 };
 
 const errorTargetIds: Record<string, string[]> = {
@@ -215,46 +210,6 @@ function getScheduleChoice(draft: TaskDraft): ScheduleChoice {
   return draft.scheduleMode;
 }
 
-function getOncePreview(draft: TaskDraft) {
-  try {
-    return formatDateTime(
-      localDateTimeToUtcIso(draft.onceDate, draft.onceTime, draft.timezone),
-    );
-  } catch {
-    return `${draft.onceDate} ${draft.onceTime} ${draft.timezone}`.trim();
-  }
-}
-
-function getScheduleSummary(draft: TaskDraft) {
-  const choice = getScheduleChoice(draft);
-
-  if (choice === "manual") {
-    return "手動のみ";
-  }
-
-  if (choice === "once") {
-    return `${getOncePreview(draft)} に一度だけ`;
-  }
-
-  if (choice === "hourly") {
-    return "毎時";
-  }
-
-  if (choice === "daily") {
-    return `毎日 ${draft.presetTime}`;
-  }
-
-  if (choice === "weekdays") {
-    return `平日 ${draft.presetTime}`;
-  }
-
-  if (choice === "weekly") {
-    return `毎週${weekdayByValue[draft.weeklyDay] ?? "月曜日"} ${draft.presetTime}`;
-  }
-
-  return draft.cronExpr ? `カスタム cron: ${draft.cronExpr}` : "カスタム cron";
-}
-
 function SelectField<T extends string>({
   id,
   label,
@@ -316,7 +271,7 @@ function SwitchRow({
   const descriptionId = `${id}-description`;
 
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+    <div className="flex items-start justify-between gap-3 py-3">
       <div className="grid gap-1">
         <Label htmlFor={id}>{label}</Label>
         <p
@@ -328,6 +283,7 @@ function SwitchRow({
       </div>
       <Switch
         id={id}
+        className="mt-0.5 shrink-0"
         checked={checked}
         aria-describedby={descriptionId}
         onCheckedChange={onChange}
@@ -358,7 +314,7 @@ export function TaskWizard({
   const isSaving = createTask.isPending || updateTask.isPending;
   const scheduleChoice = getScheduleChoice(draft);
   const cronExpression = getDraftCronExpression(draft);
-  const cronPreview = useMemo(
+  const cronValidation = useMemo(
     () =>
       cronExpression
         ? getCronPreview(cronExpression, draft.timezone)
@@ -610,8 +566,8 @@ export function TaskWizard({
   }
 
   const cronError =
-    scheduleChoice === "cron" && !cronPreview.ok
-      ? formatCronError(cronPreview.error)
+    scheduleChoice === "cron" && !cronValidation.ok
+      ? formatCronError(cronValidation.error)
       : undefined;
 
   function renderSaveActions() {
@@ -673,58 +629,160 @@ export function TaskWizard({
         </Alert>
       ) : null}
 
-      <div className="grid gap-6">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
-          <section
-            className="grid content-start gap-4"
-            aria-labelledby="task-content-heading"
-          >
-            <h3 id="task-content-heading" className="text-sm font-semibold">
-              依頼内容
-            </h3>
-            <Field label="タスク名" htmlFor="task-name" error={errors.name}>
-              <Input
-                id="task-name"
-                value={draft.name}
-                placeholder="毎日のリポジトリレビュー"
-                onChange={(event) => update("name", event.currentTarget.value)}
-              />
-            </Field>
-            <Field
-              label="プロンプト"
-              htmlFor="task-prompt"
-              error={errors.prompt}
-            >
-              <div className="grid gap-2">
-                <Textarea
-                  id="task-prompt"
-                  className="min-h-56 resize-y font-mono text-sm leading-6"
-                  value={draft.prompt}
-                  placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"
-                  onChange={(event) =>
-                    update("prompt", event.currentTarget.value)
-                  }
-                />
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    {draft.prompt.length.toLocaleString("ja-JP")} 文字
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isImportingPrompt}
-                    onClick={() => void importPromptFile()}
-                  >
-                    <FileText className="size-4" aria-hidden="true" />
-                    プロンプトをインポート
-                  </Button>
-                </div>
-              </div>
-            </Field>
-          </section>
+      <div className="grid gap-5">
+        <section
+          aria-label="基本設定"
+          className="grid items-start gap-5 md:grid-cols-2"
+        >
+          <Field label="タスク名" htmlFor="task-name" error={errors.name}>
+            <Input
+              id="task-name"
+              value={draft.name}
+              placeholder="毎日のリポジトリレビュー"
+              onChange={(event) => update("name", event.currentTarget.value)}
+            />
+          </Field>
 
-          <div className="grid content-start gap-5 lg:border-l lg:pl-6">
+          <div className="grid gap-2">
+            <div className="flex flex-wrap items-start gap-3">
+              <SelectField
+                id="schedule"
+                label="スケジュール"
+                value={scheduleChoice}
+                options={scheduleOptions}
+                onChange={updateScheduleChoice}
+                className="w-full sm:w-44"
+              />
+
+              {scheduleChoice === "once" ? (
+                <>
+                  <Field
+                    label="日付"
+                    htmlFor="once-date"
+                    error={errors.onceDate}
+                    className="w-full sm:w-44"
+                  >
+                    <Input
+                      id="once-date"
+                      type="date"
+                      value={draft.onceDate}
+                      onChange={(event) =>
+                        update("onceDate", event.currentTarget.value)
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label="時刻"
+                    htmlFor="once-time"
+                    error={errors.onceTime}
+                    className="w-full sm:w-36"
+                  >
+                    <Input
+                      id="once-time"
+                      type="time"
+                      value={draft.onceTime}
+                      onChange={(event) =>
+                        update("onceTime", event.currentTarget.value)
+                      }
+                    />
+                  </Field>
+                </>
+              ) : null}
+
+              {scheduleChoice === "daily" ||
+              scheduleChoice === "weekdays" ||
+              scheduleChoice === "weekly" ? (
+                <>
+                  {scheduleChoice === "weekly" ? (
+                    <SelectField
+                      id="weekly-day"
+                      label="曜日"
+                      value={draft.weeklyDay}
+                      options={weekdayOptions}
+                      onChange={(value) => update("weeklyDay", value)}
+                      className="w-full sm:w-36"
+                    />
+                  ) : null}
+                  <Field
+                    label="時刻"
+                    htmlFor="preset-time"
+                    className="w-full sm:w-36"
+                  >
+                    <Input
+                      id="preset-time"
+                      type="time"
+                      value={draft.presetTime}
+                      onChange={(event) =>
+                        update("presetTime", event.currentTarget.value)
+                      }
+                    />
+                  </Field>
+                </>
+              ) : null}
+
+              {scheduleChoice === "cron" ? (
+                <Field
+                  label="カスタム cron 式"
+                  htmlFor="cron-expression"
+                  error={errors.cronPreview ?? cronError}
+                  description="5フィールドの cron 式を使ってください。"
+                  className="w-full sm:w-72"
+                >
+                  <Input
+                    id="cron-expression"
+                    value={draft.cronExpr}
+                    aria-invalid={Boolean(errors.cronPreview ?? cronError)}
+                    onChange={(event) =>
+                      update("cronExpr", event.currentTarget.value, [
+                        "cronPreview",
+                      ])
+                    }
+                    placeholder="0 9 * * 1-5"
+                  />
+                </Field>
+              ) : null}
+            </div>
+            {scheduleChoice !== "manual" ? (
+              <p className="text-xs text-muted-foreground">
+                PCのタイムゾーン（{draft.timezone}）を使用します。
+              </p>
+            ) : null}
+          </div>
+        </section>
+
+        <Separator />
+
+        <section
+          aria-label="モデル設定"
+          className="flex flex-wrap items-start gap-4"
+        >
+          <SelectField
+            id="model"
+            label="モデル"
+            value={draft.model}
+            options={codexModelOptions}
+            onChange={updateModel}
+            error={errors.model}
+            className="w-full sm:w-56"
+          />
+          <SelectField
+            id="reasoning"
+            label="思考レベル"
+            value={draft.reasoningEffort}
+            options={modelReasoningEffortOptions}
+            onChange={(value) => update("reasoningEffort", value)}
+            error={errors.reasoningEffort}
+            className="w-full sm:w-44"
+          />
+        </section>
+
+        <Separator />
+
+        <section
+          aria-label="実行内容とオプション"
+          className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(13rem,1fr)]"
+        >
+          <div className="grid min-w-0 gap-5">
             <section
               className="grid gap-3"
               aria-labelledby="target-choice-label"
@@ -749,7 +807,7 @@ export function TaskWizard({
               <RadioGroup
                 value={targetChoice}
                 aria-labelledby="target-choice-label"
-                className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
+                className="grid gap-2 sm:grid-cols-2"
                 onValueChange={(value) =>
                   updateTargetChoice(value as TargetChoice)
                 }
@@ -840,188 +898,59 @@ export function TaskWizard({
               ) : null}
             </section>
 
-            <section
-              className="grid gap-3 border-t pt-5"
-              aria-labelledby="schedule-heading"
+            <Field
+              label="プロンプト"
+              htmlFor="task-prompt"
+              error={errors.prompt}
             >
-              <h3 id="schedule-heading" className="text-sm font-semibold">
-                スケジュール
-              </h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <SelectField
-                  id="schedule"
-                  label="実行タイミング"
-                  value={scheduleChoice}
-                  options={scheduleOptions}
-                  onChange={updateScheduleChoice}
+              <div className="grid gap-2">
+                <Textarea
+                  id="task-prompt"
+                  className="min-h-48 resize-y font-mono text-sm leading-6"
+                  value={draft.prompt}
+                  placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"
+                  onChange={(event) =>
+                    update("prompt", event.currentTarget.value)
+                  }
                 />
-
-                {scheduleChoice === "once" ? (
-                  <>
-                    <Field
-                      label="日付"
-                      htmlFor="once-date"
-                      error={errors.onceDate}
-                    >
-                      <Input
-                        id="once-date"
-                        type="date"
-                        value={draft.onceDate}
-                        onChange={(event) =>
-                          update("onceDate", event.currentTarget.value)
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label="時刻"
-                      htmlFor="once-time"
-                      error={errors.onceTime}
-                    >
-                      <Input
-                        id="once-time"
-                        type="time"
-                        value={draft.onceTime}
-                        onChange={(event) =>
-                          update("onceTime", event.currentTarget.value)
-                        }
-                      />
-                    </Field>
-                  </>
-                ) : null}
-
-                {scheduleChoice === "daily" ||
-                scheduleChoice === "weekdays" ||
-                scheduleChoice === "weekly" ? (
-                  <>
-                    {scheduleChoice === "weekly" ? (
-                      <SelectField
-                        id="weekly-day"
-                        label="曜日"
-                        value={draft.weeklyDay}
-                        options={weekdayOptions}
-                        onChange={(value) => update("weeklyDay", value)}
-                      />
-                    ) : null}
-                    <Field label="時刻" htmlFor="preset-time">
-                      <Input
-                        id="preset-time"
-                        type="time"
-                        value={draft.presetTime}
-                        onChange={(event) =>
-                          update("presetTime", event.currentTarget.value)
-                        }
-                      />
-                    </Field>
-                  </>
-                ) : null}
-
-                {scheduleChoice === "cron" ? (
-                  <Field
-                    label="カスタム cron 式"
-                    htmlFor="cron-expression"
-                    error={errors.cronPreview ?? cronError}
-                    description="5フィールドの cron 式を使ってください。"
-                    className="sm:col-span-2"
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {draft.prompt.length.toLocaleString("ja-JP")} 文字
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isImportingPrompt}
+                    onClick={() => void importPromptFile()}
                   >
-                    <Input
-                      id="cron-expression"
-                      value={draft.cronExpr}
-                      aria-invalid={Boolean(errors.cronPreview ?? cronError)}
-                      onChange={(event) =>
-                        update("cronExpr", event.currentTarget.value, [
-                          "cronPreview",
-                        ])
-                      }
-                      placeholder="0 9 * * 1-5"
-                    />
-                  </Field>
-                ) : null}
-              </div>
-
-              <div className="rounded-md border bg-muted/30 p-3">
-                <div className="flex items-start gap-2">
-                  <CalendarClock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                  <div className="grid min-w-0 gap-1">
-                    <p className="text-sm font-medium">
-                      {getScheduleSummary(draft)}
-                    </p>
-                    {scheduleChoice !== "manual" ? (
-                      <p className="text-xs text-muted-foreground">
-                        PCのタイムゾーン（{draft.timezone}）を使用します。
-                      </p>
-                    ) : null}
-                    {cronPreview.ok && cronPreview.dates.length ? (
-                      <div data-testid="cron-preview" className="grid gap-1">
-                        <p className="text-xs text-muted-foreground">次の5回</p>
-                        <div className="grid gap-x-3 gap-y-1 text-sm tabular-nums sm:grid-cols-2">
-                          {cronPreview.dates.map((date) => (
-                            <span key={date}>{formatDateTime(date)}</span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : scheduleChoice === "once" ? (
-                      <p className="text-xs text-muted-foreground">
-                        次回実行: {getOncePreview(draft)}
-                      </p>
-                    ) : scheduleChoice === "manual" ? (
-                      <p className="text-xs text-muted-foreground">
-                        タスク詳細または scheduler CLI
-                        からこのタスクを実行します。
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        今後の実行をプレビューするにはスケジュールを修正してください。
-                      </p>
-                    )}
-                  </div>
+                    <FileText data-icon="inline-start" aria-hidden="true" />
+                    プロンプトをインポート
+                  </Button>
                 </div>
               </div>
-            </section>
-          </div>
-        </div>
-
-        <section
-          className="grid gap-4 border-t pt-5"
-          aria-labelledby="advanced-settings-heading"
-        >
-          <h2 id="advanced-settings-heading" className="text-sm font-semibold">
-            詳細
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <SelectField
-              id="model"
-              label="モデル"
-              value={draft.model}
-              options={codexModelOptions}
-              onChange={updateModel}
-              error={errors.model}
-            />
-            <SelectField
-              id="reasoning"
-              label="推論 effort"
-              value={draft.reasoningEffort}
-              options={modelReasoningEffortOptions}
-              onChange={(value) => update("reasoningEffort", value)}
-              error={errors.reasoningEffort}
-            />
+            </Field>
           </div>
 
-          <div className="grid gap-3 border-t pt-4 md:grid-cols-2">
-            <SwitchRow
-              id="task-locked"
-              checked={draft.locked}
-              label="タスクをロック"
-              description="スケジュール実行からの変更・停止・削除を防ぎます。"
-              onChange={(checked) => update("locked", checked)}
-            />
-            <SwitchRow
-              id="force-paused"
-              checked={draft.forcePaused}
-              label="一時停止状態で保存"
-              description="内容を確認してから手動で有効化できます。"
-              onChange={(checked) => update("forcePaused", checked)}
-            />
-          </div>
+          <fieldset className="min-w-0 lg:border-l lg:pl-5">
+            <legend className="text-sm font-semibold">オプション</legend>
+            <div className="mt-1 divide-y">
+              <SwitchRow
+                id="task-locked"
+                checked={draft.locked}
+                label="タスクをロック"
+                description="スケジュール実行からの変更・停止・削除を防ぎます。"
+                onChange={(checked) => update("locked", checked)}
+              />
+              <SwitchRow
+                id="force-paused"
+                checked={draft.forcePaused}
+                label="一時停止状態で保存"
+                description="内容を確認してから手動で有効化できます。"
+                onChange={(checked) => update("forcePaused", checked)}
+              />
+            </div>
+          </fieldset>
         </section>
 
         {!pageHeader ? (

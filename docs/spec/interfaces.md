@@ -24,7 +24,7 @@ frontend は daemon data を受け入れる前に typed IPC helper と Zod schem
 
 `/` は dashboard を表示せず `/projects` に redirect する。sidebar は project entry、next-run order の task entry、archived task entry、bottom toolbox を持つ。header は scheduler badge と scheduler toggle を表示せず、running / queued を icon + number で表示する。
 
-task creation、editing、duplication は wizard で扱う。実行先は radio card の `チャット` と `プロジェクト` から選ぶ。`プロジェクト` は登録済み Git project を必須とし、実行ごとに isolated worktree を作る。field は prompt、name、schedule、project selection、base ref、model、reasoning effort、lock state、開始状態を含む。task description field と task 固有 Codex binary path は持たず、内容は name と prompt で表す。cron preview は immediate user feedback のため frontend で計算される。
+task creation、editing、duplication は wizard で扱う。実行先は radio card の `チャット` と `プロジェクト` から選ぶ。`プロジェクト` は登録済み Git project を必須とし、実行ごとに isolated worktree を作る。field は prompt、name、schedule、project selection、base ref、model、思考レベル、lock state、開始状態を含む。task description field と task 固有 Codex binary path は持たず、内容は name と prompt で表す。cron calculation は validation と next-run data にだけ使い、実行タイミングの preview は表示しない。
 
 Codex binary path は Settings の global customization checkbox を選択したときだけ `runner.codex_path` input で設定し、すべての task に共通適用する。未選択時は `PATH` 上の `codex` を使う。
 

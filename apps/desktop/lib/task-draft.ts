@@ -324,7 +324,7 @@ const codexSchema = z
       errorMap: () => ({ message: "フロンティアモデルを選択してください。" }),
     }),
     reasoningEffort: z.enum(reasoningEffortValues, {
-      errorMap: () => ({ message: "推論 effort を選択してください。" }),
+      errorMap: () => ({ message: "思考レベルを選択してください。" }),
     }),
   })
   .superRefine((value, context) => {
@@ -335,7 +335,7 @@ const codexSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["reasoningEffort"],
-        message: "選択したモデルに対応する推論 effort を選択してください。",
+        message: "選択したモデルに対応する思考レベルを選択してください。",
       });
     }
   });

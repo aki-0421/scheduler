@@ -1,9 +1,9 @@
 ---
 title: S002 Task Wizard
-description: Task Wizard の create、follow-up、edit、duplicate flow、field、validation、Codex customization、lock requirement を定義する。
+description: Task Wizard の create、follow-up、edit、duplicate flow、field、3 section layout、validation、lock requirement を定義する。
 updated: 2026-07-10
 read_when:
-  - task creation、task editing、task duplication、follow-up task prefill、schedule control、target selection、Codex customization、lock behavior、wizard validation を変更するとき。
+  - task creation、task editing、task duplication、follow-up task prefill、schedule control、target selection、model control、lock behavior、wizard layout、wizard validation を変更するとき。
 ---
 
 # S002 Task Wizard
@@ -28,7 +28,7 @@ read_when:
 - inline project add には `ipcClient.projectPickFolder()` と project registration mutation を使う。
 - save には `useCreateTask()` と `useUpdateTask()` を使う。
 - prompt import には `ipcClient.promptImportFile()` を使う。
-- schedule preview と validation には `getCronPreview()`、`getSystemTimezone()`、timezone conversion helper を使う。
+- schedule validation と next-run calculation には `getCronPreview()`、`getSystemTimezone()`、timezone conversion helper を使う。実行タイミングの preview は画面に表示しない。
 
 レイアウト領域:
 
@@ -36,9 +36,12 @@ read_when:
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - create、follow-up、duplicate page の `一時停止で作成` と `タスクを作成` は page title と同じ header section の右側に置く。狭い width では title の下に折り返す。
 - validation failure 時の error summary alert。
-- task name、prompt、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、schedule selector、schedule-specific fields、PC timezone indicator、preview、Codex model / effort、lock / pause control を tab 切り替えなしの 1 画面にまとめる。task description field は置かない。desktop width では task content と execution condition を 2 column に分け、狭い width では 1 column に戻す。
-- prompt textarea は resize 可能なまま compact な初期高にし、next-five-runs preview は複数列で表示できる幅では 2 column にして縦方向の占有を抑える。
-- `詳細` section: Codex model、reasoning effort、lock / pause controls。main task fields の下に separator を挟んで置き、field は 2 column の compact layout で表示し、policy 説明や固定値の summary を置かない。
+- task name、schedule、model、思考レベル、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、prompt、lock / pause control を tab 切り替えなしの 1 画面にまとめる。task description field は置かない。
+- first section は task name と schedule を等分の 2 column で表示する。schedule selector と schedule-specific control は内容に合う compact width で左寄せし、desktop width で column 幅いっぱいに stretch しない。狭い width では 1 column に戻す。
+- second section は model と `思考レベル` を左寄せの compact control として横並びにし、狭い width では折り返す。
+- third section は desktop width でおよそ `3:1` の 2 column にする。左側は target と prompt、右側は compact な `オプション` group として lock / pause control を表示する。狭い width では 1 column に戻す。
+- prompt textarea は resize 可能なまま compact な初期高にする。実行タイミングの summary、next-five-runs、once preview、manual guidance は表示しない。PC timezone は schedule control 直下の補助文として表示する。
+- section は page canvas に直接配置し、separator で区切る。panel surface や固定 execution policy の summary は置かない。
 - edit dialog の footer には cancel と save action を置く。create、follow-up、duplicate page には footer action を置かない。
 
 フィールドとコントロール:
@@ -49,8 +52,9 @@ read_when:
 - repository path は手入力ではなく project selection / Git folder picker によって設定する。project target は常に `repo-worktree` DTO を生成する。
 - base ref。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
-- once date and time、preset time、weekly day、custom 5-field cron、PC timezone indicator、next-five-runs preview。
-- advanced settings: model select、model が対応する reasoning effort select、start paused switch。`詳細` section に compact にまとめる。Codex binary path は global setting のため表示しない。
+- once date and time、preset time、weekly day、custom 5-field cron、PC timezone indicator。実行タイミングの preview は表示しない。
+- model select と、model が対応する `思考レベル` select。DTO field 名は `reasoningEffort` のままとする。Codex binary path は global setting のため表示しない。
+- options: task lock switch と start paused switch。third section の右 column に compact にまとめる。
 - lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
 
 既定値:
@@ -65,7 +69,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 
 バリデーションとエラー:
 
-- required: prompt、task name、frontier model、選択 model が対応する reasoning effort。timezone は PC から自動設定される内部必須値である。
+- required: prompt、task name、frontier model、選択 model が対応する思考レベル。timezone は PC から自動設定される内部必須値である。
 - project target には Git root を持つ registered Git project が必要。
 - once schedule には現在の PC timezone に対して valid な date and time が必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。
@@ -79,8 +83,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - project selection state は registered project name と local path を表示する。
 - project target は実行ごとに isolated worktree を作成し、登録した project root を直接変更しないことを表示する。
 - locked task edit は lock badge と unlock guidance を表示する。
-- cron preview は valid な場合に next five runs、once schedule の場合に once preview、manual task の場合に manual guidance、invalid な場合に fix-schedule guidance を表示する。
-- manual 以外の schedule summary は、現在の PC timezone を自動使用することと IANA timezone 名を表示する。
+- schedule control は実行タイミングの preview を表示しない。manual 以外では、現在の PC timezone を自動使用することと IANA timezone 名だけを補助文として表示する。
 
 アクセシビリティ:
 
@@ -102,15 +105,15 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - 実行先は `チャット` / `プロジェクト` の keyboard-operable radio cards で選択でき、`プロジェクト` を保存した DTO は `repo-worktree` になる。
 - locked task を edit しようとした場合、unlock なしでは save できない。
 - create、follow-up、duplicate、edit のいずれにも Codex binary path field は表示されず、保存 DTO に task 固有 path を含めない。
-- model を変更すると reasoning effort はその model の default に切り替わり、その後 user が対応 effort から変更できる。
-- valid cron schedule の場合、preview は next five runs を list する。
+- model を変更すると思考レベルはその model の default に切り替わり、その後 user が対応 level から変更できる。
+- valid schedule でも実行タイミングの preview は表示しない。custom cron の invalid state は field error として即時表示する。
 - create、follow-up、duplicate、edit では timezone selector を表示せず、保存時点の PC timezone を task DTO に設定する。
 - create が成功した場合、user は `/tasks?task=<newTaskId>` に遷移する。
 - duplicate が成功した場合、lock state は unlocked で作成される。
 - edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
-- create、follow-up、duplicate、edit のすべてで、task fields と `詳細` section が tab 切り替えなしの 1 画面に表示される。
+- create、follow-up、duplicate、edit のすべてで、基本設定、model 設定、実行内容と options が tab 切り替えなしの 1 画面に表示される。
 - create、follow-up、duplicate page では cancel button が表示されず、`一時停止で作成` と `タスクを作成` が page title と同じ header section の右側に表示される。
-- desktop width では主要フィールドを 2 column に分け、既定の chat / weekdays state と `詳細` section を少ないスクロールで確認できる。
+- desktop width では first section が task name / schedule の等分 2 column、second section が左寄せの model / 思考レベル、third section が target・prompt / options のおよそ `3:1` になる。
 - create、follow-up、duplicate、edit のいずれにも task description input は表示されず、保存 DTO に description field を含めない。
 
 既知の gap:

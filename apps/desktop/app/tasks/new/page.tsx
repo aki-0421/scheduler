@@ -11,7 +11,7 @@ import { useTask } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
 
 const newTaskDescription =
-  "タスク名とプロンプトで依頼内容を定義し、実行先、スケジュール、詳細設定を1画面で設定します。";
+  "タスク名、スケジュール、モデル、実行先、プロンプト、オプションを1画面で設定します。";
 
 function NewTaskLoading({
   title = "新規タスク",

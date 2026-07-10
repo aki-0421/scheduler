@@ -402,7 +402,7 @@ export function TaskDetail({
                   label="モデル"
                 />
                 <DefinitionItem
-                  label="推論 effort"
+                  label="思考レベル"
                   value={formatReadableEnum(task.codex.reasoningEffort)}
                 />
               </dl>

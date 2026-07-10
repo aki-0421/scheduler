@@ -44,7 +44,7 @@ describe("TaskWizard cron validation", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the next five cron preview entries", async () => {
+  it("does not render execution timing previews", () => {
     const draft = {
       ...defaultTaskDraft(),
       name: "Cron task",
@@ -55,9 +55,8 @@ describe("TaskWizard cron validation", () => {
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
 
-    const preview = screen.getByTestId("cron-preview");
-    expect(preview).toHaveTextContent("次の5回");
-    expect(preview.querySelectorAll("span")).toHaveLength(5);
+    expect(screen.queryByTestId("cron-preview")).not.toBeInTheDocument();
+    expect(screen.queryByText("次の5回")).not.toBeInTheDocument();
   });
 
   it("shows the default cron cadence as the matching schedule preset", async () => {
@@ -70,10 +69,10 @@ describe("TaskWizard cron validation", () => {
     expect(draft.cronExpr).toBe("0 9 * * 1-5");
     expect(buildTaskDto(draft, false).cronExpr).toBe("0 9 * * 1-5");
     expect(
-      screen.getByRole("combobox", { name: "実行タイミング" }),
+      screen.getByRole("combobox", { name: "スケジュール" }),
     ).toHaveTextContent("平日");
     expect(screen.queryByLabelText("カスタム cron 式")).not.toBeInTheDocument();
-    expect(screen.getByText("平日 09:00")).toBeInTheDocument();
+    expect(screen.queryByText("平日 09:00")).not.toBeInTheDocument();
   });
 
   it("uses the PC timezone without presenting a timezone selector", async () => {
@@ -159,7 +158,18 @@ describe("TaskWizard cron validation", () => {
 
     renderWithClient(<TaskWizard />);
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "詳細" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "基本設定" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "モデル設定" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "実行内容とオプション" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "オプション" }),
+    ).toBeInTheDocument();
 
     expect(screen.getByRole("radio", { name: /チャット/ })).toBeChecked();
     await user.click(screen.getByRole("radio", { name: /プロジェクト/ }));
@@ -211,7 +221,7 @@ describe("TaskWizard cron validation", () => {
     }
   });
 
-  it("uses frontier model and effort selects in advanced settings", () => {
+  it("uses frontier model and thought-level selects", () => {
     const draft = {
       ...defaultTaskDraft(),
       name: "Frontier task",
@@ -224,7 +234,7 @@ describe("TaskWizard cron validation", () => {
       "GPT-5.5",
     );
     expect(
-      screen.getByRole("combobox", { name: "推論 effort" }),
+      screen.getByRole("combobox", { name: "思考レベル" }),
     ).toHaveTextContent("中");
     expect(screen.queryByDisplayValue("gpt-5-codex")).not.toBeInTheDocument();
 
