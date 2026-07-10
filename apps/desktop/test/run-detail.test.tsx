@@ -1,11 +1,11 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunDetail } from "@/components/run-detail";
 import { ipcClient } from "@/lib/ipc";
 import { longCodexEventLog } from "@/lib/mock-long-codex-log";
-import type { RunDto, TaskDto } from "@/lib/types";
+import type { RunDto, RunTailLogResult, TaskDto } from "@/lib/types";
 import { renderWithClient } from "./test-utils";
 
 const run: RunDto = {
@@ -87,7 +87,161 @@ function eventTail(runId: string) {
 
 describe("RunDetail", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("renders each active log chunk before the current EOF is reached", async () => {
+    const firstChunk = `${JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "message_live_1",
+        type: "agent_message",
+        text: "最初の進捗です。",
+      },
+    })}\n`;
+    const secondChunk = `${JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "message_live_2",
+        type: "agent_message",
+        text: "次の進捗です。",
+      },
+    })}\n`;
+    let resolveSecondChunk:
+      | ((response: RunTailLogResult) => void)
+      | undefined;
+    const pendingSecondChunk = new Promise<RunTailLogResult>((resolve) => {
+      resolveSecondChunk = resolve;
+    });
+    const tailSpy = vi
+      .spyOn(ipcClient, "runTailLog")
+      .mockImplementation(async (params) => {
+        const cursor = params.cursor ?? 0;
+        if (cursor === 0) {
+          return {
+            runId: params.runId,
+            stream: params.stream,
+            cursor,
+            nextCursor: firstChunk.length,
+            eof: false,
+            data: firstChunk,
+          };
+        }
+        return pendingSecondChunk;
+      });
+
+    renderWithClient(
+      <RunDetail run={{ ...run, status: "running" }} task={task} />,
+    );
+
+    expect(await screen.findByText("最初の進捗です。")).toBeInTheDocument();
+    expect(screen.queryByText("次の進捗です。")).not.toBeInTheDocument();
+    expect(tailSpy).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveSecondChunk?.({
+        runId: "run_test",
+        stream: "events",
+        cursor: firstChunk.length,
+        nextCursor: firstChunk.length + secondChunk.length,
+        eof: true,
+        data: secondChunk,
+      });
+      await pendingSecondChunk;
+    });
+
+    expect(await screen.findByText("次の進捗です。")).toBeInTheDocument();
+  });
+
+  it("keeps streamed entries and performs a final tail read on completion", async () => {
+    const progressChunk = `${JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "message_progress",
+        type: "agent_message",
+        text: "実行中の進捗です。",
+      },
+    })}\n`;
+    const finalChunk = `${JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "message_final",
+        type: "agent_message",
+        text: "最終回答です。",
+      },
+    })}\n`;
+    const tailSpy = vi
+      .spyOn(ipcClient, "runTailLog")
+      .mockImplementation(async (params) => {
+        const cursor = params.cursor ?? 0;
+        const data = cursor === 0 ? progressChunk : finalChunk;
+        return {
+          runId: params.runId,
+          stream: params.stream,
+          cursor,
+          nextCursor: cursor + data.length,
+          eof: true,
+          data,
+        };
+      });
+    const { rerender } = renderWithClient(
+      <RunDetail run={{ ...run, status: "running" }} task={task} />,
+    );
+
+    expect(await screen.findByText("実行中の進捗です。")).toBeInTheDocument();
+
+    rerender(<RunDetail run={run} task={task} />);
+
+    expect(screen.getByText("実行中の進捗です。")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText("最終出力")).toHaveTextContent(
+        "最終回答です。",
+      ),
+    );
+    expect(tailSpy).toHaveBeenLastCalledWith({
+      runId: "run_test",
+      stream: "events",
+      cursor: progressChunk.length,
+      limit: 16_384,
+    });
+  });
+
+  it("starts the next active tail request 250ms after reaching EOF", async () => {
+    vi.useFakeTimers();
+    const tailSpy = vi
+      .spyOn(ipcClient, "runTailLog")
+      .mockImplementation(async (params) => ({
+        runId: params.runId,
+        stream: params.stream,
+        cursor: params.cursor ?? 0,
+        nextCursor: params.cursor ?? 0,
+        eof: true,
+        data: "",
+      }));
+
+    renderWithClient(
+      <RunDetail run={{ ...run, status: "running" }} task={task} />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(tailSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("新しい実行ログを待っています…")).toBeInTheDocument();
+    expect(
+      screen.queryByText("この実行にはツール呼び出しの記録がありません。"),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(249);
+    });
+    expect(tailSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(tailSpy).toHaveBeenCalledTimes(2);
   });
 
   it("renders task context actions and a chat-only transcript with collapsed tool details", async () => {
@@ -115,6 +269,9 @@ describe("RunDetail", () => {
     expect(
       within(header!).getAllByRole("button").map((button) => button.textContent),
     ).toEqual(["タスク情報", "タスクプロンプト", "再実行"]);
+    expect(
+      screen.getByRole("log", { name: "実行セッション" }),
+    ).toHaveAttribute("aria-live", "polite");
 
     const commandSummary = await screen.findByText(
       "git status --short run_test",

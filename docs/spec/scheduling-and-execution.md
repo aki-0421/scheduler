@@ -1,7 +1,7 @@
 ---
 title: スケジューリングと実行
 description: schedule calculation、daemon tick behavior、run lifecycle、Codex runner behavior、log、手動再実行、cleanup を定義する。
-updated: 2026-07-10
+updated: 2026-07-11
 read_when:
   - cron behavior、missed-run handling、overlap handling、run execution、Codex invocation、log、手動再実行、cleanup を変更するとき。
   - task が実行された理由、または実行されなかった理由を debug するとき。
@@ -93,6 +93,10 @@ redacted environment JSON は secret ではない scheduler identifier を保持
 - runner output から persist された artifact
 
 non-JSON stdout line は stdout log に保持されるが `events.jsonl` からは除外される。run は `invalid_stdout_jsonl` warning を受け取る。
+
+Codex stdout の complete な JSONL event は process 終了時まで buffer せず、検証して `events.jsonl` に追記した行ごとに flush する。これにより active run の `run.tailLog` は process 実行中も complete event を cursor から読み取れる。途中の未完了 JSON line は改変せず、改行まで受信した時点で初めて event log に追加する。
+
+`cargo test -p codex-runner` は slow fixture の process が終了する前に先頭 JSONL event を `events.jsonl` から読めることを検証する。
 
 ## Cancellation と実行時間
 

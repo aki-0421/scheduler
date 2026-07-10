@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronRight,
@@ -49,6 +49,7 @@ type RunDetailProps = {
 type EventLogState = "loading" | "ready" | "unavailable";
 
 const EVENT_LOG_CHUNK_SIZE = 16_384;
+const ACTIVE_EVENT_LOG_POLL_INTERVAL_MS = 250;
 
 const toolIcons: Record<string, LucideIcon> = {
   command_execution: Terminal,
@@ -205,6 +206,8 @@ export function RunDetail({ run, task }: RunDetailProps) {
   const cancelRun = useCancelRun();
   const runTaskNow = useRunTaskNow();
   const active = isRunActive(run.status);
+  const eventLogRunIdRef = useRef<string | undefined>(undefined);
+  const eventLogCursorRef = useRef(0);
   const parsedEntries = useMemo(
     () => parseRunTranscript(eventLog),
     [eventLog],
@@ -241,28 +244,32 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
   useEffect(() => {
     let canceled = false;
-    let cursor = 0;
-    let polling = false;
-    setEventLog("");
-    setEventLogState("loading");
+    let nextPoll: number | undefined;
+    if (eventLogRunIdRef.current !== run.id) {
+      eventLogRunIdRef.current = run.id;
+      eventLogCursorRef.current = 0;
+      setEventLog("");
+      setEventLogState("loading");
+    }
 
     async function poll() {
-      if (polling) {
-        return;
-      }
-      polling = true;
-      let received = "";
       try {
         while (!canceled) {
-          const previousCursor = cursor;
+          const previousCursor = eventLogCursorRef.current;
           const result = await ipcClient.runTailLog({
             runId: run.id,
             stream: "events",
-            cursor,
+            cursor: previousCursor,
             limit: EVENT_LOG_CHUNK_SIZE,
           });
-          cursor = result.nextCursor;
-          received += result.data;
+          if (canceled) {
+            return;
+          }
+          eventLogCursorRef.current = result.nextCursor;
+          if (result.data) {
+            setEventLog((current) => `${current}${result.data}`);
+            setEventLogState("ready");
+          }
           if (result.eof || result.nextCursor <= previousCursor) {
             break;
           }
@@ -270,31 +277,27 @@ export function RunDetail({ run, task }: RunDetailProps) {
         if (canceled) {
           return;
         }
-        if (received) {
-          setEventLog((current) => `${current}${received}`);
-        }
         setEventLogState("ready");
       } catch {
-        if (!canceled) {
-          if (received) {
-            setEventLog((current) => `${current}${received}`);
-          }
+        if (!canceled && !active) {
           setEventLogState("unavailable");
         }
       } finally {
-        polling = false;
+        if (!canceled && active) {
+          nextPoll = window.setTimeout(
+            () => void poll(),
+            ACTIVE_EVENT_LOG_POLL_INTERVAL_MS,
+          );
+        }
       }
     }
 
     void poll();
-    const interval = active
-      ? window.setInterval(() => void poll(), 3_000)
-      : undefined;
 
     return () => {
       canceled = true;
-      if (interval) {
-        window.clearInterval(interval);
+      if (nextPoll !== undefined) {
+        window.clearTimeout(nextPoll);
       }
     };
   }, [active, run.id]);
@@ -384,7 +387,14 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
       <Separator />
 
-      <ol role="log" aria-label="実行セッション" className="pt-4">
+      <ol
+        role="log"
+        aria-label="実行セッション"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-busy={eventLogState === "loading"}
+        className="pt-4"
+      >
         {transcriptEntries.map((entry) => {
           if (entry.kind === "tool") {
             return <ToolRow key={entry.id} entry={entry} />;
@@ -401,9 +411,15 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
         {eventLogState === "loading" ? (
           <li className="py-4 text-sm text-muted-foreground">
-            実行ログを読み込んでいます…
+            {active
+              ? "実行ログに接続しています…"
+              : "実行ログを読み込んでいます…"}
           </li>
-        ) : !hasToolEntries ? (
+        ) : active && transcriptEntries.length === 0 ? (
+          <li className="py-4 text-sm text-muted-foreground">
+            新しい実行ログを待っています…
+          </li>
+        ) : !active && !hasToolEntries ? (
           <li className="py-4 text-sm text-muted-foreground">
             {eventLogState === "unavailable"
               ? "ツール呼び出しの記録を読み込めませんでした。"

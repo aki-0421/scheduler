@@ -101,7 +101,7 @@ export function useRun(id?: string) {
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status === "running" || status === "queued" || status === "starting"
-        ? 3_000
+        ? 1_000
         : false;
     },
   });

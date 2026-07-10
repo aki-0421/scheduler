@@ -20,7 +20,7 @@ read_when:
 
 - selected session の task name、task prompt、task settings には `useTask(taskId)` を使う。
 - filtered history には `useRuns({ status, taskId })` を使う。
-- selected session detail には `useRun(runId)` を使い、active run は 3 秒ごとに refetch する。
+- selected session detail には `useRun(runId)` を使い、active run は 1 秒ごとに refetch して terminal status と final output への切り替えを追従する。
 - active run cancellation には `useCancelRun()` を使う。
 - retry には `useRunTaskNow()` を使う。
 - tool call と agent message の transcript には event log を使い、`ipcClient.runTailLog()` で取得する。
@@ -44,7 +44,9 @@ read_when:
 - command、web search、file change、MCP tool call は外枠の card を持たない muted な 1 行ログとして表示する。tool type は文字 label ではなく識別可能な icon だけを表示し、accessible name と native title には文字 label を残す。短い要約の背景は 8px radius とし、横幅は内容に合わせ、利用可能幅を超える場合だけ truncate する。完了と失敗の status text は視覚的には表示せず読み上げだけに残し、実行中だけを visible status として表示する。通常行には背景色を付けず、失敗行は status icon や text を追加せず淡い error background だけで区別する。detail disclosure の indicator は行頭に置かず行末へ置き、pointer hover または keyboard focus の間だけ表示する。command output、arguments、result は disclosure 内に置き、既定では閉じる。known tool の raw event 全体は重複表示しない。
 - 同じ item ID の `item.started` と `item.completed` は 1 行に統合し、実行中から完了または失敗へ status を更新する。
 - terminal run の final output は最後の `agent_message` を優先し、event log にない場合だけ `resultSummary` を fallback に使う。final output は icon と見出しを持たず、transcript の最後に背景色の異なる surface として 1 回だけ表示する。copy action はレンダリング前の Markdown source をコピーする。Markdown heading level 1 は session page の `h1` と競合させず `h2` として描画し、後続 level も 1 段下げる。table と code block は transcript 幅を広げず内部 scroll で確認できる。
-- event log は 1 回の `runTailLog` 上限を超えることを前提に、terminal run でも EOF まで cursor pagination で読み切る。active run は各 polling cycle で現在の EOF まで読み切ってから次の poll を待つ。
+- event log は 1 回の `runTailLog` 上限を超えることを前提に、terminal run でも EOF まで cursor pagination で読み切る。active run は 250ms 間隔の non-overlapping tail poll を使い、各 response chunk を次の chunk や EOF を待たず transcript に追加する。現在の EOF まで読み切った後だけ次の poll を予約し、同時 request を発生させない。
+- active run が terminal status に変わるときは、同じ run の accumulated transcript と cursor を保持し、現在 cursor から final tail read を 1 回行う。status transition のために transcript を空へ戻したり先頭から再取得したりしない。
+- live transcript は Codex が出力した complete JSONL event 単位で更新する。存在しない token delta を補間する typewriter animation は使わず、runner が生成した tool start / complete と public agent message を到着順に即時表示する。
 
 フィールドとコントロール:
 
@@ -62,7 +64,8 @@ read_when:
 - Empty filtered list: 表示領域を埋める高さで `No matching runs` と open-tasks action を表示する。
 - Selected session loading: page skeleton。
 - Review badge は failed、timed out、interrupted、findings、created schedules の場合に表示される。
-- Active run は 3 秒ごとに log を poll し、各 poll で複数 chunk があれば現在の EOF まで取得する。terminal run も初回 load で EOF まで取得する。
+- Active run は event log を 250ms 間隔で tail し、取得した各 chunk を即時 append する。log file がまだ作成されていない間は active status のまま retry し、terminal run だけを unavailable として確定する。terminal run も初回 load で EOF まで取得する。
+- Active run の初回接続中は `実行ログに接続しています…`、接続後に event がまだない場合は `新しい実行ログを待っています…` と表示する。実行中に `ツール呼び出しの記録がありません` と確定表示せず、terminal status になってから empty record を確定する。
 - missing event log は tool call が記録されていない旨を transcript 内で簡潔に表示する。
 - output がない場合は transcript 内に explicit empty state を持つ。task prompt がない場合は prompt dialog 内で明示する。
 - structured event を parse できない行は画面全体を壊さず無視する。error event の raw payload は disclosure から確認できる。
@@ -76,7 +79,7 @@ read_when:
 
 - filter と preset は keyboard-reachable control である。
 - status は color だけでなく text badge で伝える。
-- chat transcript は `role="log"` または ordered list として読み上げ順を維持する。
+- chat transcript は `role="log"` または ordered list として読み上げ順を維持し、active run で追加された public entry を polite live update として通知する。
 - tool call row は視覚上 icon だけで表す tool type に accessible name を付け、status と summary も読み上げ可能にする。detail disclosure は native keyboard interaction で開閉でき、行末 indicator は hover に加えて keyboard focus でも表示する。完了と失敗 status は screen reader text として保持する。
 - task settings sheet と task prompt dialog は focus trap、Escape close、visible title を持つ accessible overlay primitive を使う。
 
@@ -98,6 +101,8 @@ read_when:
 - final output は icon と visible heading を持たず、背景色の異なる 1 つの surface として transcript の末尾に表示される。
 - agent message と final output の emphasis、link、list、table、inline code、code block が Markdown source 記号を露出せず表示され、単独改行を含む source の改行位置が画面でも維持される。copy action は元の Markdown source を保持する。
 - 1 chunk を超える長い event log でも EOF まで取得され、途中 agent message、後半の tool call、final output が欠落しない。
+- active run の event log response は EOF 到達を待たず response chunk ごとに画面へ反映され、次の tail poll は前の request 完了から 250ms 後にだけ開始される。
+- active run が terminal status に変わっても表示済み entry は消えず、保持した cursor から最終 event が取得されて final output へ切り替わる。
 - lifecycle event は transcript を占有せず、error event だけが user-visible row になる。
 - active run が selected の場合、run が active status を離れるまで log が poll される。
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。
