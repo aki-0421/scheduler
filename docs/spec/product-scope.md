@@ -1,7 +1,7 @@
 ---
 title: プロダクトスコープ
 description: Codex Scheduler の実装済み product purpose、user、MVP boundary、既知の implementation gap を定義する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - product behavior、navigation、task creation、run history、scheduler default を変更するとき。
   - 現在の branch が実装済み scope として何を主張しているか確認するとき。
@@ -20,7 +20,7 @@ app は、汎用 admin dashboard ではなく、AI work の local automation con
 - scheduler task の作成、編集、一時停止、再開、削除、手動実行。
 - manual、once、cron task の作成。
 - chat workspace、registered project path、または新しい Git worktree を対象にする。
-- task prompt、timezone、model、reasoning effort、sandbox、approval policy、runtime limit、retry count、missed-run handling、overlap handling、schedule CLI capability scope、worktree cleanup policy の設定。
+- task prompt、model、reasoning effort、sandbox、approval policy、runtime limit、retry count、missed-run handling、overlap handling、schedule CLI capability scope、worktree cleanup policy の設定。timezone は PC の現在値を自動使用する。
 - task list、task detail、run history、run detail、log tail、artifact、audit event、daemon diagnostics の確認。
 - local folder または Git repository を project として追加し、project 配下を task execution scope として使う。
 - task を lock し、AI / scheduled-run actor からの edit、delete、pause、resume を防ぐ。

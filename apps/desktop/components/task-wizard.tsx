@@ -45,7 +45,7 @@ import {
   type StepErrors,
   type TaskDraft,
 } from "@/lib/task-draft";
-import { localDateTimeToUtcIso } from "@/lib/timezone";
+import { getSystemTimezone, localDateTimeToUtcIso } from "@/lib/timezone";
 import type { TaskDto } from "@/lib/types";
 import {
   useCreateTask,
@@ -77,15 +77,6 @@ const capabilityOptions = [
   { value: "schedule:update-any", label: "任意のタスクを更新" },
   { value: "schedule:list", label: "スケジュールを一覧表示" },
 ];
-
-const timezoneOptions = [
-  "Asia/Tokyo",
-  "UTC",
-  "America/Los_Angeles",
-  "America/New_York",
-  "Europe/London",
-  "Europe/Berlin",
-].map((value) => ({ value, label: value }));
 
 const scheduleOptions: SelectOption<ScheduleChoice>[] = [
   { value: "manual", label: "手動のみ" },
@@ -153,7 +144,6 @@ const japaneseErrorMessages: Record<string, string> = {
   repoPath: "リポジトリ実行先にはプロジェクトを選択してください。",
   onceDate: "有効な日付と時刻を選択してください。",
   onceTime: "有効な日付と時刻を選択してください。",
-  timezone: "タイムゾーンは必須です。",
   model: "モデルは必須です。",
   reasoningEffort: "推論 effort は必須です。",
   maxRuntimeSec: "60秒以上を指定してください。",
@@ -182,7 +172,6 @@ const scheduleErrorKeys = new Set([
   "onceDate",
   "onceTime",
   "cronPreview",
-  "timezone",
 ]);
 
 const errorFieldOrder = [
@@ -192,7 +181,6 @@ const errorFieldOrder = [
   "onceDate",
   "onceTime",
   "cronPreview",
-  "timezone",
   "model",
   "reasoningEffort",
   "maxRuntimeSec",
@@ -208,7 +196,6 @@ const errorLabelByKey: Record<string, string> = {
   onceDate: "日付",
   onceTime: "時刻",
   cronPreview: "カスタム cron 式",
-  timezone: "タイムゾーン",
   model: "モデル",
   reasoningEffort: "推論 effort",
   maxRuntimeSec: "最大実行時間",
@@ -224,7 +211,6 @@ const errorTargetIds: Record<string, string[]> = {
   onceDate: ["once-date"],
   onceTime: ["once-time"],
   cronPreview: ["cron-expression"],
-  timezone: ["timezone"],
   model: ["model"],
   reasoningEffort: ["reasoning"],
   maxRuntimeSec: ["max-runtime"],
@@ -496,7 +482,10 @@ export function TaskWizard({
   onSaved,
 }: TaskWizardProps) {
   const [draft, setDraft] = useState<TaskDraft>(
-    () => initialDraft ?? (task ? taskToDraft(task) : defaultTaskDraft()),
+    () => ({
+      ...(initialDraft ?? (task ? taskToDraft(task) : defaultTaskDraft())),
+      timezone: getSystemTimezone(),
+    }),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<WizardTab>("basics");
@@ -611,7 +600,6 @@ export function TaskWizard({
     });
     clearErrors(
       "scheduleMode",
-      "timezone",
       "onceDate",
       "onceTime",
       "cronPreview",
@@ -789,48 +777,50 @@ export function TaskWizard({
       : undefined;
 
   return (
-    <Card>
-      <CardContent className="grid gap-5 p-4">
-        {hasErrors ? (
-          <Alert variant="destructive">
-            <AlertTriangle className="size-4" aria-hidden="true" />
-            <AlertTitle>確認が必要な項目があります</AlertTitle>
-            <AlertDescription className="grid gap-2">
-              <p>
-                強調表示された項目を修正してから、もう一度保存してください。
-              </p>
-              <ul className="list-disc space-y-1 pl-4">
-                {errorSummary.map(({ key, label, message }) => (
-                  <li key={key}>
-                    <button
-                      type="button"
-                      className="text-left underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
-                      onClick={() => {
-                        setActiveTab(getTabForErrorKey(key));
-                        window.setTimeout(() => focusErrorField(key), 0);
-                      }}
-                    >
-                      <span className="font-medium">{label}:</span> {message}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        ) : null}
+    <div className="grid gap-4">
+      {hasErrors ? (
+        <Alert variant="destructive">
+          <AlertTriangle className="size-4" aria-hidden="true" />
+          <AlertTitle>確認が必要な項目があります</AlertTitle>
+          <AlertDescription className="grid gap-2">
+            <p>
+              強調表示された項目を修正してから、もう一度保存してください。
+            </p>
+            <ul className="list-disc space-y-1 pl-4">
+              {errorSummary.map(({ key, label, message }) => (
+                <li key={key}>
+                  <button
+                    type="button"
+                    className="text-left underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+                    onClick={() => {
+                      setActiveTab(getTabForErrorKey(key));
+                      window.setTimeout(() => focusErrorField(key), 0);
+                    }}
+                  >
+                    <span className="font-medium">{label}:</span> {message}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as WizardTab)}
-        >
-          <TabsList className="w-full justify-start overflow-x-auto">
-            <TabsTrigger value="basics">基本</TabsTrigger>
-            <TabsTrigger value="target">実行先</TabsTrigger>
-            <TabsTrigger value="schedule">スケジュール</TabsTrigger>
-            <TabsTrigger value="advanced">詳細</TabsTrigger>
-          </TabsList>
+      <Tabs
+        value={activeTab}
+        className="grid gap-3"
+        onValueChange={(value) => setActiveTab(value as WizardTab)}
+      >
+        <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsTrigger value="basics">基本</TabsTrigger>
+          <TabsTrigger value="target">実行先</TabsTrigger>
+          <TabsTrigger value="schedule">スケジュール</TabsTrigger>
+          <TabsTrigger value="advanced">詳細</TabsTrigger>
+        </TabsList>
 
-          <TabsContent value="basics" className="grid gap-4">
+        <Card>
+          <CardContent className="grid gap-5 p-4">
+            <TabsContent value="basics" className="mt-0 grid gap-4">
             <Field
               label="プロンプト"
               htmlFor="task-prompt"
@@ -886,7 +876,7 @@ export function TaskWizard({
             </div>
           </TabsContent>
 
-          <TabsContent value="target" className="grid gap-4">
+            <TabsContent value="target" className="mt-0 grid gap-4">
             <div className="grid gap-4 lg:grid-cols-2">
               <SelectField
                 id="target-mode"
@@ -961,7 +951,7 @@ export function TaskWizard({
             ) : null}
           </TabsContent>
 
-          <TabsContent value="schedule" className="grid gap-4">
+            <TabsContent value="schedule" className="mt-0 grid gap-4">
             <SelectField
               id="schedule"
               label="実行タイミング"
@@ -1042,17 +1032,6 @@ export function TaskWizard({
               </Field>
             ) : null}
 
-            {scheduleChoice !== "manual" ? (
-              <SelectField
-                id="timezone"
-                label="タイムゾーン"
-                value={draft.timezone}
-                options={timezoneOptions}
-                onChange={(value) => update("timezone", value)}
-                error={errors.timezone}
-              />
-            ) : null}
-
             <div className="rounded-md border bg-muted/30 p-3">
               <div className="flex items-start gap-2">
                 <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
@@ -1060,6 +1039,11 @@ export function TaskWizard({
                   <p className="text-sm font-medium">
                     {getScheduleSummary(draft)}
                   </p>
+                  {scheduleChoice !== "manual" ? (
+                    <p className="text-xs text-muted-foreground">
+                      PCのタイムゾーン（{draft.timezone}）を使用します。
+                    </p>
+                  ) : null}
                   {cronPreview.ok && cronPreview.dates.length ? (
                     <div data-testid="cron-preview" className="grid gap-1">
                       <p className="text-xs text-muted-foreground">次の5回</p>
@@ -1088,7 +1072,7 @@ export function TaskWizard({
             </div>
           </TabsContent>
 
-          <TabsContent value="advanced" className="grid gap-4">
+            <TabsContent value="advanced" className="mt-0 grid gap-4">
             {isDangerFullAccess ? (
               <Badge variant="warning" className="w-fit">
                 フルアクセス
@@ -1276,40 +1260,41 @@ export function TaskWizard({
                 />
               </div>
             </div>
-          </TabsContent>
-        </Tabs>
+            </TabsContent>
 
-        <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-          {onCancel ? (
-            <Button type="button" variant="outline" onClick={onCancel}>
-              キャンセル
-            </Button>
-          ) : (
-            <Button variant="outline" asChild>
-              <Link href={cancelHref}>キャンセル</Link>
-            </Button>
-          )}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-            {!task ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isSaving}
-                onClick={() => void save(true)}
-              >
-                一時停止で作成
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              disabled={isSaving}
-              onClick={() => void save(false)}
-            >
-              {task ? "変更を保存" : "タスクを作成"}
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+            <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+              {onCancel ? (
+                <Button type="button" variant="outline" onClick={onCancel}>
+                  キャンセル
+                </Button>
+              ) : (
+                <Button variant="outline" asChild>
+                  <Link href={cancelHref}>キャンセル</Link>
+                </Button>
+              )}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+                {!task ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isSaving}
+                    onClick={() => void save(true)}
+                  >
+                    一時停止で作成
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => void save(false)}
+                >
+                  {task ? "変更を保存" : "タスクを作成"}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </Tabs>
+    </div>
   );
 }

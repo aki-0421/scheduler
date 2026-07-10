@@ -59,6 +59,28 @@ describe("RunDetail", () => {
     });
   });
 
+  it("renders nested log tabs outside the selected log panel", async () => {
+    vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
+      runId: params.runId,
+      stream: params.stream,
+      cursor: params.cursor ?? 0,
+      nextCursor: 0,
+      eof: true,
+      data: "",
+    }));
+
+    renderWithClient(<RunDetail run={run} />);
+    await openLogsTab();
+
+    const logTabList = screen
+      .getByRole("tab", { name: "stdout" })
+      .closest('[role="tablist"]');
+    const stdoutPanel = screen.getByRole("tabpanel", { name: "stdout" });
+
+    expect(logTabList?.closest("section")).toBeNull();
+    expect(stdoutPanel.querySelector("section")).toBeInTheDocument();
+  });
+
   it("renders log URLs as escaped text instead of links", async () => {
     vi.spyOn(ipcClient, "runTailLog").mockImplementation(async (params) => ({
       runId: params.runId,

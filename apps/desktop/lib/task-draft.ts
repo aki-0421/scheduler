@@ -11,7 +11,11 @@ import {
   type ReasoningEffort,
 } from "@/lib/codex-options";
 import { getCronPreview } from "@/lib/cron";
-import { localDateTimeToUtcIso, utcIsoToLocalDateTime } from "@/lib/timezone";
+import {
+  getSystemTimezone,
+  localDateTimeToUtcIso,
+  utcIsoToLocalDateTime,
+} from "@/lib/timezone";
 import {
   approvalPolicySchema,
   cleanupPolicySchema,
@@ -217,7 +221,7 @@ export function defaultTaskDraft(): TaskDraft {
     repoPath: "",
     baseRef: "main",
     scheduleMode: presetSchedule?.scheduleMode ?? "cron",
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Tokyo",
+    timezone: getSystemTimezone(),
     onceDate: dateInputValue(tomorrow),
     onceTime: "09:00",
     presetMode: presetSchedule?.presetMode ?? "daily",
@@ -248,7 +252,8 @@ export function defaultTaskDraft(): TaskDraft {
 
 export function taskToDraft(task: TaskDto): TaskDraft {
   const baseDraft = defaultTaskDraft();
-  const once = splitTime(task.runAt, task.timezone);
+  const timezone = getSystemTimezone();
+  const once = splitTime(task.runAt, timezone);
   const cronExpr = task.cronExpr ?? defaultCronExpr;
   const presetSchedule =
     task.kind === "cron" ? inferPresetFromCron(cronExpr) : undefined;
@@ -266,7 +271,7 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     repoPath: task.target.repoPath ?? "",
     baseRef: task.target.baseRef ?? "main",
     scheduleMode: presetSchedule?.scheduleMode ?? task.kind,
-    timezone: task.timezone,
+    timezone,
     onceDate: once.date,
     onceTime: once.time,
     presetMode: presetSchedule?.presetMode ?? baseDraft.presetMode,

@@ -1,7 +1,7 @@
 ---
 title: 画面仕様
 description: Codex Scheduler の desktop screen specification convention、stable screen ID registry、per-screen spec link を定義する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - desktop app page、dialog、task wizard behavior、screen copy、validation、loading state、empty state、navigation を変更するとき。
   - Codex Scheduler desktop screen に割り当てられた stable screen ID を探すとき。
@@ -32,6 +32,11 @@ read_when:
 - Known gaps: 意図的に未実装の behavior または schema-backed limitation。
 
 この item set は外部の UI specification と requirements guidance に基づく。UI spec は logical flow、display contents、access points、fields、defaults、values、exception cases を document すべきであり、acceptance criteria は testable であるべきで、error state は visible かつ constructive であるべきで、form validation は可能な限り field の近くに置くべきであり、accessibility documentation は interaction state と inclusive behavior を含めるべきである。review した source: [Bridging the Gap UI specification template](https://www.bridging-the-gap.com/how-to-create-a-user-interface-specification/)、[Wikipedia UI specification structure summary](https://en.wikipedia.org/wiki/User_interface_specification)、[AltexSoft acceptance criteria guidance](https://www.altexsoft.com/blog/functional-and-non-functional-requirements-specification-and-types/)、[NN/g error message guidelines](https://www.nngroup.com/articles/error-message-guidelines/)、[NN/g form error guidelines](https://www.nngroup.com/articles/errors-forms-design-guidelines/)、[Stephanie Walter accessibility and interaction documentation guidance](https://stephaniewalter.design/blog/a-designers-guide-to-documenting-accessibility-user-interactions/)。
+
+## 共通レイアウト規約
+
+- tabbed surface は tab list を content panel の外側、直上に配置する。
+- 選択中の tab content は bordered panel として表示する。nested tabs も同じ階層を保ち、親 panel の内側に tab list だけを置かない。
 
 ## Screen ID registry
 

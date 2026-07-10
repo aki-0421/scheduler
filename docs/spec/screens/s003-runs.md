@@ -1,7 +1,7 @@
 ---
 title: S003 Task Sessions
 description: Task Session screen の chat UI、tool usage display、history filter、log tail、export、cancel、follow-up requirement を定義する。
-updated: 2026-07-09
+updated: 2026-07-10
 read_when:
   - Runs page、task session page、run filtering、chat transcript、tool usage display、artifact action、cancel/retry/follow-up flow を変更するとき。
 ---
@@ -33,6 +33,7 @@ read_when:
 - `/runs?run=<runId>` は session detail page として開く。
 - session detail header は task name、run status、trigger、scheduled / started time、parent task link を持つ。
 - selected session detail は `概要`、`チャット`、`プロンプト`、`出力`、`ログ`、`成果物` の tabs で表示する。
+- session detail と `ログ` 内の nested tabs は tab list を content panel の外側、直上に配置し、選択中の tab content を bordered panel として表示する。
 - `チャット` tab は system / user prompt、assistant output、tool call、tool result、daemon event を時系列 bubble として表示する。
 - right or top action area は workspace / follow-up / cancel / retry / export logs を持つ。
 - tab content の先頭には、tab label と同義の section heading や説明文を置かない。
@@ -86,6 +87,7 @@ read_when:
 - active run が selected の場合、run が active status を離れるまで log が poll される。
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。
 - export logs が成功した場合、user は exported local path を見る。
+- `ログ` tab の stdout、stderr、events を切り替えた場合、nested tab list は panel の外にあり、選択した log と copy / export action は同じ panel 内に表示される。
 
 既知の gap:
 

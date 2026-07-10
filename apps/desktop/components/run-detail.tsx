@@ -310,6 +310,24 @@ export function RunDetail({ run, task }: RunDetailProps) {
     }
   }
 
+  function renderLogActions(value: string, toastLabel: string) {
+    return (
+      <>
+        <CopyButton value={value} toastLabel={toastLabel} />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isExportingLogs}
+          onClick={() => void exportLogs()}
+        >
+          <Download className="size-4" aria-hidden="true" />
+          ログをエクスポート
+        </Button>
+      </>
+    );
+  }
+
   const stdoutText = logs.stdout || run.stdoutTail || "";
   const stderrText = logs.stderr || run.stderrTail || "";
   const eventsText = logs.events || "";
@@ -576,42 +594,26 @@ export function RunDetail({ run, task }: RunDetailProps) {
       </TabsContent>
 
       <TabsContent value="logs">
-        <DetailSection
-          actions={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isExportingLogs}
-              onClick={() => void exportLogs()}
-            >
-              <Download className="size-4" aria-hidden="true" />
-              ログをエクスポート
-            </Button>
-          }
-        >
-          <Tabs defaultValue="stdout">
-            <TabsList>
-              <TabsTrigger value="stdout">stdout</TabsTrigger>
-              <TabsTrigger value="stderr">stderr</TabsTrigger>
-              <TabsTrigger value="events">events</TabsTrigger>
-            </TabsList>
-            <TabsContent value="stdout" className="grid gap-2">
-              <div className="flex justify-end">
-                <CopyButton value={stdoutText} toastLabel="stdout" />
-              </div>
+        <Tabs defaultValue="stdout" className="grid gap-3">
+          <TabsList className="w-full justify-start overflow-x-auto">
+            <TabsTrigger value="stdout">stdout</TabsTrigger>
+            <TabsTrigger value="stderr">stderr</TabsTrigger>
+            <TabsTrigger value="events">events</TabsTrigger>
+          </TabsList>
+          <TabsContent value="stdout" className="mt-0">
+            <DetailSection actions={renderLogActions(stdoutText, "stdout")}>
               <TextBlock>{stdoutText || "stdout はまだありません。"}</TextBlock>
-            </TabsContent>
-            <TabsContent value="stderr" className="grid gap-2">
-              <div className="flex justify-end">
-                <CopyButton value={stderrText} toastLabel="stderr" />
-              </div>
+            </DetailSection>
+          </TabsContent>
+          <TabsContent value="stderr" className="mt-0">
+            <DetailSection actions={renderLogActions(stderrText, "stderr")}>
               <TextBlock>{stderrText || "stderr はまだありません。"}</TextBlock>
-            </TabsContent>
-            <TabsContent value="events" className="grid gap-2">
-              <div className="flex justify-end">
-                <CopyButton value={eventsText} toastLabel="イベントログ" />
-              </div>
+            </DetailSection>
+          </TabsContent>
+          <TabsContent value="events" className="mt-0">
+            <DetailSection
+              actions={renderLogActions(eventsText, "イベントログ")}
+            >
               <div className="min-h-64 rounded-md bg-muted p-3">
                 {eventLines.length ? (
                   <div className="grid gap-2">
@@ -643,9 +645,9 @@ export function RunDetail({ run, task }: RunDetailProps) {
                   </p>
                 )}
               </div>
-            </TabsContent>
-          </Tabs>
-        </DetailSection>
+            </DetailSection>
+          </TabsContent>
+        </Tabs>
       </TabsContent>
 
       <TabsContent value="artifacts">

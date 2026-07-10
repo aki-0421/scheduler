@@ -6,6 +6,7 @@ import { TaskWizard } from "@/components/task-wizard";
 import { defaultCodexModel, defaultReasoningEffort } from "@/lib/codex-options";
 import { ipcClient } from "@/lib/ipc";
 import { buildTaskDto, defaultTaskDraft, taskToDraft } from "@/lib/task-draft";
+import { getSystemTimezone } from "@/lib/timezone";
 import { renderWithClient } from "./test-utils";
 
 describe("TaskWizard cron validation", () => {
@@ -73,6 +74,26 @@ describe("TaskWizard cron validation", () => {
     expect(screen.getByText("平日 09:00")).toBeInTheDocument();
   });
 
+  it("uses the PC timezone without presenting a timezone selector", async () => {
+    const user = userEvent.setup();
+    const draft = {
+      ...defaultTaskDraft(),
+      timezone: "America/New_York",
+    };
+
+    renderWithClient(<TaskWizard initialDraft={draft} />);
+    await user.click(screen.getByRole("tab", { name: "スケジュール" }));
+
+    expect(
+      screen.queryByRole("combobox", { name: "タイムゾーン" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `PCのタイムゾーン（${getSystemTimezone()}）を使用します。`,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("maps matching cron tasks back to presets for editing", () => {
     const sourceDraft = {
       ...defaultTaskDraft(),
@@ -90,6 +111,20 @@ describe("TaskWizard cron validation", () => {
     expect(draft.presetTime).toBe("08:30");
     expect(draft.weeklyDay).toBe("1");
     expect(draft.cronExpr).toBe("30 8 * * 1");
+  });
+
+  it("normalizes an existing task to the current PC timezone for editing", () => {
+    const task = buildTaskDto(
+      {
+        ...defaultTaskDraft(),
+        name: "Existing schedule",
+        prompt: "Keep the schedule aligned with this PC.",
+      },
+      false,
+    );
+    task.timezone = "Pacific/Honolulu";
+
+    expect(taskToDraft(task).timezone).toBe(getSystemTimezone());
   });
 
   it("shows hardening warnings in advanced settings", async () => {
@@ -216,7 +251,10 @@ describe("TaskWizard cron validation", () => {
       capabilities: ["schedule:create", "schedule:list"],
       maxCreatedSchedulesPerRun: 3,
     };
-    const expectedDto = buildTaskDto(draft, false);
+    const expectedDto = buildTaskDto(
+      { ...draft, timezone: getSystemTimezone() },
+      false,
+    );
     const createSpy = vi.spyOn(ipcClient, "taskCreate").mockResolvedValue({
       ...expectedDto,
       id: "task_created",

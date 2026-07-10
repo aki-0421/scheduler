@@ -1,7 +1,7 @@
 ---
 title: S002 Task Wizard
 description: Task Wizard の create、follow-up、edit、duplicate flow、field、validation、lock、safety requirement を定義する。
-updated: 2026-07-09
+updated: 2026-07-10
 read_when:
   - task creation、task editing、task duplication、follow-up task prefill、schedule control、target selection、advanced policy、lock behavior、wizard validation を変更するとき。
 ---
@@ -28,7 +28,7 @@ read_when:
 - inline project add には `ipcClient.projectPickFolder()` と project registration mutation を使う。
 - save には `useCreateTask()` と `useUpdateTask()` を使う。
 - prompt import には `ipcClient.promptImportFile()` を使う。
-- schedule preview と validation には `getCronPreview()` と timezone helper を使う。
+- schedule preview と validation には `getCronPreview()`、`getSystemTimezone()`、timezone conversion helper を使う。
 
 レイアウト領域:
 
@@ -36,9 +36,10 @@ read_when:
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - validation failure 時の error summary alert。
 - tabs: `基本`、`実行先`、`スケジュール`、`詳細`。
+- tab list は content panel の外側、直上に配置する。選択中の tab content と footer action は、1つの bordered panel 内に表示する。
 - `基本` tab: required main flow。prompt、task name、任意の description を同じ画面にまとめる。
 - `実行先` tab: target mode、project selector、folder picker、base ref、local modification warning。
-- `スケジュール` tab: schedule selector、schedule-specific fields、timezone、preview。
+- `スケジュール` tab: schedule selector、schedule-specific fields、PC timezone indicator、preview。timezone selector は置かない。
 - `詳細` tab: Codex model、permission、retry、cleanup、scheduler CLI、lock / pause safety controls。
 - tab content の先頭には、tab label と同義の section heading や説明文を置かない。
 - cancel、save paused、save active の footer action。
@@ -51,7 +52,7 @@ read_when:
 - repository path は手入力ではなく project selection / folder picker によって設定する。
 - base ref。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
-- once date and time、preset time、weekly day、custom 5-field cron、timezone、next-five-runs preview。
+- once date and time、preset time、weekly day、custom 5-field cron、PC timezone indicator、next-five-runs preview。
 - advanced settings: Codex path display、frontier model select、reasoning effort select、sandbox、approval policy、max runtime、retries、overlap、missed runs、cleanup、schedule CLI switch、scheduler instruction switch、capability checkbox、max created schedules、start paused switch。通常は default のままでよいため `詳細` tab に置き、main flow から外す。
 - full filesystem access confirmation checkbox は `danger-full-access` の場合にのみ表示される。
 - lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
@@ -59,7 +60,7 @@ read_when:
 既定値:
 
 - default cron expression は `0 9 * * 1-5` で、weekdays at 09:00 として推論される。
-- default timezone は browser-resolved timezone または `Asia/Tokyo`。
+- timezone は browser が解決した現在の PC timezone を自動使用し、取得できない場合は `UTC` を使う。user-selectable default は持たない。
 - default model は `gpt-5.5`。
 - default reasoning effort は `medium`。
 - default sandbox は `read-only`。
@@ -73,9 +74,9 @@ read_when:
 
 バリデーションとエラー:
 
-- required: prompt、task name、timezone、frontier model、reasoning effort。
+- required: prompt、task name、frontier model、reasoning effort。timezone は PC から自動設定される内部必須値である。
 - repository target には registered project が必要。
-- once schedule には selected timezone に対して valid な date and time が必要。
+- once schedule には現在の PC timezone に対して valid な date and time が必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。
 - max runtime は少なくとも 60 seconds。
 - retries は negative にできない。
@@ -91,6 +92,7 @@ read_when:
 - existing repository かつ workspace-write の場合、local change が変更され得る warning を表示する。
 - locked task edit は lock badge と unlock guidance を表示する。
 - cron preview は valid な場合に next five runs、once schedule の場合に once preview、manual task の場合に manual guidance、invalid な場合に fix-schedule guidance を表示する。
+- manual 以外の schedule summary は、現在の PC timezone を自動使用することと IANA timezone 名を表示する。
 - hidden tab の field に validation error がある場合、対象 tab は自動で選択される。
 
 アクセシビリティ:
@@ -116,9 +118,11 @@ read_when:
 - locked task を edit しようとした場合、unlock なしでは save できない。
 - `danger-full-access` に confirmation がない場合、save は blocked される。
 - valid cron schedule の場合、preview は next five runs を list する。
+- create、follow-up、duplicate、edit では timezone selector を表示せず、保存時点の PC timezone を task DTO に設定する。
 - create が成功した場合、user は `/tasks?task=<newTaskId>` に遷移する。
 - duplicate が成功した場合、lock state は unlocked で作成される。
 - edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
+- create、follow-up、duplicate、edit のすべてで、tab list は content panel の外にあり、選択中の tab content は panel として表示される。
 
 既知の gap:
 

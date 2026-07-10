@@ -1,7 +1,7 @@
 ---
 title: スケジューリングと実行
 description: schedule calculation、daemon tick behavior、run lifecycle、Codex runner behavior、log、retry、cleanup を定義する。
-updated: 2026-07-08
+updated: 2026-07-10
 read_when:
   - cron behavior、missed-run handling、overlap handling、run execution、Codex invocation、log、retry、cleanup を変更するとき。
   - task が実行された理由、または実行されなかった理由を debug するとき。
@@ -22,6 +22,8 @@ scheduler daemon は run をいつ enqueue するか決定する。runner は wo
 ## Timezone と DST ルール
 
 schedule engine は instant を UTC RFC3339 timestamp として保存・比較し、cron expression は task timezone で評価する。
+
+desktop task wizard は timezone を選択させず、task の作成または更新時に現在の PC から解決した IANA timezone を保存する。すでに保存済みの task は、次に wizard から更新されるまでは保存済み timezone で動作する。CLI の `--timezone` と task DTO の timezone field は automation と schedule engine の明示的な contract として維持する。
 
 test 済み cron behavior:
 
