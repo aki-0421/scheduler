@@ -37,7 +37,7 @@ read_when:
 - Scheduler switch は `scheduler.enabled` を control する。
 - Notifications switch は `notifications.enabled` を control する。
 - Global concurrency number input は `daemon.global_concurrency` を control する。
-- Codex path input は `runner.codex_path` を control する。
+- `Codex バイナリパスをカスタマイズ` checkbox は global control として配置する。未選択時は `PATH` 上の `codex` を使い、選択時だけ `runner.codex_path` input を表示する。保存した custom path はすべての task に共通適用し、task 固有 override は持たない。
 - Default model select は `runner.default_model` を control し、Codex frontier model のみを選択肢として表示する。
 - read-only socket path と database path。
 - schema version display。
@@ -55,6 +55,7 @@ read_when:
 バリデーションとエラー:
 
 - global concurrency は input minimum `1` を持つ。
+- Codex binary path customization を選択した場合、空の path は保存できない。
 - save は既知の settings key をすべて送信し、すべての mutation 完了時に 1 つの success toast を表示する。
 - save failure は settings error toast を表示し、query rollback は previous settings data を使う。
 - diagnostics failure は diagnostics error toast を表示する。
@@ -78,3 +79,4 @@ read_when:
 - diagnostics export が path を返した場合、その path は success toast に表示される。
 - diagnostics export が canceled の場合、user は cancellation info toast を見る。
 - settings section は page-level panel surface を持たず、separator と alignment でまとまりを判別できる。
+- Codex binary path customization を選択すると path input が表示され、保存した global value がすべての task execution に使用される。未選択時は task execution ごとの `PATH` lookup を使う。

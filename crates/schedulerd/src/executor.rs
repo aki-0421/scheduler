@@ -12,6 +12,7 @@ use scheduler_core::model::{
     new_run_artifact_id, new_run_event_id, CleanupPolicy, Project, ProjectKind, Run, RunArtifact,
     RunArtifactKind, RunEventSource, RunStatus, SandboxMode, Task,
 };
+use scheduler_core::settings::SETTING_RUNNER_CODEX_PATH;
 use scheduler_core::time::now_rfc3339;
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
@@ -236,7 +237,7 @@ impl CodexExecutor {
         &self,
         request: &ExecutionRequest,
     ) -> Result<RunRequest, RunnerError> {
-        let codex_path = self.configured_codex_path(&request.task).await?;
+        let codex_path = self.configured_codex_path().await?;
         let trusted_roots = self.trusted_roots().await?;
         let project = self.task_project(&request.task).await?;
         let default_branch = project
@@ -300,17 +301,10 @@ impl CodexExecutor {
         })
     }
 
-    async fn configured_codex_path(&self, task: &Task) -> Result<Option<PathBuf>, RunnerError> {
-        if let Some(path) = task
-            .codex_path
-            .as_deref()
-            .and_then(normalize_codex_path_setting)
-        {
-            return Ok(Some(path));
-        }
+    async fn configured_codex_path(&self) -> Result<Option<PathBuf>, RunnerError> {
         let value = self
             .db
-            .get_setting::<String>("runner.codex_path")
+            .get_setting::<String>(SETTING_RUNNER_CODEX_PATH)
             .await
             .map_err(scheduler_error_to_runner_error)?;
         Ok(value.and_then(|value| normalize_codex_path_setting(&value)))

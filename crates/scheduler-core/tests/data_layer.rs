@@ -41,7 +41,6 @@ fn sample_task(slug: &str) -> Task {
         base_ref: None,
         model: Some("gpt-5.5".to_owned()),
         reasoning_effort: Some("medium".to_owned()),
-        codex_path: None,
         sandbox_mode: SandboxMode::DangerFullAccess,
         approval_policy: ApprovalPolicy::Never,
         allow_schedule_cli: true,
@@ -105,14 +104,14 @@ fn sample_run(task_id: &str, scheduled_for: &str) -> Run {
 }
 
 #[tokio::test]
-async fn migration_creates_v5_schema() {
+async fn migration_creates_v6_schema() {
     let (_temp_dir, db) = temp_db().await;
 
     let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(db.pool())
         .await
         .expect("user_version");
-    assert_eq!(user_version, 5);
+    assert_eq!(user_version, 6);
 
     let description_columns: i64 = sqlx::query_scalar(
         "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'description'",
@@ -127,7 +126,7 @@ async fn migration_creates_v5_schema() {
     .fetch_one(db.pool())
     .await
     .expect("codex path column");
-    assert_eq!(codex_path_columns, 1);
+    assert_eq!(codex_path_columns, 0);
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master
@@ -183,6 +182,82 @@ async fn migration_creates_v5_schema() {
         .await
         .expect("setting");
     assert_eq!(run_history_days, Some(90));
+}
+
+#[tokio::test]
+async fn v6_migration_discards_task_paths_and_preserves_the_global_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db_path = temp_dir.path().join("scheduler.sqlite3");
+    let db = SchedulerDb::connect(&db_path).await.expect("connect db");
+    let task = sample_task("legacy-task-codex-path");
+    db.create_task(&task).await.expect("create task");
+    db.set_setting("runner.codex_path", &"/opt/global/bin/codex")
+        .await
+        .expect("set global path");
+
+    sqlx::query("ALTER TABLE tasks ADD COLUMN codex_path TEXT")
+        .execute(db.pool())
+        .await
+        .expect("restore v5 codex path column");
+    sqlx::query("UPDATE tasks SET codex_path = '/tmp/task-codex' WHERE id = ?")
+        .bind(&task.id)
+        .execute(db.pool())
+        .await
+        .expect("seed task path");
+    sqlx::query(
+        "INSERT INTO task_audit_events (
+            id, task_id, actor_type, action, before_json, after_json, created_at
+         ) VALUES (?, ?, 'user', 'task.update', ?, ?, ?)",
+    )
+    .bind(new_task_audit_event_id())
+    .bind(&task.id)
+    .bind(r#"{"codex":{"codexPath":"/tmp/before"}}"#)
+    .bind(r#"{"codex":{"codexPath":"/tmp/after"}}"#)
+    .bind(now_rfc3339())
+    .execute(db.pool())
+    .await
+    .expect("seed task audit paths");
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 6")
+        .execute(db.pool())
+        .await
+        .expect("rewind v6 migration record");
+    sqlx::query("PRAGMA user_version = 5")
+        .execute(db.pool())
+        .await
+        .expect("rewind user version");
+    drop(db);
+
+    let migrated = SchedulerDb::connect(&db_path)
+        .await
+        .expect("apply v6 migration");
+    let codex_path_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'codex_path'",
+    )
+    .fetch_one(migrated.pool())
+    .await
+    .expect("codex path column after migration");
+    assert_eq!(codex_path_columns, 0);
+    assert_eq!(
+        migrated
+            .get_setting::<String>("runner.codex_path")
+            .await
+            .expect("get global path")
+            .as_deref(),
+        Some("/opt/global/bin/codex")
+    );
+
+    let audit = migrated
+        .list_task_audit_events(&task.id)
+        .await
+        .expect("audit")
+        .into_iter()
+        .find(|event| event.action == "task.update")
+        .expect("audit event");
+    for snapshot in [audit.before_json, audit.after_json] {
+        let value: Value =
+            serde_json::from_str(snapshot.as_deref().expect("snapshot")).expect("snapshot json");
+        assert!(value["codex"].get("codexPath").is_none());
+    }
 }
 
 #[tokio::test]
@@ -346,7 +421,7 @@ async fn v3_and_v4_migrations_update_targets_and_remove_descriptions() {
 }
 
 #[tokio::test]
-async fn v5_migration_normalizes_execution_profile_and_removes_obsolete_settings() {
+async fn v5_and_v6_migrations_normalize_execution_profile_and_remove_task_codex_path() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let db_path = temp_dir.path().join("scheduler.sqlite3");
     let db = SchedulerDb::connect(&db_path).await.expect("connect db");
@@ -403,24 +478,20 @@ async fn v5_migration_normalizes_execution_profile_and_removes_obsolete_settings
     .bind(new_task_audit_event_id())
     .bind(&task.id)
     .bind(
-        r#"{"codex":{"model":"gpt-5.4","sandboxMode":"read-only","approvalPolicy":"on-request"},"prompt":{"body":"before","injectSchedulerInstructions":false},"policies":{"maxRuntimeSec":7200}}"#,
+        r#"{"codex":{"model":"gpt-5.4","codexPath":"/tmp/legacy-before","sandboxMode":"read-only","approvalPolicy":"on-request"},"prompt":{"body":"before","injectSchedulerInstructions":false},"policies":{"maxRuntimeSec":7200}}"#,
     )
     .bind(
-        r#"{"codex":{"model":"gpt-5.5","sandboxMode":"workspace-write","approvalPolicy":"never"},"prompt":{"body":"after","injectSchedulerInstructions":true},"policies":{"maxRetries":3}}"#,
+        r#"{"codex":{"model":"gpt-5.5","codexPath":"/tmp/legacy-after","sandboxMode":"workspace-write","approvalPolicy":"never"},"prompt":{"body":"after","injectSchedulerInstructions":true},"policies":{"maxRetries":3}}"#,
     )
     .bind(now_rfc3339())
     .execute(db.pool())
     .await
     .expect("seed legacy audit");
 
-    sqlx::query("ALTER TABLE tasks DROP COLUMN codex_path")
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version IN (5, 6)")
         .execute(db.pool())
         .await
-        .expect("restore v4 task shape");
-    sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 5")
-        .execute(db.pool())
-        .await
-        .expect("rewind migration record");
+        .expect("rewind migration records");
     sqlx::query("PRAGMA user_version = 4")
         .execute(db.pool())
         .await
@@ -429,7 +500,7 @@ async fn v5_migration_normalizes_execution_profile_and_removes_obsolete_settings
 
     let migrated = SchedulerDb::connect(&db_path)
         .await
-        .expect("apply v5 migration");
+        .expect("apply v5 and v6 migrations");
     let task = migrated
         .get_task(&task.id)
         .await
@@ -446,6 +517,14 @@ async fn v5_migration_normalizes_execution_profile_and_removes_obsolete_settings
     assert_eq!(task.max_retries, 0);
     assert_eq!(task.cleanup_policy, CleanupPolicy::Keep);
     assert!(task.cleanup_after_days.is_none());
+
+    let codex_path_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'codex_path'",
+    )
+    .fetch_one(migrated.pool())
+    .await
+    .expect("codex path column after migration");
+    assert_eq!(codex_path_columns, 0);
 
     let migrated_token = migrated
         .get_schedule_capability_token_by_hash("legacy-token-hash")
@@ -486,6 +565,7 @@ async fn v5_migration_normalizes_execution_profile_and_removes_obsolete_settings
             serde_json::from_str(snapshot.as_deref().expect("snapshot")).expect("snapshot json");
         assert!(value["codex"].get("sandboxMode").is_none());
         assert!(value["codex"].get("approvalPolicy").is_none());
+        assert!(value["codex"].get("codexPath").is_none());
         assert!(value["prompt"].get("injectSchedulerInstructions").is_none());
         assert!(value.get("policies").is_none());
     }
@@ -805,7 +885,6 @@ fn task_and_run_dto_serialize_to_spec_camel_case_shape() {
     task.project_id = Some("proj_01900000-0000-7000-8000-000000000000".to_owned());
     task.repo_path = Some("/Users/alice/src/my-app".to_owned());
     task.base_ref = Some("main".to_owned());
-    task.codex_path = Some("/opt/homebrew/bin/codex".to_owned());
 
     let task_value = serde_json::to_value(TaskDto::from(&task)).expect("task dto json");
     assert!(task_value.get("description").is_none());
@@ -813,10 +892,7 @@ fn task_and_run_dto_serialize_to_spec_camel_case_shape() {
     assert_eq!(task_value["nextRunAt"], json!("2026-07-08T00:00:00Z"));
     assert_eq!(task_value["target"]["mode"], json!("repo-worktree"));
     assert_eq!(task_value["target"]["projectId"], json!(task.project_id));
-    assert_eq!(
-        task_value["codex"]["codexPath"],
-        json!("/opt/homebrew/bin/codex")
-    );
+    assert!(task_value["codex"].get("codexPath").is_none());
     assert!(task_value["codex"].get("sandboxMode").is_none());
     assert!(task_value["codex"].get("approvalPolicy").is_none());
     assert!(task_value["prompt"]

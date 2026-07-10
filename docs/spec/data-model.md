@@ -9,7 +9,7 @@ read_when:
 
 # データモデル
 
-schema version は `5` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
+schema version は `6` である。SQLite は database constraint 付きの textual enum value を保存し、Rust / TypeScript は強く validate された DTO と Zod schema を通じて同じ値を公開する。
 
 ## 主要エンティティ
 
@@ -37,7 +37,7 @@ Task DTO は camelCase field を使う。
 - `kind`: `manual`, `once`, `cron`
 - `cronExpr`, `runAt`, `timezone`, `nextRunAt`
 - `target`: `chat` または `repo-worktree` mode、Git project ID、repository path、base ref。project target は登録済み Git project ID を必須とする。
-- `codex`: 任意の task 固有 Codex binary path、model、reasoning effort
+- `codex`: model、reasoning effort。Codex binary path は task contract に含めず、global setting だけで管理する。
 - `prompt`: prompt body
 - `locked`: AI / scheduled-run actor による edit、delete、pause、resume を拒否する user-controlled lock flag
 
@@ -85,15 +85,17 @@ Run history は start、schedule、queue timestamp で sort できる。active s
 - Overlap policies: `skip`, `queue`, `cancel_previous`
 - Cleanup policies: `keep`, `delete_on_success`, `delete_after_days`
 - Project kinds: 新規登録可能な値は `git`。`folder` は既存 database の読み取り互換にだけ残す。
+- Run event sources: `daemon`, `codex-jsonl`, `stdout`, `stderr`
+- Run artifact kinds: `file`, `diff`, `patch`, `log`, `last-message`, `worktree`
+- Audit actor types: `user`, `daemon`, `cli`, `scheduled-run`
 
 schema version 3 migration は、Git project に紐づく既存 `repo-local` task を `repo-worktree` へ変換し、既存 `repo-worktree` task を含む project target の `repo_path` を登録済み Git root に正規化する。有効な Git project に紐づかない project target は自動実行を防ぐため pause し、invalid schedule reason を保存する。
 
 schema version 4 migration は `tasks.description` と既存 task audit snapshot の top-level `description` key を削除する。task の内容は `name` と `prompt.body` を唯一の source of truth とし、Task DTO、desktop schema、daemon RPC、CLI は task description field を公開しない。
 
 schema version 5 migration は `tasks.codex_path` を追加する。既存 task の execution profile を app-wide invariant へ正規化し、active capability token の作成数上限を unlimited sentinel へ変更する。task audit snapshot から旧 `codex.sandboxMode`、`codex.approvalPolicy`、`prompt.injectSchedulerInstructions`、`policies` を削除し、obsolete な sandbox / approval / cleanup default setting を削除する。
-- Run event sources: `daemon`, `codex-jsonl`, `stdout`, `stderr`
-- Run artifact kinds: `file`, `diff`, `patch`, `log`, `last-message`, `worktree`
-- Audit actor types: `user`, `daemon`, `cli`, `scheduled-run`
+
+schema version 6 migration は obsolete になった `tasks.codex_path` column と task audit snapshot の `codex.codexPath` key を削除する。Codex binary path は `runner.codex_path` setting を唯一の persisted source とし、すべての task に共通適用する。
 
 ## Lock behavior
 
@@ -119,7 +121,7 @@ Rust settings module は次の persisted key を定義する。
 - `retention.failed_run_logs_days`
 - `retention.capability_token_delete_after_hours`
 
-migration は retention setting を seed する。frontend はさらに `daemon.global_concurrency`、`runner.default_model`、`notifications.enabled` の default を理解する。sandbox、approval policy、worktree cleanup の setting は持たない。
+migration は retention setting を seed する。frontend はさらに `daemon.global_concurrency`、`runner.default_model`、`notifications.enabled` の default を理解する。`runner.codex_path` は全 task 共通で、task 固有 override は持たない。値がないか `codex` の場合は `PATH` lookup を使い、それ以外の custom path は Settings の global customization から保存する。sandbox、approval policy、worktree cleanup の setting は持たない。
 
 ## Retention default
 

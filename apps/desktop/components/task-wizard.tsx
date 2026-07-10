@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   CalendarClock,
@@ -109,7 +109,6 @@ const japaneseErrorMessages: Record<string, string> = {
   onceTime: "有効な日付と時刻を選択してください。",
   model: "モデルは必須です。",
   reasoningEffort: "推論 effort は必須です。",
-  codexPath: "カスタム Codex バイナリパスを入力してください。",
 };
 
 const errorFieldOrder = [
@@ -119,7 +118,6 @@ const errorFieldOrder = [
   "onceDate",
   "onceTime",
   "cronPreview",
-  "codexPath",
   "model",
   "reasoningEffort",
 ];
@@ -131,7 +129,6 @@ const errorLabelByKey: Record<string, string> = {
   onceDate: "日付",
   onceTime: "時刻",
   cronPreview: "カスタム cron 式",
-  codexPath: "Codex バイナリパス",
   model: "モデル",
   reasoningEffort: "推論 effort",
 };
@@ -143,7 +140,6 @@ const errorTargetIds: Record<string, string[]> = {
   onceDate: ["once-date"],
   onceTime: ["once-time"],
   cronPreview: ["cron-expression"],
-  codexPath: ["codex-path"],
   model: ["model"],
   reasoningEffort: ["reasoning"],
 };
@@ -301,65 +297,6 @@ function SelectField<T extends string>({
         </SelectContent>
       </Select>
     </Field>
-  );
-}
-
-function CheckboxRow({
-  id,
-  checked,
-  label,
-  description,
-  error,
-  onChange,
-}: {
-  id?: string;
-  checked: boolean;
-  label: string;
-  description?: string;
-  error?: string;
-  onChange: (checked: boolean) => void;
-}) {
-  const generatedId = useId();
-  const inputId = id ?? generatedId;
-  const descriptionId = description ? `${inputId}-description` : undefined;
-  const errorId = error ? `${inputId}-error` : undefined;
-  const describedBy =
-    [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
-
-  return (
-    <label
-      htmlFor={inputId}
-      className={cn(
-        "flex gap-3 rounded-md border p-3 text-sm",
-        error ? "border-destructive" : undefined,
-      )}
-    >
-      <input
-        id={inputId}
-        type="checkbox"
-        className="mt-0.5 size-4 accent-primary"
-        checked={checked}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy}
-        onChange={(event) => onChange(event.currentTarget.checked)}
-      />
-      <span className="grid gap-1">
-        <span className="font-medium">{label}</span>
-        {description ? (
-          <span
-            id={descriptionId}
-            className="text-xs text-muted-foreground text-pretty"
-          >
-            {description}
-          </span>
-        ) : null}
-        {error ? (
-          <span id={errorId} className="text-xs text-destructive" role="alert">
-            {error}
-          </span>
-        ) : null}
-      </span>
-    </label>
   );
 }
 
@@ -1050,55 +987,23 @@ export function TaskWizard({
           <h2 id="advanced-settings-heading" className="text-sm font-semibold">
             詳細
           </h2>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="grid content-start gap-3">
-              <CheckboxRow
-                id="custom-codex-path"
-                checked={draft.customCodexPath}
-                label="Codex バイナリパスをカスタマイズ"
-                description="このタスクだけ別の Codex CLI を使う場合に有効にします。"
-                onChange={(checked) => {
-                  update("customCodexPath", checked, ["codexPath"]);
-                }}
-              />
-              {draft.customCodexPath ? (
-                <Field
-                  label="Codex バイナリパス"
-                  htmlFor="codex-path"
-                  error={errors.codexPath}
-                >
-                  <Input
-                    id="codex-path"
-                    value={draft.codexPath}
-                    placeholder="/opt/homebrew/bin/codex"
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(event) =>
-                      update("codexPath", event.currentTarget.value)
-                    }
-                  />
-                </Field>
-              ) : null}
-            </div>
-
-            <div className="grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              <SelectField
-                id="model"
-                label="モデル"
-                value={draft.model}
-                options={codexModelOptions}
-                onChange={updateModel}
-                error={errors.model}
-              />
-              <SelectField
-                id="reasoning"
-                label="推論 effort"
-                value={draft.reasoningEffort}
-                options={modelReasoningEffortOptions}
-                onChange={(value) => update("reasoningEffort", value)}
-                error={errors.reasoningEffort}
-              />
-            </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectField
+              id="model"
+              label="モデル"
+              value={draft.model}
+              options={codexModelOptions}
+              onChange={updateModel}
+              error={errors.model}
+            />
+            <SelectField
+              id="reasoning"
+              label="推論 effort"
+              value={draft.reasoningEffort}
+              options={modelReasoningEffortOptions}
+              onChange={(value) => update("reasoningEffort", value)}
+              error={errors.reasoningEffort}
+            />
           </div>
 
           <div className="grid gap-3 border-t pt-4 md:grid-cols-2">

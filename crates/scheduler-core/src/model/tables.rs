@@ -45,7 +45,6 @@ pub struct Task {
     pub base_ref: Option<String>,
     pub model: Option<String>,
     pub reasoning_effort: Option<String>,
-    pub codex_path: Option<String>,
     pub sandbox_mode: SandboxMode,
     pub approval_policy: ApprovalPolicy,
     pub allow_schedule_cli: bool,

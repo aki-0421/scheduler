@@ -57,7 +57,6 @@ fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
             base_ref: None,
         },
         codex: TaskCodexDto {
-            codex_path: None,
             model: None,
             reasoning_effort: None,
         },
@@ -295,7 +294,7 @@ async fn daemon_health_returns_shape_over_uds() {
     .expect("health rpc");
 
     assert!(health.ok);
-    assert_eq!(health.db_schema_version, 5);
+    assert_eq!(health.db_schema_version, 6);
     assert!(health.scheduler_enabled);
     assert_eq!(health.running_count, 0);
     assert_eq!(health.queued_count, 0);
@@ -317,7 +316,7 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
     .await
     .expect("diagnostics rpc");
 
-    assert_eq!(diagnostics.db_schema_version, 5);
+    assert_eq!(diagnostics.db_schema_version, 6);
     assert_eq!(
         diagnostics.data_dir,
         temp.path().to_string_lossy().into_owned()
@@ -1746,7 +1745,7 @@ async fn failed_run_is_not_retried_automatically() {
 }
 
 #[tokio::test]
-async fn task_codex_path_overrides_global_path_end_to_end() {
+async fn global_codex_path_applies_to_every_task_end_to_end() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let config = DaemonConfig::for_data_dir(temp_dir.path())
         .with_tick_interval(Duration::from_secs(3600))
@@ -1757,9 +1756,7 @@ async fn task_codex_path_overrides_global_path_end_to_end() {
         .expect("db");
     db.set_setting(
         "runner.codex_path",
-        &temp_dir
-            .path()
-            .join("missing-codex")
+        &codex_fixture("dummy-codex-success.sh")
             .to_string_lossy()
             .to_string(),
     )
@@ -1776,12 +1773,7 @@ async fn task_codex_path_overrides_global_path_end_to_end() {
         .await
         .expect("start daemon");
 
-    let mut task = sample_task_dto("codex-e2e", TaskKind::Manual);
-    task.codex.codex_path = Some(
-        codex_fixture("dummy-codex-success.sh")
-            .to_string_lossy()
-            .into_owned(),
-    );
+    let task = sample_task_dto("codex-e2e", TaskKind::Manual);
     let created: TaskResult = rpc::call(
         &handle.socket_path(),
         METHOD_TASK_CREATE,

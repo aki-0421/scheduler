@@ -26,7 +26,6 @@ describe("DTO schemas", () => {
         baseRef: "main",
       },
       codex: {
-        codexPath: "/opt/homebrew/bin/codex",
         model: "gpt-5.5",
         reasoningEffort: "medium",
       },
@@ -69,7 +68,7 @@ describe("DTO schemas", () => {
     });
 
     expect(task.target.projectId).toBe("proj_1");
-    expect(task.codex.codexPath).toBe("/opt/homebrew/bin/codex");
+    expect(task.codex).not.toHaveProperty("codexPath");
     expect(task).not.toHaveProperty("description");
     expect(task).not.toHaveProperty("policies");
     expect(run.attempt).toBe(2);

@@ -44,8 +44,6 @@ export type TaskDraft = {
   cronExpr: string;
   model: CodexModel;
   reasoningEffort: ReasoningEffort;
-  customCodexPath: boolean;
-  codexPath: string;
   forcePaused: boolean;
   locked: boolean;
 };
@@ -210,8 +208,6 @@ export function defaultTaskDraft(): TaskDraft {
     cronExpr: defaultCronExpr,
     model: defaultCodexModel,
     reasoningEffort: defaultReasoningEffort,
-    customCodexPath: false,
-    codexPath: "",
     forcePaused: false,
     locked: false,
   };
@@ -249,8 +245,6 @@ export function taskToDraft(task: TaskDto): TaskDraft {
       task.codex.reasoningEffort,
       normalizeCodexModel(task.codex.model),
     ),
-    customCodexPath: Boolean(task.codex.codexPath),
-    codexPath: task.codex.codexPath ?? "",
     forcePaused: task.status === "paused",
     locked: task.locked,
   };
@@ -326,8 +320,6 @@ const scheduleSchema = z
 
 const codexSchema = z
   .object({
-    customCodexPath: z.boolean(),
-    codexPath: z.string(),
     model: z.enum(codexModelValues, {
       errorMap: () => ({ message: "フロンティアモデルを選択してください。" }),
     }),
@@ -336,13 +328,6 @@ const codexSchema = z
     }),
   })
   .superRefine((value, context) => {
-    if (value.customCodexPath && !value.codexPath.trim()) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["codexPath"],
-        message: "カスタム Codex バイナリパスを入力してください。",
-      });
-    }
     const allowed = codexModelOptions.find(
       (option) => option.value === value.model,
     )?.efforts;
@@ -424,9 +409,6 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
         draft.targetMode === "chat" ? undefined : draft.baseRef.trim() || undefined,
     },
     codex: {
-      codexPath: draft.customCodexPath
-        ? draft.codexPath.trim() || undefined
-        : undefined,
       model: draft.model.trim(),
       reasoningEffort: draft.reasoningEffort.trim(),
     },

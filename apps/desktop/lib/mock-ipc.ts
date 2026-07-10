@@ -92,7 +92,6 @@ let tasks: TaskDto[] = [
       baseRef: "main",
     },
     codex: {
-      codexPath: "/opt/homebrew/bin/codex",
       model: "gpt-5.5",
       reasoningEffort: "medium",
     },
@@ -467,7 +466,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const health: HealthDto = {
         ok: true,
         version: "dev-mock",
-        dbSchemaVersion: 5,
+        dbSchemaVersion: 6,
         schedulerEnabled: enabled,
         runningCount: runs.filter((run) => run.status === "running").length,
         queuedCount: runs.filter((run) => run.status === "queued").length,
@@ -483,7 +482,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       ) as boolean;
       const diagnostics: DaemonDiagnostics = {
         version: "dev-mock",
-        dbSchemaVersion: 5,
+        dbSchemaVersion: 6,
         dataDir: "/tmp/codex-scheduler",
         socketPath: "/tmp/codex-scheduler/scheduler.sock",
         dbSizeBytes: 4096,

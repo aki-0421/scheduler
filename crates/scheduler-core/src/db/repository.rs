@@ -210,7 +210,7 @@ impl SchedulerDb {
                 id, slug, name, status, locked, kind, cron_expr, run_at, timezone,
                 next_run_at, last_scheduled_for, schedule_status, schedule_error, prompt_body,
                 prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
-                base_ref, model, reasoning_effort, codex_path, sandbox_mode, approval_policy,
+                base_ref, model, reasoning_effort, sandbox_mode, approval_policy,
                 allow_schedule_cli, schedule_cli_capabilities, max_created_schedules_per_run,
                 missed_policy, missed_window_days, overlap_policy, max_runtime_sec, max_retries,
                 retry_backoff_sec, cleanup_policy, cleanup_after_days, created_by,
@@ -219,7 +219,7 @@ impl SchedulerDb {
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )",
         )
         .bind(&task.id)
@@ -244,7 +244,6 @@ impl SchedulerDb {
         .bind(&task.base_ref)
         .bind(&task.model)
         .bind(&task.reasoning_effort)
-        .bind(&task.codex_path)
         .bind(task.sandbox_mode)
         .bind(task.approval_policy)
         .bind(task.allow_schedule_cli)
@@ -296,7 +295,7 @@ impl SchedulerDb {
                 run_at = ?, timezone = ?, next_run_at = ?, last_scheduled_for = ?,
                 schedule_status = ?, schedule_error = ?, prompt_body = ?, prompt_hash = ?,
                 inject_scheduler_instructions = ?, target_mode = ?, project_id = ?,
-                repo_path = ?, base_ref = ?, model = ?, reasoning_effort = ?, codex_path = ?, sandbox_mode = ?,
+                repo_path = ?, base_ref = ?, model = ?, reasoning_effort = ?, sandbox_mode = ?,
                 approval_policy = ?, allow_schedule_cli = ?, schedule_cli_capabilities = ?,
                 max_created_schedules_per_run = ?, missed_policy = ?, missed_window_days = ?,
                 overlap_policy = ?, max_runtime_sec = ?, max_retries = ?, retry_backoff_sec = ?,
@@ -325,7 +324,6 @@ impl SchedulerDb {
         .bind(&task.base_ref)
         .bind(&task.model)
         .bind(&task.reasoning_effort)
-        .bind(&task.codex_path)
         .bind(task.sandbox_mode)
         .bind(task.approval_policy)
         .bind(task.allow_schedule_cli)
@@ -1195,7 +1193,7 @@ async fn has_pending_migration(pool: &SqlitePool) -> Result<bool> {
 const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
-    base_ref, model, reasoning_effort, codex_path, sandbox_mode, approval_policy, allow_schedule_cli,
+    base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
     schedule_cli_capabilities, max_created_schedules_per_run, missed_policy, missed_window_days,
     overlap_policy, max_runtime_sec, max_retries, retry_backoff_sec, cleanup_policy,
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
@@ -1204,7 +1202,7 @@ const TASK_SELECT_BY_ID: &str = "SELECT id, slug, name, status, locked, kind, cr
 const TASK_SELECT_BY_SLUG: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
-    base_ref, model, reasoning_effort, codex_path, sandbox_mode, approval_policy, allow_schedule_cli,
+    base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
     schedule_cli_capabilities, max_created_schedules_per_run, missed_policy, missed_window_days,
     overlap_policy, max_runtime_sec, max_retries, retry_backoff_sec, cleanup_policy,
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
@@ -1213,7 +1211,7 @@ const TASK_SELECT_BY_SLUG: &str = "SELECT id, slug, name, status, locked, kind, 
 const TASK_SELECT_ALL: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
-    base_ref, model, reasoning_effort, codex_path, sandbox_mode, approval_policy, allow_schedule_cli,
+    base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
     schedule_cli_capabilities, max_created_schedules_per_run, missed_policy, missed_window_days,
     overlap_policy, max_runtime_sec, max_retries, retry_backoff_sec, cleanup_policy,
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at
@@ -1222,7 +1220,7 @@ const TASK_SELECT_ALL: &str = "SELECT id, slug, name, status, locked, kind, cron
 const TASK_SELECT_ACTIVE_DUE: &str = "SELECT id, slug, name, status, locked, kind, cron_expr,
     run_at, timezone, next_run_at, last_scheduled_for, schedule_status, schedule_error,
     prompt_body, prompt_hash, inject_scheduler_instructions, target_mode, project_id, repo_path,
-    base_ref, model, reasoning_effort, codex_path, sandbox_mode, approval_policy, allow_schedule_cli,
+    base_ref, model, reasoning_effort, sandbox_mode, approval_policy, allow_schedule_cli,
     schedule_cli_capabilities, max_created_schedules_per_run, missed_policy, missed_window_days,
     overlap_policy, max_runtime_sec, max_retries, retry_backoff_sec, cleanup_policy,
     cleanup_after_days, created_by, created_by_run_id, created_at, updated_at, deleted_at

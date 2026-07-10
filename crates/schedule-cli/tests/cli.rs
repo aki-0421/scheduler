@@ -143,7 +143,6 @@ fn sample_task_dto() -> TaskDto {
             base_ref: None,
         },
         codex: TaskCodexDto {
-            codex_path: None,
             model: None,
             reasoning_effort: None,
         },
@@ -154,7 +153,7 @@ fn sample_task_dto() -> TaskDto {
 }
 
 #[test]
-fn task_help_only_exposes_customizable_codex_fields() {
+fn task_help_hides_global_and_fixed_execution_fields() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
 
     for args in [["create", "--help"], ["update", "--help"]] {
@@ -163,7 +162,8 @@ fn task_help_only_exposes_customizable_codex_fields() {
         let help = String::from_utf8_lossy(&output.stdout);
         assert!(!help.contains("--description"));
         assert!(!help.contains("--clear-description"));
-        assert!(help.contains("--codex-path"));
+        assert!(!help.contains("--codex-path"));
+        assert!(!help.contains("--clear-codex-path"));
         for fixed_flag in [
             "--sandbox",
             "--approval-policy",
@@ -174,9 +174,6 @@ fn task_help_only_exposes_customizable_codex_fields() {
             "--overlap-policy",
         ] {
             assert!(!help.contains(fixed_flag), "unexpected flag: {fixed_flag}");
-        }
-        if args[0] == "update" {
-            assert!(help.contains("--clear-codex-path"));
         }
     }
 }
@@ -692,8 +689,6 @@ async fn create_manual_chat_falls_back_to_sqlite_with_direct_db_flag() {
             "--chat",
             "--prompt",
             "Fallback without daemon.",
-            "--codex-path",
-            "/tmp/custom-codex",
             "--json",
         ],
     );
@@ -712,7 +707,6 @@ async fn create_manual_chat_falls_back_to_sqlite_with_direct_db_flag() {
     let task = db.get_task(task_id).await.expect("get task").expect("task");
     assert_eq!(task.name, "sqlite fallback");
     assert_eq!(task.created_by, "cli");
-    assert_eq!(task.codex_path.as_deref(), Some("/tmp/custom-codex"));
     assert_eq!(task.max_created_schedules_per_run, 0);
     assert_eq!(task.max_runtime_sec, 0);
     assert_eq!(task.max_retries, 0);

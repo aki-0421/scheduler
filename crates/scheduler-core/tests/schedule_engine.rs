@@ -38,7 +38,6 @@ fn sample_task(kind: TaskKind, cron_expr: Option<&str>, run_at: Option<&str>) ->
         base_ref: None,
         model: None,
         reasoning_effort: None,
-        codex_path: None,
         sandbox_mode: SandboxMode::ReadOnly,
         approval_policy: ApprovalPolicy::Never,
         allow_schedule_cli: true,

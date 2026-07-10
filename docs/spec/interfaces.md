@@ -24,7 +24,9 @@ frontend は daemon data を受け入れる前に typed IPC helper と Zod schem
 
 `/` は dashboard を表示せず `/projects` に redirect する。sidebar は project entry、next-run order の task entry、archived task entry、bottom toolbox を持つ。header は scheduler badge と scheduler toggle を表示せず、running / queued を icon + number で表示する。
 
-task creation、editing、duplication は wizard で扱う。実行先は radio card の `チャット` と `プロジェクト` から選ぶ。`プロジェクト` は登録済み Git project を必須とし、実行ごとに isolated worktree を作る。field は prompt、name、schedule、project selection、base ref、任意の task 固有 Codex binary path、model、reasoning effort、lock state、開始状態を含む。task description field は持たず、内容は name と prompt で表す。cron preview は immediate user feedback のため frontend で計算される。
+task creation、editing、duplication は wizard で扱う。実行先は radio card の `チャット` と `プロジェクト` から選ぶ。`プロジェクト` は登録済み Git project を必須とし、実行ごとに isolated worktree を作る。field は prompt、name、schedule、project selection、base ref、model、reasoning effort、lock state、開始状態を含む。task description field と task 固有 Codex binary path は持たず、内容は name と prompt で表す。cron preview は immediate user feedback のため frontend で計算される。
+
+Codex binary path は Settings の global customization checkbox を選択したときだけ `runner.codex_path` input で設定し、すべての task に共通適用する。未選択時は `PATH` 上の `codex` を使う。
 
 full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持、Scheduler CLI の全 action と作成数無制限は app-wide invariant であり、task wizard と Settings には選択肢や warning を表示しない。
 
@@ -104,9 +106,9 @@ task field flag には次が含まれる。
 - Identity and prompt: `--name`, `--prompt`, `--prompt-file`
 - Schedule: `--at`, `--cron`, `--timezone`, `--manual`
 - Target: `--chat`, `--repo`, `--base-ref`。`--repo` は登録または検出した Git project の isolated worktree を常に使用する。
-- Codex: `--codex-path`, `--model`, `--reasoning-effort`
+- Codex: `--model`, `--reasoning-effort`
 - State: `--paused`
-- Update clears: `--clear-run-at`, `--clear-cron`, `--clear-base-ref`, `--clear-codex-path`, `--clear-model`, `--clear-reasoning-effort`
+- Update clears: `--clear-run-at`, `--clear-cron`, `--clear-base-ref`, `--clear-model`, `--clear-reasoning-effort`
 
 `--json` は machine-readable command result を返す。human output は concise で terminal-oriented のままにする。
 

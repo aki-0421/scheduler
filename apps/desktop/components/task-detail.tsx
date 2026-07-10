@@ -396,7 +396,7 @@ export function TaskDetail({
 
             <div className="grid gap-3">
               <h3 className="text-sm font-semibold">Codex</h3>
-              <dl className="grid gap-3 md:grid-cols-3">
+              <dl className="grid gap-3 md:grid-cols-2">
                 <DefinitionItem
                   value={task.codex.model ?? "既定モデル"}
                   label="モデル"
@@ -404,15 +404,6 @@ export function TaskDetail({
                 <DefinitionItem
                   label="推論 effort"
                   value={formatReadableEnum(task.codex.reasoningEffort)}
-                />
-                <DefinitionItem
-                  label="Codex バイナリ"
-                  value={
-                    <PathValue
-                      value={task.codex.codexPath}
-                      fallback="全体設定を使用"
-                    />
-                  }
                 />
               </dl>
             </div>

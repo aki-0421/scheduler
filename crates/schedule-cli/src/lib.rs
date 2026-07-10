@@ -24,6 +24,7 @@ use scheduler_core::model::{
 use scheduler_core::schedule::{
     compute_next_run_at, parse_rfc3339_utc, validate_cron, validate_iana_timezone,
 };
+use scheduler_core::settings::SETTING_RUNNER_CODEX_PATH;
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
 use scheduler_core::util::unique_slug;
 use serde::de::DeserializeOwned;
@@ -166,9 +167,6 @@ struct TaskFields {
     reasoning_effort: Option<String>,
 
     #[arg(long)]
-    codex_path: Option<PathBuf>,
-
-    #[arg(long)]
     paused: bool,
 }
 
@@ -188,9 +186,6 @@ struct ClearFlags {
 
     #[arg(long)]
     clear_reasoning_effort: bool,
-
-    #[arg(long)]
-    clear_codex_path: bool,
 }
 
 #[derive(Debug, Args)]
@@ -1380,10 +1375,6 @@ fn build_create_task(fields: &TaskFields, slug: String) -> Result<TaskDto, CliEr
         next_run_at: schedule.next_run_at,
         target,
         codex: TaskCodexDto {
-            codex_path: fields
-                .codex_path
-                .as_ref()
-                .map(|path| path.to_string_lossy().into_owned()),
             model: fields.model.clone(),
             reasoning_effort: fields.reasoning_effort.clone(),
         },
@@ -1444,12 +1435,6 @@ fn apply_task_patch(
     }
     if clear.clear_reasoning_effort {
         task.codex.reasoning_effort = None;
-    }
-    if let Some(codex_path) = &fields.codex_path {
-        task.codex.codex_path = Some(codex_path.to_string_lossy().into_owned());
-    }
-    if clear.clear_codex_path {
-        task.codex.codex_path = None;
     }
     if fields.paused {
         task.status = TaskStatus::Paused;
@@ -1629,12 +1614,6 @@ fn validate_task_fields(fields: &TaskFields, mode: ValidationMode) -> Result<(),
         let prompt = read_prompt(fields)?;
         validate_prompt_size(&prompt)?;
     }
-    if let Some(codex_path) = &fields.codex_path {
-        if codex_path.as_os_str().is_empty() {
-            return Err(CliError::validation("codex-path must not be empty"));
-        }
-    }
-
     Ok(())
 }
 
@@ -1656,11 +1635,6 @@ fn validate_clear_flags(clear: &ClearFlags, fields: &TaskFields) -> Result<(), C
     if clear.clear_reasoning_effort && fields.reasoning_effort.is_some() {
         return Err(CliError::validation(
             "--clear-reasoning-effort conflicts with --reasoning-effort",
-        ));
-    }
-    if clear.clear_codex_path && fields.codex_path.is_some() {
-        return Err(CliError::validation(
-            "--clear-codex-path conflicts with --codex-path",
         ));
     }
     Ok(())
@@ -2053,7 +2027,7 @@ async fn configured_codex_path(paths: &AppPaths) -> Option<String> {
         .call::<SettingsGetResult, _>(
             METHOD_SETTINGS_GET,
             SettingsGetParams {
-                key: Some("runner.codex_path".to_owned()),
+                key: Some(SETTING_RUNNER_CODEX_PATH.to_owned()),
             },
         )
         .await
@@ -2068,7 +2042,7 @@ async fn configured_codex_path(paths: &AppPaths) -> Option<String> {
     }
     let db = db(paths).await.ok()?;
     let setting = db
-        .get_setting_row("runner.codex_path")
+        .get_setting_row(SETTING_RUNNER_CODEX_PATH)
         .await
         .ok()
         .flatten()?;

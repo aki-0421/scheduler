@@ -173,38 +173,24 @@ describe("TaskWizard cron validation", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the Codex path input only when customization is enabled", async () => {
-    const user = userEvent.setup();
+  it("keeps the global Codex path out of task configuration", () => {
     const draft = {
       ...defaultTaskDraft(),
-      name: "Custom Codex task",
-      prompt: "Run with a task-specific Codex binary.",
+      name: "Global Codex task",
+      prompt: "Run with the globally configured Codex binary.",
     };
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
 
-    const customize = screen.getByRole("checkbox", {
-      name: /Codex バイナリパスをカスタマイズ/,
-    });
-    expect(customize).not.toBeChecked();
+    expect(
+      screen.queryByText("Codex バイナリパスをカスタマイズ"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText("Codex バイナリパス"),
     ).not.toBeInTheDocument();
 
-    await user.click(customize);
-    const path = screen.getByLabelText("Codex バイナリパス");
-    await user.type(path, "/opt/homebrew/bin/codex");
-    expect(path).toHaveValue("/opt/homebrew/bin/codex");
-
-    const dto = buildTaskDto(
-      {
-        ...draft,
-        customCodexPath: true,
-        codexPath: "/opt/homebrew/bin/codex",
-      },
-      false,
-    );
-    expect(dto.codex.codexPath).toBe("/opt/homebrew/bin/codex");
+    const dto = buildTaskDto(draft, false);
+    expect(dto.codex).not.toHaveProperty("codexPath");
     expect(dto).not.toHaveProperty("policies");
     expect(dto.codex).not.toHaveProperty("sandboxMode");
     expect(dto.codex).not.toHaveProperty("approvalPolicy");
@@ -350,8 +336,6 @@ describe("TaskWizard cron validation", () => {
       presetMode: "daily" as const,
       presetTime: "09:00",
       timezone: "UTC",
-      customCodexPath: true,
-      codexPath: "/usr/local/bin/codex",
     };
     const expectedDto = buildTaskDto(
       { ...draft, timezone: getSystemTimezone() },

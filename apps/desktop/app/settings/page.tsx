@@ -80,15 +80,26 @@ function ReadOnlyCode({ value }: { value: string }) {
   );
 }
 
+function hasCustomCodexPath(value: string) {
+  const normalized = value.trim();
+  return normalized !== "" && normalized !== "codex";
+}
+
 export default function SettingsPage() {
   const settings = useSettings();
   const health = useHealth();
   const setSetting = useSetSetting();
   const [form, setForm] = useState<SchedulerSettings>(settings.data);
+  const [customizeCodexPath, setCustomizeCodexPath] = useState(() =>
+    hasCustomCodexPath(settings.data["runner.codex_path"]),
+  );
   const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
 
   useEffect(() => {
     setForm(settings.data);
+    setCustomizeCodexPath(
+      hasCustomCodexPath(settings.data["runner.codex_path"]),
+    );
   }, [settings.data]);
 
   function update<Key extends keyof SchedulerSettings>(
@@ -99,10 +110,23 @@ export default function SettingsPage() {
   }
 
   async function save() {
+    const codexPath = form["runner.codex_path"].trim();
+    if (customizeCodexPath && !codexPath) {
+      toast.error("Codex バイナリパスを入力してください");
+      return;
+    }
+
+    const settingsToSave: SchedulerSettings = {
+      ...form,
+      "runner.codex_path": customizeCodexPath ? codexPath : "codex",
+    };
+    setForm(settingsToSave);
+
     try {
       await Promise.all(
-        (Object.keys(form) as Array<keyof SchedulerSettings>).map((key) =>
-          setSetting.mutateAsync({ key, value: form[key] }),
+        (Object.keys(settingsToSave) as Array<keyof SchedulerSettings>).map(
+          (key) =>
+            setSetting.mutateAsync({ key, value: settingsToSave[key] }),
         ),
       );
       toast.success("設定を保存しました");
@@ -193,17 +217,54 @@ export default function SettingsPage() {
           />
         </SettingRow>
         <SettingRow
-          label="Codex パス"
-          description="Codex CLI を起動するコマンドまたは絶対パスです。"
-          htmlFor="codex-path"
+          label="Codex バイナリパスをカスタマイズ"
+          description="通常は PATH 上の codex を使います。必要な場合だけ、すべてのタスクで使うバイナリパスを指定します。"
+          htmlFor="customize-codex-path"
         >
-          <Input
-            id="codex-path"
-            value={form["runner.codex_path"]}
-            onChange={(event) =>
-              update("runner.codex_path", event.currentTarget.value)
-            }
-          />
+          <div className="grid gap-3">
+            <label className="flex items-center justify-end gap-2 text-sm">
+              <input
+                id="customize-codex-path"
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={customizeCodexPath}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  setCustomizeCodexPath(checked);
+                  if (
+                    checked &&
+                    !hasCustomCodexPath(form["runner.codex_path"])
+                  ) {
+                    update("runner.codex_path", "");
+                  }
+                }}
+              />
+              カスタムパスを使う
+            </label>
+            {customizeCodexPath ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor="codex-path" className="sr-only">
+                  Codex バイナリパス
+                </Label>
+                <Input
+                  id="codex-path"
+                  value={form["runner.codex_path"]}
+                  placeholder="/opt/homebrew/bin/codex"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-invalid={!form["runner.codex_path"].trim() || undefined}
+                  onChange={(event) =>
+                    update("runner.codex_path", event.currentTarget.value)
+                  }
+                />
+                {!form["runner.codex_path"].trim() ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    カスタム Codex バイナリパスを入力してください。
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </SettingRow>
         <SettingRow
           label="既定モデル"

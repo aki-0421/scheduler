@@ -48,8 +48,6 @@ pub struct TaskTargetDto {
 #[serde(rename_all = "camelCase")]
 pub struct TaskCodexDto {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub codex_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
@@ -90,7 +88,6 @@ impl From<&Task> for TaskDto {
                 base_ref: task.base_ref.clone(),
             },
             codex: TaskCodexDto {
-                codex_path: task.codex_path.clone(),
                 model: task.model.clone(),
                 reasoning_effort: task.reasoning_effort.clone(),
             },
@@ -138,10 +135,6 @@ impl TryFrom<TaskDto> for Task {
             base_ref: dto.target.base_ref,
             model: dto.codex.model,
             reasoning_effort: dto.codex.reasoning_effort,
-            codex_path: dto.codex.codex_path.and_then(|path| {
-                let path = path.trim();
-                (!path.is_empty()).then(|| path.to_owned())
-            }),
             sandbox_mode: SandboxMode::DangerFullAccess,
             approval_policy: ApprovalPolicy::Never,
             allow_schedule_cli: true,

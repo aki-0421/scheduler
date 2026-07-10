@@ -10,7 +10,7 @@ read_when:
 
 ルートと surface: `/tasks/new`、`/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`、task detail 上の edit / duplicate dialog。
 
-目的: 明示的な prompt、target、schedule、Codex model / effort、任意の binary path、lock control を持つ scheduled Codex work を作成、follow up、複製、または編集する。
+目的: 明示的な prompt、target、schedule、Codex model / effort、lock control を持つ scheduled Codex work を作成、follow up、複製、または編集する。
 
 入口: `New task`、task session detail からの follow-up action、task detail の edit / duplicate action。
 
@@ -36,9 +36,9 @@ read_when:
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - create、follow-up、duplicate page の `一時停止で作成` と `タスクを作成` は page title と同じ header section の右側に置く。狭い width では title の下に折り返す。
 - validation failure 時の error summary alert。
-- task name、prompt、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、schedule selector、schedule-specific fields、PC timezone indicator、preview、Codex customization、lock / pause control を tab 切り替えなしの 1 画面にまとめる。task description field は置かない。desktop width では task content と execution condition を 2 column に分け、狭い width では 1 column に戻す。
+- task name、prompt、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、schedule selector、schedule-specific fields、PC timezone indicator、preview、Codex model / effort、lock / pause control を tab 切り替えなしの 1 画面にまとめる。task description field は置かない。desktop width では task content と execution condition を 2 column に分け、狭い width では 1 column に戻す。
 - prompt textarea は resize 可能なまま compact な初期高にし、next-five-runs preview は複数列で表示できる幅では 2 column にして縦方向の占有を抑える。
-- `詳細` section: 任意の Codex binary path customization、Codex model、reasoning effort、lock / pause controls。main task fields の下に separator を挟んで置き、field は 2 column の compact layout で表示し、policy 説明や固定値の summary を置かない。
+- `詳細` section: Codex model、reasoning effort、lock / pause controls。main task fields の下に separator を挟んで置き、field は 2 column の compact layout で表示し、policy 説明や固定値の summary を置かない。
 - edit dialog の footer には cancel と save action を置く。create、follow-up、duplicate page には footer action を置かない。
 
 フィールドとコントロール:
@@ -50,7 +50,7 @@ read_when:
 - base ref。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
 - once date and time、preset time、weekly day、custom 5-field cron、PC timezone indicator、next-five-runs preview。
-- advanced settings: `Codex バイナリパスをカスタマイズ` checkbox、checkbox が on の場合だけ表示する path input、model select、model が対応する reasoning effort select、start paused switch。`詳細` section に compact にまとめる。
+- advanced settings: model select、model が対応する reasoning effort select、start paused switch。`詳細` section に compact にまとめる。Codex binary path は global setting のため表示しない。
 - lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
 
 既定値:
@@ -59,7 +59,6 @@ read_when:
 - timezone は browser が解決した現在の PC timezone を自動使用し、取得できない場合は `UTC` を使う。user-selectable default は持たない。
 - default model は `gpt-5.5`。
 - model と effort の組み合わせは Codex model catalog に合わせる。`gpt-5.5`、`gpt-5.4`、`gpt-5.4-mini` は `low / medium / high / xhigh` に対応し default は `medium`、`gpt-5.3-codex-spark` は同じ effort に対応し default は `high`。内部用の `codex-auto-review` は表示しない。
-- task 固有 Codex binary path customization は default off。off の場合は global path または `PATH` を使う。
 - Task lock は default off。
 
 model catalog を更新するときは、bundled version と同等の Codex CLI で `codex debug models` を実行し、各 model の `supported_reasoning_levels` と `default_reasoning_level` を確認する。あわせて OpenAI 公式 model / Codex config reference と照合し、内部用途の model は task wizard に追加しない。
@@ -67,7 +66,6 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 バリデーションとエラー:
 
 - required: prompt、task name、frontier model、選択 model が対応する reasoning effort。timezone は PC から自動設定される内部必須値である。
-- Codex binary path customization が on の場合、空ではない path が必要。
 - project target には Git root を持つ registered Git project が必要。
 - once schedule には現在の PC timezone に対して valid な date and time が必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。
@@ -103,7 +101,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - project target に registered Git project がない場合、save は blocked される。
 - 実行先は `チャット` / `プロジェクト` の keyboard-operable radio cards で選択でき、`プロジェクト` を保存した DTO は `repo-worktree` になる。
 - locked task を edit しようとした場合、unlock なしでは save できない。
-- Codex binary path customization を on にすると path input が表示され、off に戻すと task 固有 path を保存 DTO から削除する。
+- create、follow-up、duplicate、edit のいずれにも Codex binary path field は表示されず、保存 DTO に task 固有 path を含めない。
 - model を変更すると reasoning effort はその model の default に切り替わり、その後 user が対応 effort から変更できる。
 - valid cron schedule の場合、preview は next five runs を list する。
 - create、follow-up、duplicate、edit では timezone selector を表示せず、保存時点の PC timezone を task DTO に設定する。

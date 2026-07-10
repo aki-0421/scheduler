@@ -99,7 +99,6 @@ export const taskTargetDtoSchema = z.object({
 });
 
 export const taskCodexDtoSchema = z.object({
-  codexPath: optionalString,
   model: optionalString,
   reasoningEffort: optionalString,
 });
