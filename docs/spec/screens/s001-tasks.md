@@ -28,7 +28,7 @@ read_when:
 - `/tasks?view=archived`: archived task list。completed one-shot、paused / stopped、deleted task を execution newest-first で表示する。
 - `/tasks?task=<taskId>`: task detail page。`実行履歴` と `設定` の 2 tabs だけを表示し、初期表示は `実行履歴` にする。常時表示の right action panel と edit dialog は置かない。
 - header の文脈説明は title 右の `?` tooltip に置く。subtitle として常時表示しない。list section には title と同義の補足説明文や count 説明文を置かない。
-- detail header: task name と、その右側に right-aligned task actions。actions は run now、duplicate、lock / unlock と、pause / resume・delete を含む overflow menu で構成する。狭い width では title の下へ折り返す。
+- detail header: task name と、その右側に right-aligned task actions。最優先の run now は primary button、schedule state の pause / resume は secondary button として直接表示する。duplicate、lock / unlock、delete は label 付きの `管理` menu にまとめ、delete は separator で他の管理 action から分離する。狭い width では title の下へ折り返す。
 - tabs: `実行履歴`、`設定`。`実行履歴` は session history table だけを表示する。`設定` は prompt を含む editable task configuration だけを表示し、task action や変更履歴は置かない。
 - archived list と task detail の tab content は page canvas に直接配置し、外側の rounded border、別背景、shadow、内側 padding を持つ panel で囲まない。list row の区切りは divider と spacing で示す。
 - tab content の先頭には、tab label を繰り返すだけの section heading や説明文を置かない。
@@ -40,8 +40,8 @@ read_when:
 フィールドとコントロール:
 
 - Archived sort: 実行の新しい順。実行がない archived task は updatedAt または createdAt の新しい順で末尾に置く。
-- Detail actions: detail header 内の run now、pause / resume、duplicate、lock / unlock、delete。設定変更は `設定` tab の `変更を保存` で確定する。
-- Lock: locked task は AI / scheduled-run actor からの edit、delete、pause、resume を拒否する。user actor は unlock 後に変更できる。
+- Detail actions: detail header 内の run now、pause / resume、`管理` menu。menu は duplicate、lock / unlock、delete をこの順で持つ。設定変更は `設定` tab の `変更を保存` で確定する。
+- Lock: locked task は AI エージェントが使う CLI / scheduled-run actor からの edit、delete、pause、resume を拒否する。desktop UI の user actor は lock 中も edit、delete、pause、resume できる。
 - Delete confirmation: run history を保持し、active schedule から task を削除する。
 - Prompt は `設定` tab の editable textarea として表示する。
 
@@ -51,29 +51,31 @@ read_when:
 - Empty archived list: 表示領域を埋める高さで `アーカイブ済みタスクはありません` と active task creation action を表示する。
 - Selected task loading: page skeleton。
 - Selected task populated: session history table を `実行履歴` に、editable configuration を `設定` に、task actions を detail header に表示する。
-- Locked task: disabled configuration / delete state、settings 内の unlock guidance、detail header の unlock action を表示する。
+- Locked task: configuration と user action は通常どおり利用できる。detail header の `管理` trigger に lock icon を表示し、menu 内に unlock action を置く。settings 内に lock warning や unlock guidance は表示しない。
+- Deleted task: run now は disabled、pause / resume は表示しない。duplicate と lock / unlock は `管理` menu から利用でき、delete は disabled にする。
 
 バリデーションとエラー:
 
 - mutation は success / failure の toast feedback を使う。
 - delete は confirmation dialog で guard される。
-- locked task を編集または削除しようとした場合、UI は action を disabled にし、backend から denial が返った場合は lock reason を toast で表示する。
+- desktop UI は lock state にかかわらず edit、delete、pause、resume を許可する。CLI / scheduled-run actor による mutation は backend が拒否する。
 
 アクセシビリティ:
 
 - tablist は keyboard navigation を持つ。
 - run history row は task-session link として識別できる accessible name を持つ。
 - detail header の actions は task-specific label を持つ。
+- `管理` menu は trigger 名で目的を明示し、arrow key、Escape、focus return を keyboard で利用できる。
 - delete confirmation は明確な cancel label と destructive action label を持つ。
 
 検証:
 
-- `pnpm --filter desktop exec vitest run test/task-detail.test.tsx test/task-actions.test.tsx` は 2 tabs だけが表示されること、`実行履歴` が初期選択されて table 以外を持たないこと、`設定` が task creation form を inline で再利用すること、locked task の form が disabled になること、detail header actions の構成を検証する。
-- UI を変更した場合は `agent-browser` で `/tasks/?task=<taskId>` を開き、desktop と mobile width で横 overflow がないこと、arrow key で tabs を移動できること、unlocked task は inline save できること、locked task は unlock action 以外の設定変更を行えないことを確認する。
+- `pnpm --filter desktop exec vitest run test/task-detail.test.tsx test/task-actions.test.tsx` は 2 tabs だけが表示されること、`実行履歴` が初期選択されて table 以外を持たないこと、`設定` が task creation form を inline で再利用すること、locked task の form と user action が利用できること、run now・pause / resume・`管理` menu の hierarchy を検証する。
+- UI を変更した場合は `agent-browser` で `/tasks/?task=<taskId>` を開き、desktop と mobile width で横 overflow がないこと、arrow key で tabs と `管理` menu を操作できること、lock state にかかわらず inline save と user action を利用できることを確認する。
 
 セキュリティと安全性:
 
-- locked task は scheduled Codex session と CLI actor による destructive / mutating action を拒否する。lock / unlock は audit event に記録する。
+- locked task は scheduled Codex session と CLI actor による destructive / mutating action を拒否する。desktop UI の user actor は lock 中も操作でき、lock / unlock は audit event に記録する。
 
 受け入れ条件:
 
@@ -83,9 +85,9 @@ read_when:
 - session history row を押すと `/runs?run=<runId>` が開く。
 - archived list は completed one-shot と paused / stopped task を実行の新しい順に表示する。
 - `Run now` が成功した場合、app は scheduler data を invalidate し、`Run queued` toast を表示する。
-- locked task の edit / delete action は disabled で、unlock action が visible である。
+- locked task でも desktop UI の edit / delete / pause / resume action と設定保存を利用でき、`管理` trigger に lock state、menu 内に unlock action が表示される。
 - `設定` tab は新規 task 作成画面と同じ field、section order、responsive layout を再利用し、dialog を開かずに編集・保存できる。
-- detail header の右側に run now、duplicate、lock / unlock、overflow actions が表示される。
+- detail header の右側に primary の run now、secondary の pause / resume、duplicate・lock / unlock・delete を構造化した `管理` menu が表示される。
 - `実行履歴` tab は session history table だけを表示し、task summary や設定値を表示しない。
 - `設定` tab は editable configuration だけを表示し、task actions と変更履歴を表示しない。
 - delete が confirmed された場合、run history は Runs から引き続き discoverable である。

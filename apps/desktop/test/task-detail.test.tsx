@@ -86,7 +86,7 @@ describe("TaskDetail", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("disables inline settings until a locked task is unlocked", async () => {
+  it("keeps inline settings editable for locked tasks", async () => {
     const user = userEvent.setup();
     renderWithClient(
       <TaskDetail task={{ ...task, locked: true }} runs={[run]} />,
@@ -95,15 +95,13 @@ describe("TaskDetail", () => {
     await user.click(screen.getByRole("tab", { name: "設定" }));
 
     expect(
-      screen.getByText("このタスクはロックされています"),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("タスク名")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "変更を保存" })).toBeDisabled();
-    expect(
-      screen.getByText(/右上の「ロックを解除」を使用してください/),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "ロックを解除" }),
+      screen.queryByText("このタスクはロックされています"),
     ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("タスク名")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "変更を保存" })).toBeEnabled();
+    expect(screen.getByRole("switch", { name: "タスクをロック" })).toBeChecked();
+    expect(
+      screen.getByText("AIエージェントやCLIからの変更・停止・削除を防ぎます。"),
+    ).toBeInTheDocument();
   });
 });

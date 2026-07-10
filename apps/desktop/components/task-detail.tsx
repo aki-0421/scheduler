@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { LockKeyhole } from "lucide-react";
 
 import { RunStatusBadge } from "@/components/status-badge";
 import { TaskWizard } from "@/components/task-wizard";
@@ -9,7 +8,6 @@ import {
   formatAbsoluteDateTime,
   formatRunDuration,
 } from "@/components/task-run-display";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RunDto, TaskDto } from "@/lib/types";
 
@@ -86,24 +84,11 @@ export function TaskDetail({ task, runs }: TaskDetailProps) {
       </TabsContent>
 
       <TabsContent value="settings">
-        <div className="grid gap-5">
-          {task.locked ? (
-            <Alert>
-              <LockKeyhole aria-hidden="true" />
-              <AlertTitle>このタスクはロックされています</AlertTitle>
-              <AlertDescription>
-                設定を変更するには、右上の「ロックを解除」を使用してください。
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          <TaskWizard
-            key={`${task.id}:${task.status}:${task.locked}`}
-            task={task}
-            disabled={task.locked}
-            showCancelAction={false}
-          />
-        </div>
+        <TaskWizard
+          key={`${task.id}:${task.status}:${task.locked}`}
+          task={task}
+          showCancelAction={false}
+        />
       </TabsContent>
     </Tabs>
   );

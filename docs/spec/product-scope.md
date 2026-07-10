@@ -24,7 +24,7 @@ app は、汎用 admin dashboard ではなく、AI work の local automation con
 - すべての task を full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持で実行する。Scheduler CLI は全 action を作成数上限なしで常に利用できる。
 - task list、task detail、run history、run detail、log tail、artifact、audit event、daemon diagnostics の確認。
 - local Git repository を project として追加し、scheduler-owned worktree の source として使う。
-- task を lock し、AI / scheduled-run actor からの edit、delete、pause、resume を防ぐ。
+- task を lock し、AI エージェントが使う CLI / scheduled-run actor からの edit、delete、pause、resume を防ぐ。desktop UI の user operation は lock 中も利用できる。
 - terminal または scheduled Codex session から `codex-schedule` を使い、daemon 経由で task を管理する。
 
 ## 現在のプロダクトシェル

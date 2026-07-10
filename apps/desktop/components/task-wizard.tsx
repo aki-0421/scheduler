@@ -61,7 +61,6 @@ type TaskWizardProps = {
   cancelHref?: string;
   onCancel?: () => void;
   onSaved?: (task: TaskDto) => void;
-  disabled?: boolean;
   showCancelAction?: boolean;
   pageHeader?: {
     title: string;
@@ -310,7 +309,6 @@ export function TaskWizard({
   cancelHref = "/tasks",
   onCancel,
   onSaved,
-  disabled = false,
   showCancelAction = true,
   pageHeader,
 }: TaskWizardProps) {
@@ -545,7 +543,7 @@ export function TaskWizard({
           <Button
             type="button"
             variant="outline"
-            disabled={disabled || isSaving || !canSave}
+            disabled={isSaving || !canSave}
             onClick={() => void save(true)}
           >
             一時停止で作成
@@ -553,7 +551,7 @@ export function TaskWizard({
         ) : null}
         <Button
           type="button"
-          disabled={disabled || isSaving || !canSave}
+          disabled={isSaving || !canSave}
           onClick={() => void save(false)}
         >
           {task ? "変更を保存" : "タスクを作成"}
@@ -597,10 +595,7 @@ export function TaskWizard({
         </Alert>
       ) : null}
 
-      <fieldset
-        disabled={disabled}
-        className="m-0 grid min-w-0 gap-5 border-0 p-0"
-      >
+      <fieldset className="m-0 grid min-w-0 gap-5 border-0 p-0">
         <section
           aria-label="基本設定"
           className="grid items-start gap-5 md:grid-cols-2"
@@ -884,7 +879,7 @@ export function TaskWizard({
                 id="task-locked"
                 checked={draft.locked}
                 label="タスクをロック"
-                description="スケジュール実行からの変更・停止・削除を防ぎます。"
+                description="AIエージェントやCLIからの変更・停止・削除を防ぎます。"
                 onChange={(checked) => update("locked", checked)}
               />
               <SwitchRow
