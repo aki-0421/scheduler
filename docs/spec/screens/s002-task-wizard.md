@@ -40,7 +40,7 @@ read_when:
 - second section は model と `思考レベル` を左寄せの compact control として横並びにし、狭い width では折り返す。
 - third section は desktop width でおよそ `3:1` の 2 column にする。左側は target と prompt、右側は compact な `オプション` group として lock / pause control を表示する。狭い width では 1 column に戻す。
 - prompt textarea は resize 可能なまま compact な初期高にする。実行タイミングの summary、next-five-runs、once preview、manual guidance、PC timezone の補助文は表示しない。
-- section は page canvas に直接配置し、separator で区切る。panel surface や固定 execution policy の summary は置かない。
+- section は page canvas に直接配置する。task name / schedule と model / 思考レベルの間には separator を置かず、実行内容と options の前だけを separator で区切る。panel surface や固定 execution policy の summary は置かない。
 - edit dialog の footer には cancel と save action を置く。create、follow-up、duplicate page には footer action を置かない。
 
 フィールドとコントロール:
@@ -120,6 +120,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - create、follow-up、duplicate、edit のすべてで、基本設定、model 設定、実行内容と options が tab 切り替えなしの 1 画面に表示される。
 - create、follow-up、duplicate page では cancel button が表示されず、`一時停止で作成` と `タスクを作成` が page title と同じ header section の右側に表示される。
 - desktop width では first section が task name / schedule の等分 2 column、second section が左寄せの model / 思考レベル、third section が target・prompt / options のおよそ `3:1` になる。
+- task name / schedule と model / 思考レベルは separator なしで連続して表示し、model / 思考レベルと実行内容の間だけに separator を表示する。
 - create、follow-up、duplicate、edit のいずれにも task description input は表示されず、保存 DTO に description field を含めない。
 
 既知の gap:

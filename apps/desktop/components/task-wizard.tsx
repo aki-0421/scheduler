@@ -725,8 +725,6 @@ export function TaskWizard({
           </div>
         </section>
 
-        <Separator />
-
         <section
           aria-label="モデル設定"
           className="flex flex-wrap items-start gap-4"

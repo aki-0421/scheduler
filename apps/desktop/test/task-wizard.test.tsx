@@ -167,6 +167,15 @@ describe("TaskWizard cron validation", () => {
     expect(taskToDraft(task).targetMode).toBe("repo-worktree");
   });
 
+  it("places task and model fields without a separator between them", () => {
+    renderWithClient(<TaskWizard />);
+
+    const basicSettings = screen.getByRole("region", { name: "基本設定" });
+    const modelSettings = screen.getByRole("region", { name: "モデル設定" });
+
+    expect(basicSettings.nextElementSibling).toBe(modelSettings);
+  });
+
   it("selects chat or project with radio cards", async () => {
     const user = userEvent.setup();
 
