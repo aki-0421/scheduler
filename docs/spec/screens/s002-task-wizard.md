@@ -8,18 +8,18 @@ read_when:
 
 # S002 Task Wizard
 
-ルートと surface: `/tasks/new`、`/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`、task detail 上の edit / duplicate dialog。
+ルートと surface: `/tasks/new`、`/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`、task detail の `設定` tab にある inline edit form。
 
 目的: 明示的な prompt、target、schedule、Codex model / effort、lock control を持つ scheduled Codex work を作成、follow up、複製、または編集する。
 
-入口: `New task`、task session detail からの follow-up action、task detail の edit / duplicate action。
+入口: `New task`、task session detail からの follow-up action、task detail の `設定` tab、duplicate action。
 
 出口:
 
 - create または follow-up 成功時は `/tasks?task=<newTaskId>` に redirect する。
 - duplicate 成功時は複製された task の `/tasks?task=<newTaskId>` に redirect する。
-- edit 成功時は dialog を閉じ、task detail を refresh する。
-- create、follow-up、duplicate page には cancel button を置かず、sidebar、breadcrumb、browser navigation から離脱する。edit dialog の cancel は dialog を閉じる。
+- edit 成功時は task detail に留まり、task detail data を refresh する。
+- create、follow-up、duplicate page と task detail の inline edit form には cancel button を置かず、sidebar、breadcrumb、browser navigation または tab から離脱する。
 
 データ依存:
 
@@ -31,7 +31,7 @@ read_when:
 
 レイアウト領域:
 
-- page または dialog header。
+- create、follow-up、duplicate page header。task detail では既存の page header と tabs を使い、wizard 固有 header は置かない。
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - create、follow-up、duplicate page の `一時停止で作成` と `タスクを作成` は page title と同じ header section の右側に置く。狭い width では title の下に折り返す。
 - validation failure 時の error summary alert。
@@ -41,7 +41,7 @@ read_when:
 - third section は desktop width でおよそ `3:1` の 2 column にする。左側は target と prompt、右側は compact な `オプション` group として lock / pause control を表示する。狭い width では 1 column に戻す。
 - prompt textarea は resize 可能なまま compact な初期高にする。実行タイミングの summary、next-five-runs、once preview、manual guidance、PC timezone の補助文は表示しない。
 - section は page canvas に直接配置する。task name / schedule と model / 思考レベルの間には separator を置かず、実行内容と options の前だけを separator で区切る。panel surface や固定 execution policy の summary は置かない。
-- edit dialog の footer には cancel と save action を置く。create、follow-up、duplicate page には footer action を置かない。
+- task detail の inline edit form は末尾に right-aligned save action だけを置く。create、follow-up、duplicate page には footer action を置かない。
 
 フィールドとコントロール:
 
@@ -81,7 +81,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - follow-up prefill loading は skeleton content を表示する。
 - follow-up prefill は source run ID の文脈を prompt 冒頭に追加し、元 task の prompt を続ける。duplicate は元 task の prompt をそのまま複製する。
 - project selection state は registered project name を Select に表示する。local path や project registration action は表示しない。
-- locked task edit は lock badge と unlock guidance を表示する。
+- locked task edit は task detail 側で form controls を disabled にし、lock badge、unlock guidance、unlock action を表示する。
 - schedule control は実行タイミングの preview、timezone selector、PC timezone の補助文を表示しない。現在の PC timezone は内部で自動使用する。
 
 アクセシビリティ:
@@ -116,9 +116,10 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - create、follow-up、duplicate、edit では timezone selector を表示せず、保存時点の PC timezone を task DTO に設定する。
 - create が成功した場合、user は `/tasks?task=<newTaskId>` に遷移する。
 - duplicate が成功した場合、lock state は unlocked で作成される。
-- edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
-- create、follow-up、duplicate、edit のすべてで、基本設定、model 設定、実行内容と options が tab 切り替えなしの 1 画面に表示される。
+- edit が成功した場合、task detail に留まり、task detail data は refresh する。
+- create、follow-up、duplicate、edit のすべてで、基本設定、model 設定、実行内容と options が wizard 内の tab 切り替えなしで 1 画面に表示される。task detail 自体の `設定` tab 内でも同じ section order と controls を再利用する。
 - create、follow-up、duplicate page では cancel button が表示されず、`一時停止で作成` と `タスクを作成` が page title と同じ header section の右側に表示される。
+- task detail の inline edit form では cancel button が表示されず、`変更を保存` が form 末尾の右側に表示される。
 - desktop width では first section が task name / schedule の等分 2 column、second section が左寄せの model / 思考レベル、third section が target・prompt / options のおよそ `3:1` になる。
 - task name / schedule と model / 思考レベルは separator なしで連続して表示し、model / 思考レベルと実行内容の間だけに separator を表示する。
 - create、follow-up、duplicate、edit のいずれにも task description input は表示されず、保存 DTO に description field を含めない。

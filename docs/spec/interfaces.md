@@ -30,7 +30,7 @@ Codex binary path は Settings の global customization checkbox を選択した
 
 full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持、Scheduler CLI の全 action と作成数無制限は app-wide invariant であり、task wizard と Settings には選択肢や warning を表示しない。
 
-task detail は `/tasks?task=<taskId>` で開き、session history、prompt、settings、audit log を tab で表示する。session row は `/runs?run=<runId>` に遷移し、run detail は chat UI で prompt、assistant output、tool usage、daemon event を表示する。
+task detail は `/tasks?task=<taskId>` で開き、初期表示の `実行履歴` と `設定` の 2 tabs を持つ。`実行履歴` は task summary と session history を表示し、`設定` は task creation と同じ inline form に prompt、settings、task actions、audit log を統合する。session row は `/runs?run=<runId>` に遷移し、run detail は chat UI で prompt、assistant output、tool usage、daemon event を表示する。
 
 ## Tauri Commands
 

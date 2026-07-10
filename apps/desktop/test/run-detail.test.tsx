@@ -139,6 +139,7 @@ describe("RunDetail", () => {
       status: "queued",
       findingsCount: 0,
       createdScheduleCount: 0,
+      artifacts: [],
     });
 
     renderWithClient(<RunDetail run={{ ...run, status: "failed" }} />);

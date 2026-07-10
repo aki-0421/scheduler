@@ -12,6 +12,7 @@ const activeTask: TaskDto = {
   slug: "task-test",
   name: "Task Test",
   status: "active",
+  locked: false,
   kind: "manual",
   timezone: "UTC",
   target: { mode: "chat" },
@@ -43,6 +44,7 @@ describe("TaskRowActions", () => {
       status: "queued",
       findingsCount: 0,
       createdScheduleCount: 0,
+      artifacts: [],
     });
 
     renderWithClient(<TaskRowActions task={activeTask} />);

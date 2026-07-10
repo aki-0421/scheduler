@@ -13,25 +13,18 @@ import {
   Repeat,
   Timer,
 } from "lucide-react";
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
 import { TaskDetail } from "@/components/task-detail";
-import { TaskWizard } from "@/components/task-wizard";
 import {
   describeTaskSchedule,
   describeTaskTarget,
   formatAbsoluteDateTime,
   formatRunDuration,
 } from "@/components/task-run-display";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ValueBadge } from "@/components/value-badge";
 import { taskLastRun } from "@/lib/format";
@@ -72,7 +65,6 @@ function taskScheduleIcon(task: TaskDto) {
 }
 
 function TaskScreen({ taskId }: { taskId: string }) {
-  const [editingTask, setEditingTask] = useState<TaskDto | undefined>();
   const task = useTask(taskId);
   const runs = useRuns({ taskId });
   const audits = useTaskAudits(taskId);
@@ -99,33 +91,13 @@ function TaskScreen({ taskId }: { taskId: string }) {
     <div className="grid gap-5">
       <PageHeader
         title={task.data.name}
-        description="このタスクの概要、実行履歴、プロンプト、設定、監査ログ、操作を確認します。"
+        description="このタスクの実行履歴を確認し、設定と操作を管理します。"
       />
       <TaskDetail
         task={task.data}
         runs={runs.data ?? []}
         auditEvents={audits.data}
-        onEdit={setEditingTask}
       />
-
-      <Dialog
-        open={Boolean(editingTask)}
-        onOpenChange={(open) => !open && setEditingTask(undefined)}
-      >
-        <DialogContent className="max-h-[90dvh] w-[min(96vw,1100px)] overflow-auto">
-          <DialogHeader>
-            <DialogTitle>タスクを編集</DialogTitle>
-          </DialogHeader>
-          {editingTask ? (
-            <TaskWizard
-              task={editingTask}
-              cancelHref={`/tasks?task=${encodeURIComponent(editingTask.id)}`}
-              onCancel={() => setEditingTask(undefined)}
-              onSaved={() => setEditingTask(undefined)}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

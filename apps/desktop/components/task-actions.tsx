@@ -228,19 +228,21 @@ export function TaskRowActions({ task, onEdit, onDeleted, className }: TaskRowAc
               {task.locked ? "ロック済み" : "再開"}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start"
-            role="menuitem"
-            aria-label={`${task.name}を編集`}
-            disabled={task.locked}
-            onClick={editTask}
-          >
-            <Pencil className="size-4" aria-hidden="true" />
-            編集
-          </Button>
+          {onEdit ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              role="menuitem"
+              aria-label={`${task.name}を編集`}
+              disabled={task.locked}
+              onClick={editTask}
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+              編集
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="ghost"

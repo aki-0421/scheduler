@@ -33,7 +33,7 @@ desktop app には次の top-level page がある。
 
 - App shell: project entry、next-run order の task sidebar、archived task entry、bottom toolbox settings、icon + number health count。
 - `Projects`: file browser からの project 追加、GitHub `user(org)/repo` display、non-GitHub project name editing、active task count、project removal confirmation。
-- `Tasks`: archived list、task detail、session history、tabbed prompt / settings / audit inspection、right-column actions、lock / unlock。
+- `Tasks`: archived list、task detail、初期表示の session history、creation form と共通の inline settings、task actions、audit inspection、lock / unlock。
 - `Runs`: global history preset、status と task filter、task session detail、chat UI、tool usage、prompt/output/log/artifact inspection、cancel support。
 - `Settings`: scheduler switch、notification switch、global concurrency、global Codex path、default model、schema version、固定 local path、diagnostics export。
 

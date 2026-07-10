@@ -3,23 +3,20 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode } from "react";
-import {
-  LockKeyhole,
-  LockOpen,
-  PlusCircle,
-} from "lucide-react";
+import { ChevronRight, LockKeyhole, LockOpen, PlusCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
 import { TaskRowActions } from "@/components/task-actions";
+import { TaskWizard } from "@/components/task-wizard";
 import {
-  CopyButton,
   describeTaskSchedule,
   describeTaskTarget,
   formatAbsoluteDateTime,
   formatReadableEnum,
   formatRunDuration,
 } from "@/components/task-run-display";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,24 +28,10 @@ type TaskDetailProps = {
   task: TaskDto;
   runs: RunDto[];
   auditEvents?: TaskAuditEvent[];
-  onEdit?: (task: TaskDto) => void;
 };
 
-function DetailSection({
-  actions,
-  children,
-}: {
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="grid gap-3">
-      {actions ? (
-        <div className="flex flex-wrap justify-end gap-2">{actions}</div>
-      ) : null}
-      {children}
-    </section>
-  );
+function DetailSection({ children }: { children: ReactNode }) {
+  return <section className="grid gap-5">{children}</section>;
 }
 
 function DefinitionItem({
@@ -70,34 +53,6 @@ function DefinitionItem({
         <dd className="mt-1 text-xs text-muted-foreground">{detail}</dd>
       ) : null}
     </div>
-  );
-}
-
-function PathValue({
-  value,
-  fallback = "未設定",
-}: {
-  value?: string;
-  fallback?: string;
-}) {
-  if (!value) {
-    return <span className="text-muted-foreground">{fallback}</span>;
-  }
-
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span className="truncate font-mono text-xs" title={value}>
-        {value}
-      </span>
-      <CopyButton
-        value={value}
-        label="コピー"
-        toastLabel="パス"
-        size="sm"
-        variant="ghost"
-        className="h-7 shrink-0 px-2 text-xs"
-      />
-    </span>
   );
 }
 
@@ -134,7 +89,7 @@ function AuditPayloadDetails({
       <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
         {label}
       </summary>
-      <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-3 font-mono text-xs">
+      <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs">
         {formatted}
       </pre>
     </details>
@@ -177,7 +132,6 @@ export function TaskDetail({
   task,
   runs,
   auditEvents: loadedAuditEvents,
-  onEdit,
 }: TaskDetailProps) {
   const router = useRouter();
   const recentRuns = runs
@@ -187,8 +141,7 @@ export function TaskDetail({
       (right.startedAt ?? right.scheduledFor ?? "").localeCompare(
         left.startedAt ?? left.scheduledFor ?? "",
       ),
-    )
-    .slice();
+    );
   const auditEvents = loadedAuditEvents ?? task.auditEvents ?? [];
   const schedule = describeTaskSchedule(task);
   const target = describeTaskTarget(task);
@@ -216,17 +169,13 @@ export function TaskDetail({
   }
 
   return (
-    <Tabs defaultValue="overview" className="grid min-w-0 gap-4">
+    <Tabs defaultValue="history" className="grid min-w-0 gap-4">
       <TabsList className="w-full justify-start">
-        <TabsTrigger value="overview">概要</TabsTrigger>
         <TabsTrigger value="history">実行履歴</TabsTrigger>
-        <TabsTrigger value="prompt">プロンプト</TabsTrigger>
         <TabsTrigger value="settings">設定</TabsTrigger>
-        <TabsTrigger value="audit">監査ログ</TabsTrigger>
-        <TabsTrigger value="actions">操作</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="overview">
+      <TabsContent value="history">
         <DetailSection>
           <div className="grid gap-4">
             <div>
@@ -272,11 +221,7 @@ export function TaskDetail({
               />
             </dl>
           </div>
-        </DetailSection>
-      </TabsContent>
 
-      <TabsContent value="history">
-        <DetailSection>
           <div className="border-y">
             <div className="hidden grid-cols-[8rem_12rem_8rem_minmax(0,1fr)] gap-3 bg-muted px-3 py-2 text-xs font-medium text-muted-foreground md:grid">
               <span>状態</span>
@@ -330,134 +275,105 @@ export function TaskDetail({
         </DetailSection>
       </TabsContent>
 
-      <TabsContent value="prompt">
-        <DetailSection
-          actions={
-            <CopyButton value={task.prompt.body} toastLabel="プロンプト" />
-          }
-        >
-          <pre className="max-h-[24rem] overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs leading-5">
-            {task.prompt.body}
-          </pre>
-        </DetailSection>
-      </TabsContent>
-
       <TabsContent value="settings">
         <DetailSection>
-          <div className="grid gap-5">
-            <div className="grid gap-3">
-              <h3 className="text-sm font-semibold">スケジュール</h3>
-              <dl className="grid gap-3 md:grid-cols-3">
-                <DefinitionItem
-                  label="スケジュール"
-                  value={schedule.label}
-                  detail={schedule.detail}
+          {task.locked ? (
+            <Alert>
+              <LockKeyhole aria-hidden="true" />
+              <AlertTitle>このタスクはロックされています</AlertTitle>
+              <AlertDescription className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-pretty">
+                  設定を変更するには、先にロックを解除してください。
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={updateTask.isPending}
+                  onClick={toggleLock}
+                >
+                  <LockOpen data-icon="inline-start" aria-hidden="true" />
+                  ロックを解除
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          <TaskWizard
+            key={`${task.id}:${task.status}:${task.locked}`}
+            task={task}
+            disabled={task.locked}
+            showCancelAction={false}
+          />
+
+          <section
+            aria-labelledby="task-actions-title"
+            className="grid gap-3 border-t pt-5"
+          >
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <h3 id="task-actions-title" className="text-sm font-semibold">
+                  タスク操作
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground text-pretty">
+                  手動実行、稼働状態、複製、ロック、削除を管理します。
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <TaskRowActions
+                  task={task}
+                  onDeleted={() => router.push("/tasks?view=archived")}
                 />
-                <DefinitionItem label="タイムゾーン" value={task.timezone} />
-                <DefinitionItem
-                  label="次回実行"
-                  value={
-                    <span className="tabular-nums">
-                      {formatAbsoluteDateTime(task.nextRunAt)}
-                    </span>
-                  }
-                />
-              </dl>
+                <Button variant="outline" size="sm" asChild>
+                  <Link
+                    href={`/tasks/new?duplicateFromTask=${encodeURIComponent(task.id)}`}
+                  >
+                    <PlusCircle data-icon="inline-start" aria-hidden="true" />
+                    複製
+                  </Link>
+                </Button>
+                <Button
+                  type="button"
+                  variant={task.locked ? "default" : "outline"}
+                  size="sm"
+                  disabled={updateTask.isPending}
+                  onClick={toggleLock}
+                >
+                  {task.locked ? (
+                    <LockOpen data-icon="inline-start" aria-hidden="true" />
+                  ) : (
+                    <LockKeyhole data-icon="inline-start" aria-hidden="true" />
+                  )}
+                  {task.locked ? "ロックを解除" : "ロック"}
+                </Button>
+              </div>
             </div>
+          </section>
 
-            <div className="grid gap-3">
-              <h3 className="text-sm font-semibold">実行先</h3>
-              <dl className="grid gap-3 md:grid-cols-3">
-                <DefinitionItem
-                  label="実行先モード"
-                  value={target.label}
-                  detail={target.detail}
+          <details className="group border-t pt-5">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold marker:hidden">
+              <span className="flex items-center gap-2">
+                <ChevronRight
+                  className="size-4 text-muted-foreground group-open:rotate-90"
+                  aria-hidden="true"
                 />
-                <DefinitionItem
-                  label="リポジトリ"
-                  value={
-                    <PathValue
-                      value={task.target.repoPath}
-                      fallback="アプリ管理ワークスペース"
-                    />
-                  }
-                  className="md:col-span-2"
-                />
-                <DefinitionItem
-                  label="ベース参照"
-                  value={
-                    <span className="font-mono text-xs">
-                      {task.target.baseRef ?? "既定"}
-                    </span>
-                  }
-                />
-              </dl>
-            </div>
-
-            <div className="grid gap-3">
-              <h3 className="text-sm font-semibold">Codex</h3>
-              <dl className="grid gap-3 md:grid-cols-2">
-                <DefinitionItem
-                  value={task.codex.model ?? "既定モデル"}
-                  label="モデル"
-                />
-                <DefinitionItem
-                  label="思考レベル"
-                  value={formatReadableEnum(task.codex.reasoningEffort)}
-                />
-              </dl>
-            </div>
-          </div>
-        </DetailSection>
-      </TabsContent>
-
-      <TabsContent value="audit">
-        <DetailSection>
-          <div className="divide-y text-sm">
-            {auditEvents.length ? (
-              auditEvents.map((event) => (
-                <AuditEventRow key={event.id} event={event} />
-              ))
-            ) : (
-              <p className="text-muted-foreground">
-                現在のデーモンタスク API から監査イベントは返されませんでした。
-              </p>
-            )}
-          </div>
-        </DetailSection>
-      </TabsContent>
-
-      <TabsContent value="actions">
-        <DetailSection>
-          <div className="grid max-w-sm gap-3">
-            <TaskRowActions
-              task={task}
-              className="grid justify-stretch [&>button]:w-full"
-              onEdit={(selected) => onEdit?.(selected)}
-              onDeleted={() => router.push("/tasks?view=archived")}
-            />
-            <Button variant="outline" asChild>
-              <Link
-                href={`/tasks/new?duplicateFromTask=${encodeURIComponent(task.id)}`}
-              >
-                <PlusCircle className="size-4" aria-hidden="true" />
-                複製
-              </Link>
-            </Button>
-            <Button
-              type="button"
-              variant={task.locked ? "default" : "outline"}
-              disabled={updateTask.isPending}
-              onClick={toggleLock}
-            >
-              {task.locked ? (
-                <LockOpen className="size-4" aria-hidden="true" />
+                変更履歴
+              </span>
+              <Badge variant="muted">{auditEvents.length}件</Badge>
+            </summary>
+            <div className="mt-4 divide-y text-sm">
+              {auditEvents.length ? (
+                auditEvents.map((event) => (
+                  <AuditEventRow key={event.id} event={event} />
+                ))
               ) : (
-                <LockKeyhole className="size-4" aria-hidden="true" />
+                <p className="text-muted-foreground">
+                  現在のデーモンタスク API
+                  から監査イベントは返されませんでした。
+                </p>
               )}
-              {task.locked ? "ロックを解除" : "ロック"}
-            </Button>
-          </div>
+            </div>
+          </details>
         </DetailSection>
       </TabsContent>
     </Tabs>
