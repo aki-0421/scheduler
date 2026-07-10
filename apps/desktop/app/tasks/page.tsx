@@ -11,7 +11,6 @@ import {
   MessageSquare,
   Play,
   Repeat,
-  Timer,
 } from "lucide-react";
 import { Suspense } from "react";
 
@@ -27,6 +26,14 @@ import {
   formatRunDuration,
 } from "@/components/task-run-display";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ValueBadge } from "@/components/value-badge";
 import { taskLastRun } from "@/lib/format";
 import { useRuns, useTask, useTasks } from "@/lib/queries";
@@ -133,25 +140,39 @@ function TasksPageContent() {
       />
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-        <div className="flex min-h-0 flex-1 flex-col border-y">
-          {archivedTasks.length ? (
-            archivedTasks.map((task) => {
-              const lastRun = taskLastRun(task, runList);
-              const schedule = describeTaskSchedule(task);
-              const target = describeTaskTarget(task);
-              return (
-                <Link
-                  key={task.id}
-                  href={`/tasks?task=${encodeURIComponent(task.id)}`}
-                  className="grid gap-3 border-b p-4 transition-colors duration-150 last:border-b-0 hover:bg-muted/50"
-                >
-                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium">
-                          {task.name}
-                        </p>
-                        <TaskStatusBadge status={task.status} />
+        {archivedTasks.length ? (
+          <div className="min-w-0 border-y">
+            <Table className="min-w-[976px] table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-64">タスク</TableHead>
+                  <TableHead className="w-48">実行先</TableHead>
+                  <TableHead className="w-44">スケジュール</TableHead>
+                  <TableHead className="w-28">前回状態</TableHead>
+                  <TableHead className="w-36">前回実行</TableHead>
+                  <TableHead className="w-24">所要時間</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {archivedTasks.map((task) => {
+                  const lastRun = taskLastRun(task, runList);
+                  const schedule = describeTaskSchedule(task);
+                  const target = describeTaskTarget(task);
+                  return (
+                    <TableRow key={task.id}>
+                      <TableCell className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Link
+                            href={`/tasks?task=${encodeURIComponent(task.id)}`}
+                            title={task.name}
+                            className="min-w-0 truncate rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          >
+                            {task.name}
+                          </Link>
+                          <TaskStatusBadge status={task.status} />
+                        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <ValueBadge
                           icon={taskTargetIcon(task)}
                           label={target.label}
@@ -160,40 +181,16 @@ function TasksPageContent() {
                             task.target.mode === "chat" ? "muted" : "info"
                           }
                         />
-                      </div>
-                      <p className="mt-1 line-clamp-1 max-w-3xl text-xs text-muted-foreground">
-                        {target.detail ?? "アプリ管理ワークスペース"}
-                      </p>
-                    </div>
-                    <div className="text-left text-xs text-muted-foreground sm:text-right">
-                      <p>前回実行</p>
-                      <p className="mt-1 tabular-nums">
-                        {formatAbsoluteDateTime(
-                          lastRun?.startedAt ?? lastRun?.scheduledFor,
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
-                    <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">
-                        スケジュール
-                      </dt>
-                      <dd className="mt-1">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <ValueBadge
                           icon={taskScheduleIcon(task)}
                           label={schedule.label}
                           title={schedule.detail ?? schedule.label}
                           variant={task.kind === "cron" ? "info" : "muted"}
                         />
-                      </dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">
-                        前回状態
-                      </dt>
-                      <dd className="mt-1">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {lastRun ? (
                           <RunStatusBadge status={lastRun.status} />
                         ) : (
@@ -204,37 +201,30 @@ function TasksPageContent() {
                             title="実行履歴なし"
                           />
                         )}
-                      </dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">
-                        所要時間
-                      </dt>
-                      <dd className="mt-1">
-                        <ValueBadge
-                          icon={Timer}
-                          label={lastRun ? formatRunDuration(lastRun) : "—"}
-                          variant={lastRun ? "outline" : "muted"}
-                          title={
-                            lastRun ? "前回実行の所要時間" : "所要時間未記録"
-                          }
-                        />
-                      </dd>
-                    </div>
-                  </dl>
-                </Link>
-              );
-            })
-          ) : (
-            <EmptyState
-              icon={Folder}
-              title="アーカイブ済みタスクはありません"
-              description="停止中、完了済み、1回きりのタスクがここに表示されます。"
-              className="flex-1 border-0"
-              action={{ label: "新規タスク", href: "/tasks/new" }}
-            />
-          )}
-        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                        {formatAbsoluteDateTime(
+                          lastRun?.startedAt ?? lastRun?.scheduledFor,
+                        )}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                        {lastRun ? formatRunDuration(lastRun) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <EmptyState
+            icon={Folder}
+            title="アーカイブ済みタスクはありません"
+            description="停止中、完了済み、1回きりのタスクがここに表示されます。"
+            className="flex-1 border-0"
+            action={{ label: "新規タスク", href: "/tasks/new" }}
+          />
+        )}
       </section>
     </div>
   );
