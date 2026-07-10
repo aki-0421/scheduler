@@ -9,7 +9,7 @@ read_when:
 
 # プロダクトスコープ
 
-Codex Scheduler は、ローカル Codex CLI 作業をスケジュールする macOS ファーストの desktop app である。すでにローカル Git project から Codex を実行しているユーザーが、visible state、local log、明示的な execution policy を持つ recurring または delayed work を実行したい場合を想定している。
+Codex Scheduler は、ローカル Codex CLI 作業をスケジュールする macOS ファーストの desktop app である。すでにローカル Git project から Codex を実行しているユーザーが、visible state、local log、一貫した execution profile を持つ recurring または delayed work を実行したい場合を想定している。
 
 app は、汎用 admin dashboard ではなく、AI work の local automation console のように感じられる必要がある。実装済み UI は、project、upcoming work、failed run、execution session、execution setting のために、compact で task-first な surface を使う。
 
@@ -20,7 +20,8 @@ app は、汎用 admin dashboard ではなく、AI work の local automation con
 - scheduler task の作成、編集、一時停止、再開、削除、手動実行。
 - manual、once、cron task の作成。
 - chat workspace、または登録済み Git project から実行ごとに作成する isolated worktree を対象にする。project root を直接変更する実行 mode は提供しない。
-- task prompt、model、reasoning effort、sandbox、approval policy、runtime limit、retry count、missed-run handling、overlap handling、schedule CLI capability scope、worktree cleanup policy の設定。timezone は PC の現在値を自動使用する。
+- task prompt、model、reasoning effort、任意の task 固有 Codex binary path、lock、開始状態の設定。timezone は PC の現在値を自動使用する。
+- すべての task を full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持で実行する。Scheduler CLI は全 action を作成数上限なしで常に利用できる。
 - task list、task detail、run history、run detail、log tail、artifact、audit event、daemon diagnostics の確認。
 - local Git repository を project として追加し、scheduler-owned worktree の source として使う。
 - task を lock し、AI / scheduled-run actor からの edit、delete、pause、resume を防ぐ。
@@ -34,7 +35,7 @@ desktop app には次の top-level page がある。
 - `Projects`: file browser からの project 追加、GitHub `user(org)/repo` display、non-GitHub project name editing、active task count、project removal confirmation。
 - `Tasks`: archived list、task detail、session history、tabbed prompt / settings / audit inspection、right-column actions、lock / unlock。
 - `Runs`: global history preset、status と task filter、task session detail、chat UI、tool usage、prompt/output/log/artifact inspection、cancel support。
-- `Settings`: scheduler switch、notification switch、global concurrency、Codex path、default model、default sandbox、default approval policy、worktree cleanup default、schema version、固定 local path、diagnostics export。
+- `Settings`: scheduler switch、notification switch、global concurrency、global Codex path、default model、schema version、固定 local path、diagnostics export。
 
 ## MVP 境界
 

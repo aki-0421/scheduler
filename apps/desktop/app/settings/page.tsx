@@ -18,15 +18,9 @@ import {
 } from "@/components/ui/select";
 import { codexModelOptions } from "@/lib/codex-options";
 import { Switch } from "@/components/ui/switch";
-import { formatEnumLabel } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
 import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
-import {
-  approvalPolicies,
-  cleanupPolicies,
-  sandboxModes,
-  type SchedulerSettings,
-} from "@/lib/types";
+import type { SchedulerSettings } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function SettingsSection({
@@ -149,7 +143,7 @@ export default function SettingsPage() {
     <div className="grid gap-6">
       <PageHeader
         title="設定"
-        description="スケジューラー、Codex 実行、権限、診断の既定値を管理します。"
+        description="スケジューラー、Codex 実行、診断の既定値を管理します。"
       />
 
       <SettingsSection title="一般">
@@ -167,7 +161,7 @@ export default function SettingsPage() {
         </SettingRow>
         <SettingRow
           label="通知"
-          description="実行が失敗またはタイムアウトしたときにデスクトップ通知を送信します。"
+          description="実行が失敗したときにデスクトップ通知を送信します。"
           htmlFor="notifications-enabled"
           controlClassName="md:w-auto"
         >
@@ -235,93 +229,6 @@ export default function SettingsPage() {
                 {codexModelOptions.map((model) => (
                   <SelectItem key={model.value} value={model.value}>
                     {model.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </SettingRow>
-      </SettingsSection>
-
-      <SettingsSection title="権限">
-        <SettingRow
-          label="既定サンドボックス"
-          description="新規タスクへコピーされるファイルシステムアクセスモードです。"
-          htmlFor="default-sandbox-mode"
-        >
-          <Select
-            value={form["runner.default_sandbox_mode"]}
-            onValueChange={(value) =>
-              update(
-                "runner.default_sandbox_mode",
-                value as SchedulerSettings["runner.default_sandbox_mode"],
-              )
-            }
-          >
-            <SelectTrigger id="default-sandbox-mode">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {sandboxModes.map((mode) => (
-                  <SelectItem key={mode} value={mode}>
-                    {formatEnumLabel(mode)}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </SettingRow>
-        <SettingRow
-          label="既定承認ポリシー"
-          description="新規タスクへコピーされる承認動作です。"
-          htmlFor="default-approval-policy"
-        >
-          <Select
-            value={form["runner.default_approval_policy"]}
-            onValueChange={(value) =>
-              update(
-                "runner.default_approval_policy",
-                value as SchedulerSettings["runner.default_approval_policy"],
-              )
-            }
-          >
-            <SelectTrigger id="default-approval-policy">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {approvalPolicies.map((policy) => (
-                  <SelectItem key={policy} value={policy}>
-                    {formatEnumLabel(policy)}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </SettingRow>
-        <SettingRow
-          label="ワークツリーのクリーンアップ"
-          description="隔離ワークツリー実行に使う既定のクリーンアップポリシーです。"
-          htmlFor="default-cleanup-policy"
-        >
-          <Select
-            value={form["worktree.default_cleanup_policy"]}
-            onValueChange={(value) =>
-              update(
-                "worktree.default_cleanup_policy",
-                value as SchedulerSettings["worktree.default_cleanup_policy"],
-              )
-            }
-          >
-            <SelectTrigger id="default-cleanup-policy">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {cleanupPolicies.map((policy) => (
-                  <SelectItem key={policy} value={policy}>
-                    {formatEnumLabel(policy)}
                   </SelectItem>
                 ))}
               </SelectGroup>

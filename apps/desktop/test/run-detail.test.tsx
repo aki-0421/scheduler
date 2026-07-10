@@ -129,4 +129,21 @@ describe("RunDetail", () => {
     );
     expect(await screen.findByText(/second run log/)).toBeInTheDocument();
   });
+
+  it("manually queues a new run from a failed session", async () => {
+    const user = userEvent.setup();
+    const runNow = vi.spyOn(ipcClient, "taskRunNow").mockResolvedValue({
+      id: "run_retry_manual",
+      taskId: "task_test",
+      triggerType: "manual",
+      status: "queued",
+      findingsCount: 0,
+      createdScheduleCount: 0,
+    });
+
+    renderWithClient(<RunDetail run={{ ...run, status: "failed" }} />);
+    await user.click(screen.getByRole("button", { name: "再実行" }));
+
+    await waitFor(() => expect(runNow).toHaveBeenCalledWith("task_test"));
+  });
 });

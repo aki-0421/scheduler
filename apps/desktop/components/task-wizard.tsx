@@ -14,7 +14,6 @@ import { toast } from "sonner";
 
 import { Field } from "@/components/field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   codexModelOptions,
+  defaultReasoningEffortForModel,
   reasoningEffortOptionsForModel,
 } from "@/lib/codex-options";
 import { getCronPreview } from "@/lib/cron";
@@ -78,13 +78,6 @@ type ScheduleChoice = "manual" | "once" | PresetMode | "cron";
 type TargetChoice = "chat" | "project";
 type WizardTab = "task" | "advanced";
 
-const capabilityOptions = [
-  { value: "schedule:create", label: "スケジュールを作成" },
-  { value: "schedule:update-current", label: "このタスクを更新" },
-  { value: "schedule:update-any", label: "任意のタスクを更新" },
-  { value: "schedule:list", label: "スケジュールを一覧表示" },
-];
-
 const scheduleOptions: SelectOption<ScheduleChoice>[] = [
   { value: "manual", label: "手動のみ" },
   { value: "once", label: "一度だけ..." },
@@ -109,36 +102,6 @@ const weekdayByValue = Object.fromEntries(
   weekdayOptions.map((option) => [option.value, option.label]),
 );
 
-const sandboxModeOptions = [
-  { value: "read-only", label: "読み取り専用" },
-  { value: "workspace-write", label: "ワークスペース書き込み" },
-  { value: "danger-full-access", label: "ファイルシステムのフルアクセス" },
-] satisfies SelectOption<TaskDraft["sandboxMode"]>[];
-
-const approvalPolicyOptions = [
-  { value: "never", label: "確認しない" },
-  { value: "on-request", label: "必要時に確認" },
-  { value: "untrusted", label: "信頼されていない操作で確認" },
-] satisfies SelectOption<TaskDraft["approvalPolicy"]>[];
-
-const overlapPolicyOptions = [
-  { value: "skip", label: "実行中はスキップ" },
-  { value: "queue", label: "次の実行をキューに追加" },
-  { value: "cancel_previous", label: "前回の実行をキャンセル" },
-] satisfies SelectOption<TaskDraft["overlapPolicy"]>[];
-
-const missedPolicyOptions = [
-  { value: "skip", label: "未実行分をスキップ" },
-  { value: "latest_within_window", label: "期間内の最新のみ実行" },
-  { value: "run_all_capped", label: "上限付きで未実行分を実行" },
-] satisfies SelectOption<TaskDraft["missedPolicy"]>[];
-
-const cleanupPolicyOptions = [
-  { value: "keep", label: "成果物を保持" },
-  { value: "delete_on_success", label: "成功時に削除" },
-  { value: "delete_after_days", label: "保持期間後に削除" },
-] satisfies SelectOption<TaskDraft["cleanupPolicy"]>[];
-
 const japaneseErrorMessages: Record<string, string> = {
   name: "タスク名は必須です。",
   prompt: "プロンプトは必須です。",
@@ -147,25 +110,10 @@ const japaneseErrorMessages: Record<string, string> = {
   onceTime: "有効な日付と時刻を選択してください。",
   model: "モデルは必須です。",
   reasoningEffort: "推論 effort は必須です。",
-  maxRuntimeSec: "60秒以上を指定してください。",
-  maxRetries: "再試行回数は 0 以上にしてください。",
-  maxCreatedSchedulesPerRun: "1 から 100 までの値を指定してください。",
-  dangerConfirmed: "ファイルシステムのフルアクセスのリスクを確認してください。",
+  codexPath: "カスタム Codex バイナリパスを入力してください。",
 };
 
-const advancedErrorKeys = new Set([
-  "model",
-  "reasoningEffort",
-  "sandboxMode",
-  "approvalPolicy",
-  "maxRuntimeSec",
-  "maxRetries",
-  "missedPolicy",
-  "overlapPolicy",
-  "cleanupPolicy",
-  "maxCreatedSchedulesPerRun",
-  "dangerConfirmed",
-]);
+const advancedErrorKeys = new Set(["codexPath", "model", "reasoningEffort"]);
 
 const errorFieldOrder = [
   "prompt",
@@ -174,12 +122,9 @@ const errorFieldOrder = [
   "onceDate",
   "onceTime",
   "cronPreview",
+  "codexPath",
   "model",
   "reasoningEffort",
-  "maxRuntimeSec",
-  "maxRetries",
-  "dangerConfirmed",
-  "maxCreatedSchedulesPerRun",
 ];
 
 const errorLabelByKey: Record<string, string> = {
@@ -189,12 +134,9 @@ const errorLabelByKey: Record<string, string> = {
   onceDate: "日付",
   onceTime: "時刻",
   cronPreview: "カスタム cron 式",
+  codexPath: "Codex バイナリパス",
   model: "モデル",
   reasoningEffort: "推論 effort",
-  maxRuntimeSec: "最大実行時間",
-  maxRetries: "再試行",
-  dangerConfirmed: "ファイルシステムのフルアクセス",
-  maxCreatedSchedulesPerRun: "1実行あたりの作成スケジュール上限",
 };
 
 const errorTargetIds: Record<string, string[]> = {
@@ -204,12 +146,9 @@ const errorTargetIds: Record<string, string[]> = {
   onceDate: ["once-date"],
   onceTime: ["once-time"],
   cronPreview: ["cron-expression"],
+  codexPath: ["codex-path"],
   model: ["model"],
   reasoningEffort: ["reasoning"],
-  maxRuntimeSec: ["max-runtime"],
-  maxRetries: ["retries"],
-  dangerConfirmed: ["danger-confirmed"],
-  maxCreatedSchedulesPerRun: ["max-created-schedules"],
 };
 
 function getTabForErrorKey(key: string): WizardTab {
@@ -522,10 +461,6 @@ export function TaskWizard({
   );
   const isRepoTarget = draft.targetMode === "repo-worktree";
   const targetChoice: TargetChoice = isRepoTarget ? "project" : "chat";
-  const isDangerFullAccess = draft.sandboxMode === "danger-full-access";
-  const canUpdateAnySchedule =
-    draft.allowScheduleCli &&
-    draft.capabilities.includes("schedule:update-any");
   const modelReasoningEffortOptions = useMemo(
     () => reasoningEffortOptionsForModel(draft.model),
     [draft.model],
@@ -553,15 +488,10 @@ export function TaskWizard({
   }
 
   function updateModel(value: TaskDraft["model"]) {
-    const allowedEfforts = reasoningEffortOptionsForModel(value).map(
-      (option) => option.value,
-    );
     setDraft((current) => ({
       ...current,
       model: value,
-      reasoningEffort: allowedEfforts.includes(current.reasoningEffort)
-        ? current.reasoningEffort
-        : (allowedEfforts[0] ?? current.reasoningEffort),
+      reasoningEffort: defaultReasoningEffortForModel(value),
     }));
     clearErrors("model", "reasoningEffort");
   }
@@ -571,12 +501,6 @@ export function TaskWizard({
     setDraft((current) => ({
       ...current,
       targetMode,
-      sandboxMode:
-        targetMode === "repo-worktree" && current.sandboxMode === "read-only"
-          ? "workspace-write"
-          : targetMode === "chat" && current.sandboxMode === "workspace-write"
-            ? "read-only"
-            : current.sandboxMode,
     }));
     clearErrors("targetMode", "projectId", "repoPath");
   }
@@ -630,7 +554,7 @@ export function TaskWizard({
   }
 
   function collectErrors() {
-    const allErrors = [0, 1, 2, 3, 4]
+    const allErrors = [0, 1, 2, 3]
       .map((index) => normalizeErrors(validateTaskDraftStep(draft, index)))
       .reduce<
         Record<string, string>
@@ -707,15 +631,6 @@ export function TaskWizard({
         },
       );
     }
-  }
-
-  function toggleCapability(value: string, checked: boolean) {
-    update(
-      "capabilities",
-      checked
-        ? Array.from(new Set([...draft.capabilities, value]))
-        : draft.capabilities.filter((item) => item !== value),
-    );
   }
 
   async function pickRepositoryFolder() {
@@ -1158,193 +1073,73 @@ export function TaskWizard({
             </TabsContent>
 
             <TabsContent value="advanced" className="mt-0 grid gap-4">
-            {isDangerFullAccess ? (
-              <Badge variant="warning" className="w-fit">
-                フルアクセス
-              </Badge>
-            ) : null}
-            <div className="grid gap-4 lg:grid-cols-3">
-              <Field
-                label="Codex バイナリパス"
-                description="全体の runner.codex_path 設定を使用します。"
-              >
-                <Input value="全体の runner 設定" disabled />
-              </Field>
-              <SelectField
-                id="model"
-                label="モデル"
-                value={draft.model}
-                options={codexModelOptions}
-                onChange={updateModel}
-                error={errors.model}
-              />
-              <SelectField
-                id="reasoning"
-                label="推論 effort"
-                value={draft.reasoningEffort}
-                options={modelReasoningEffortOptions}
-                onChange={(value) => update("reasoningEffort", value)}
-                error={errors.reasoningEffort}
-              />
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-3">
-              <SelectField
-                id="sandbox-mode"
-                label="サンドボックス"
-                value={draft.sandboxMode}
-                options={sandboxModeOptions}
-                onChange={(value) => update("sandboxMode", value)}
-              />
-              <SelectField
-                id="approval-policy"
-                label="承認ポリシー"
-                value={draft.approvalPolicy}
-                options={approvalPolicyOptions}
-                onChange={(value) => update("approvalPolicy", value)}
-              />
-              <Field
-                label="最大実行時間"
-                htmlFor="max-runtime"
-                error={errors.maxRuntimeSec}
-                description="秒単位。"
-              >
-                <Input
-                  id="max-runtime"
-                  type="number"
-                  min={60}
-                  value={draft.maxRuntimeSec}
-                  onChange={(event) =>
-                    update("maxRuntimeSec", Number(event.currentTarget.value))
-                  }
-                />
-              </Field>
-            </div>
-
-            {isDangerFullAccess ? (
-              <Alert variant="warning">
-                <AlertTriangle className="size-4" aria-hidden="true" />
-                <AlertTitle>ファイルシステムのフルアクセス</AlertTitle>
-                <AlertDescription>
-                  サンドボックス保護を迂回します。隔離された環境でのみ使用してください。
-                </AlertDescription>
-                <div className="mt-3">
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid content-start gap-3">
                   <CheckboxRow
-                    id="danger-confirmed"
-                    checked={draft.dangerConfirmed}
-                    label="ファイルシステムのフルアクセスのリスクを理解しています"
-                    error={errors.dangerConfirmed}
-                    onChange={(checked) => update("dangerConfirmed", checked)}
+                    id="custom-codex-path"
+                    checked={draft.customCodexPath}
+                    label="Codex バイナリパスをカスタマイズ"
+                    description="このタスクだけ別の Codex CLI を使う場合に有効にします。"
+                    onChange={(checked) => {
+                      update("customCodexPath", checked, ["codexPath"]);
+                    }}
+                  />
+                  {draft.customCodexPath ? (
+                    <Field
+                      label="Codex バイナリパス"
+                      htmlFor="codex-path"
+                      error={errors.codexPath}
+                    >
+                      <Input
+                        id="codex-path"
+                        value={draft.codexPath}
+                        placeholder="/opt/homebrew/bin/codex"
+                        autoComplete="off"
+                        spellCheck={false}
+                        onChange={(event) =>
+                          update("codexPath", event.currentTarget.value)
+                        }
+                      />
+                    </Field>
+                  ) : null}
+                </div>
+
+                <div className="grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                  <SelectField
+                    id="model"
+                    label="モデル"
+                    value={draft.model}
+                    options={codexModelOptions}
+                    onChange={updateModel}
+                    error={errors.model}
+                  />
+                  <SelectField
+                    id="reasoning"
+                    label="推論 effort"
+                    value={draft.reasoningEffort}
+                    options={modelReasoningEffortOptions}
+                    onChange={(value) => update("reasoningEffort", value)}
+                    error={errors.reasoningEffort}
                   />
                 </div>
-              </Alert>
-            ) : null}
-
-            <div className="grid gap-4 lg:grid-cols-4">
-              <Field label="再試行" htmlFor="retries" error={errors.maxRetries}>
-                <Input
-                  id="retries"
-                  type="number"
-                  min={0}
-                  value={draft.maxRetries}
-                  onChange={(event) =>
-                    update("maxRetries", Number(event.currentTarget.value))
-                  }
-                />
-              </Field>
-              <SelectField
-                id="overlap-policy"
-                label="重複"
-                value={draft.overlapPolicy}
-                options={overlapPolicyOptions}
-                onChange={(value) => update("overlapPolicy", value)}
-              />
-              <SelectField
-                id="missed-policy"
-                label="未実行分"
-                value={draft.missedPolicy}
-                options={missedPolicyOptions}
-                onChange={(value) => update("missedPolicy", value)}
-              />
-              <SelectField
-                id="cleanup-policy"
-                label="クリーンアップ"
-                value={draft.cleanupPolicy}
-                options={cleanupPolicyOptions}
-                onChange={(value) => update("cleanupPolicy", value)}
-              />
-            </div>
-
-            <div className="grid gap-3">
-              <SwitchRow
-                id="inject-instructions"
-                checked={draft.injectSchedulerInstructions}
-                label="プロンプトに scheduler CLI の文脈を追加"
-                description="最小限の codex-schedule 使用方法と実行スコープ識別子を含めます。"
-                onChange={(checked) =>
-                  update("injectSchedulerInstructions", checked)
-                }
-              />
-              <SwitchRow
-                id="allow-schedule-cli"
-                checked={draft.allowScheduleCli}
-                label="schedule CLI を許可"
-                description="スコープ付き実行環境変数とともに codex-schedule を PATH に追加します。"
-                onChange={(checked) => update("allowScheduleCli", checked)}
-              />
-              <div className="grid gap-3 md:grid-cols-2">
-                {capabilityOptions.map((capability) => (
-                  <CheckboxRow
-                    key={capability.value}
-                    id={`capability-${capability.value.replace(/[^a-z0-9]+/g, "-")}`}
-                    checked={draft.capabilities.includes(capability.value)}
-                    label={capability.label}
-                    description={capability.value}
-                    onChange={(checked) =>
-                      toggleCapability(capability.value, checked)
-                    }
-                  />
-                ))}
               </div>
-              {canUpdateAnySchedule ? (
-                <Alert variant="warning">
-                  <AlertTriangle className="size-4" aria-hidden="true" />
-                  <AlertTitle>任意のスケジュールを更新できます</AlertTitle>
-                  <AlertDescription>
-                    このタスクはスケジュールされた Codex 実行から
-                    schedule:update-any を使用できます。
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <Field
-                  label="1実行あたりの作成スケジュール上限"
-                  htmlFor="max-created-schedules"
-                  error={errors.maxCreatedSchedulesPerRun}
-                >
-                  <Input
-                    id="max-created-schedules"
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={draft.maxCreatedSchedulesPerRun}
-                    onChange={(event) =>
-                      update(
-                        "maxCreatedSchedulesPerRun",
-                        Number(event.currentTarget.value),
-                      )
-                    }
-                  />
-                </Field>
+
+              <div className="grid gap-3 border-t pt-4 md:grid-cols-2">
+                <SwitchRow
+                  id="task-locked"
+                  checked={draft.locked}
+                  label="タスクをロック"
+                  description="スケジュール実行からの変更・停止・削除を防ぎます。"
+                  onChange={(checked) => update("locked", checked)}
+                />
                 <SwitchRow
                   id="force-paused"
                   checked={draft.forcePaused}
-                  label="このタスクを一時停止状態で保存"
-                  description="初回実行前にタスクを確認したい場合に使用します。"
+                  label="一時停止状態で保存"
+                  description="内容を確認してから手動で有効化できます。"
                   onChange={(checked) => update("forcePaused", checked)}
                 />
               </div>
-            </div>
             </TabsContent>
 
             <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">

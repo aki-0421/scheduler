@@ -86,6 +86,7 @@ read_when:
 - session detail はチャット UI で prompt、assistant output、tool usage、daemon event を確認できる。
 - active run が selected の場合、run が active status を離れるまで log が poll される。
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。
+- failed / interrupted / timed-out session の `再実行` は新しい manual run を enqueue する。scheduler 自身は自動 retry を作成しない。
 - export logs が成功した場合、user は exported local path を見る。
 - `ログ` tab の stdout、stderr、events を切り替えた場合、nested tab list は panel の外にあり、選択した log と copy / export action は同じ panel 内に表示される。
 - session detail と nested log の tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。

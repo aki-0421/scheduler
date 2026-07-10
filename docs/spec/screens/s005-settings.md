@@ -1,7 +1,7 @@
 ---
 title: S005 Settings
-description: Settings screen の global scheduler、notification、execution default、permission default、diagnostics control を定義する。
-updated: 2026-07-09
+description: Settings screen の global scheduler、notification、Codex default、diagnostics control を定義する。
+updated: 2026-07-10
 read_when:
   - Settings page、settings key、scheduler default、notification default、diagnostics export、schema display を変更するとき。
 ---
@@ -10,7 +10,7 @@ read_when:
 
 ルート: `/settings`
 
-目的: global scheduler behavior、desktop notification、Codex execution default、permission default、local diagnostics、schema visibility を設定する。
+目的: global scheduler behavior、desktop notification、Codex binary / model default、local diagnostics、schema visibility を設定する。
 
 入口: `Settings` navigation item。
 
@@ -28,7 +28,6 @@ read_when:
 - `設定` title を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - General section。section heading 直下の補足説明文は表示しない。
 - Execution section。section heading 直下の補足説明文は表示しない。
-- Permissions section。section heading 直下の補足説明文は表示しない。
 - Diagnostics section。section heading 直下の補足説明文は表示しない。
 - bottom の sticky save bar。
 
@@ -39,9 +38,6 @@ read_when:
 - Global concurrency number input は `daemon.global_concurrency` を control する。
 - Codex path input は `runner.codex_path` を control する。
 - Default model select は `runner.default_model` を control し、Codex frontier model のみを選択肢として表示する。
-- Default sandbox select は `runner.default_sandbox_mode` を control する。
-- Default approval policy select は `runner.default_approval_policy` を control する。
-- Worktree cleanup select は `worktree.default_cleanup_policy` を control する。
 - read-only socket path と database path。
 - schema version display。
 - export diagnostics button。
@@ -70,7 +66,7 @@ read_when:
 
 セキュリティと安全性:
 
-- permission default は general setting とは別に group 化される。
+- sandbox、approval policy、worktree cleanup、runtime、retry、overlap、missed-run、Scheduler CLI permission は固定規則であり、Settings に表示しない。
 - diagnostic export は user-initiated であり、local file に書き込む。
 - socket path と database path は read-only display value である。
 
@@ -80,7 +76,3 @@ read_when:
 - setting save のいずれかが失敗した場合、user は error toast を見て、previous cached settings が restored される。
 - diagnostics export が path を返した場合、その path は success toast に表示される。
 - diagnostics export が canceled の場合、user は cancellation info toast を見る。
-
-既知の gap:
-
-- frontend が表示する一部の setting は、initial migration で seed されていない場合も default である。

@@ -26,20 +26,12 @@ describe("DTO schemas", () => {
         baseRef: "main",
       },
       codex: {
+        codexPath: "/opt/homebrew/bin/codex",
         model: "gpt-5.5",
         reasoningEffort: "medium",
-        sandboxMode: "workspace-write",
-        approvalPolicy: "never",
       },
       prompt: {
         body: "Review changes.",
-        injectSchedulerInstructions: true,
-      },
-      policies: {
-        allowScheduleCli: true,
-        missedPolicy: "latest_within_window",
-        overlapPolicy: "skip",
-        maxRuntimeSec: 7200,
       },
     });
 
@@ -77,7 +69,9 @@ describe("DTO schemas", () => {
     });
 
     expect(task.target.projectId).toBe("proj_1");
+    expect(task.codex.codexPath).toBe("/opt/homebrew/bin/codex");
     expect(task).not.toHaveProperty("description");
+    expect(task).not.toHaveProperty("policies");
     expect(run.attempt).toBe(2);
     expect(run.commitAfter).toBe("def456");
     expect(run.findingsCount).toBe(2);
@@ -157,18 +151,9 @@ describe("DTO schemas", () => {
         codex: {
           model: "gpt-5.5",
           reasoningEffort: "medium",
-          sandboxMode: "workspace-write",
-          approvalPolicy: "never",
         },
         prompt: {
           body: "Review changes.",
-          injectSchedulerInstructions: true,
-        },
-        policies: {
-          allowScheduleCli: true,
-          missedPolicy: "latest_within_window",
-          overlapPolicy: "skip",
-          maxRuntimeSec: 7200,
         },
       },
       audit_events: [

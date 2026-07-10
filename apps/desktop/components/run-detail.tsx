@@ -266,9 +266,9 @@ export function RunDetail({ run, task }: RunDetailProps) {
   function rerun() {
     runTaskNow
       .mutateAsync(run.taskId)
-      .then(() => toast.success("再試行をキューに追加しました"))
+      .then(() => toast.success("再実行をキューに追加しました"))
       .catch((error) =>
-        toast.error("再試行をキューに追加できませんでした", {
+        toast.error("再実行をキューに追加できませんでした", {
           description:
             error instanceof Error
               ? error.message
@@ -405,7 +405,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
                 onClick={rerun}
               >
                 <RotateCcw className="size-4" aria-hidden="true" />
-                再試行
+                再実行
               </Button>
             </div>
           </div>

@@ -32,23 +32,6 @@ export const runStatuses = [
   "timed_out",
 ] as const;
 export const targetModes = ["chat", "repo-local", "repo-worktree"] as const;
-export const sandboxModes = [
-  "read-only",
-  "workspace-write",
-  "danger-full-access",
-] as const;
-export const approvalPolicies = ["never", "on-request", "untrusted"] as const;
-export const missedPolicies = [
-  "skip",
-  "latest_within_window",
-  "run_all_capped",
-] as const;
-export const overlapPolicies = ["skip", "queue", "cancel_previous"] as const;
-export const cleanupPolicies = [
-  "keep",
-  "delete_on_success",
-  "delete_after_days",
-] as const;
 export const triggerTypes = ["schedule", "manual", "cli", "catchup", "retry"] as const;
 export const projectKinds = ["git", "folder"] as const;
 export const logStreams = ["stdout", "stderr", "events"] as const;
@@ -70,11 +53,6 @@ const optionalTargetMode = z
   .transform(
     (value): z.infer<typeof targetModeSchema> | undefined => value ?? undefined,
   );
-export const sandboxModeSchema = z.enum(sandboxModes);
-export const approvalPolicySchema = z.enum(approvalPolicies);
-export const missedPolicySchema = z.enum(missedPolicies);
-export const overlapPolicySchema = z.enum(overlapPolicies);
-export const cleanupPolicySchema = z.enum(cleanupPolicies);
 export const triggerTypeSchema = z.enum(triggerTypes);
 export const projectKindSchema = z.enum(projectKinds);
 export const logStreamSchema = z.enum(logStreams);
@@ -121,29 +99,13 @@ export const taskTargetDtoSchema = z.object({
 });
 
 export const taskCodexDtoSchema = z.object({
+  codexPath: optionalString,
   model: optionalString,
   reasoningEffort: optionalString,
-  sandboxMode: sandboxModeSchema,
-  approvalPolicy: approvalPolicySchema,
 });
 
 export const taskPromptDtoSchema = z.object({
   body: z.string(),
-  injectSchedulerInstructions: z.boolean(),
-});
-
-export const taskPoliciesDtoSchema = z.object({
-  allowScheduleCli: z.boolean(),
-  missedPolicy: missedPolicySchema,
-  overlapPolicy: overlapPolicySchema,
-  maxRuntimeSec: z.number().int().positive(),
-  maxCreatedSchedulesPerRun: optionalNumber,
-  scheduleCliCapabilities: z.array(z.string()).optional(),
-  missedWindowDays: optionalNumber,
-  maxRetries: optionalNumber,
-  retryBackoffSec: optionalNumber,
-  cleanupPolicy: cleanupPolicySchema.optional(),
-  cleanupAfterDays: optionalNumber,
 });
 
 export const taskDtoSchema = z
@@ -161,7 +123,6 @@ export const taskDtoSchema = z
     target: taskTargetDtoSchema,
     codex: taskCodexDtoSchema,
     prompt: taskPromptDtoSchema,
-    policies: taskPoliciesDtoSchema,
     auditEvents: z.array(taskAuditEventSchema).optional(),
     audit_events: z.array(taskAuditEventSchema).optional(),
   })
@@ -323,11 +284,6 @@ export type TaskKind = z.infer<typeof taskKindSchema>;
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 export type RunStatus = z.infer<typeof runStatusSchema>;
 export type TargetMode = z.infer<typeof targetModeSchema>;
-export type SandboxMode = z.infer<typeof sandboxModeSchema>;
-export type ApprovalPolicy = z.infer<typeof approvalPolicySchema>;
-export type MissedPolicy = z.infer<typeof missedPolicySchema>;
-export type OverlapPolicy = z.infer<typeof overlapPolicySchema>;
-export type CleanupPolicy = z.infer<typeof cleanupPolicySchema>;
 export type TriggerType = z.infer<typeof triggerTypeSchema>;
 export type ProjectKind = z.infer<typeof projectKindSchema>;
 export type LogStream = z.infer<typeof logStreamSchema>;
@@ -351,10 +307,7 @@ export type SchedulerSettings = {
   "daemon.global_concurrency": number;
   "runner.codex_path": string;
   "runner.default_model": CodexModel;
-  "runner.default_sandbox_mode": SandboxMode;
-  "runner.default_approval_policy": ApprovalPolicy;
   "notifications.enabled": boolean;
-  "worktree.default_cleanup_policy": CleanupPolicy;
 };
 
 export const defaultSettings: SchedulerSettings = {
@@ -362,10 +315,7 @@ export const defaultSettings: SchedulerSettings = {
   "daemon.global_concurrency": 2,
   "runner.codex_path": "codex",
   "runner.default_model": defaultCodexModel,
-  "runner.default_sandbox_mode": "read-only",
-  "runner.default_approval_policy": "never",
   "notifications.enabled": true,
-  "worktree.default_cleanup_policy": "keep",
 };
 
 export function settingsToRecord(settings: SettingDto[]): SchedulerSettings {

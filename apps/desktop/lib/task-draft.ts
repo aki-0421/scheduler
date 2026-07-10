@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  codexModelOptions,
   codexModelValues,
   defaultCodexModel,
   defaultReasoningEffort,
@@ -16,14 +17,7 @@ import {
   localDateTimeToUtcIso,
   utcIsoToLocalDateTime,
 } from "@/lib/timezone";
-import {
-  approvalPolicySchema,
-  cleanupPolicySchema,
-  missedPolicySchema,
-  overlapPolicySchema,
-  sandboxModeSchema,
-  type TaskDto,
-} from "@/lib/types";
+import type { TaskDto } from "@/lib/types";
 
 export const scheduleModes = ["manual", "once", "preset", "cron"] as const;
 export const presetModes = ["hourly", "daily", "weekdays", "weekly"] as const;
@@ -36,7 +30,6 @@ export type TaskDraft = {
   slug?: string;
   name: string;
   prompt: string;
-  injectSchedulerInstructions: boolean;
   targetMode: "chat" | "repo-worktree";
   projectId: string;
   repoPath: string;
@@ -51,18 +44,9 @@ export type TaskDraft = {
   cronExpr: string;
   model: CodexModel;
   reasoningEffort: ReasoningEffort;
-  sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
-  approvalPolicy: "never" | "on-request" | "untrusted";
-  maxRuntimeSec: number;
-  maxRetries: number;
-  missedPolicy: "skip" | "latest_within_window" | "run_all_capped";
-  overlapPolicy: "skip" | "queue" | "cancel_previous";
-  cleanupPolicy: "keep" | "delete_on_success" | "delete_after_days";
-  allowScheduleCli: boolean;
-  maxCreatedSchedulesPerRun: number;
-  capabilities: string[];
+  customCodexPath: boolean;
+  codexPath: string;
   forcePaused: boolean;
-  dangerConfirmed: boolean;
   locked: boolean;
 };
 
@@ -212,7 +196,6 @@ export function defaultTaskDraft(): TaskDraft {
   return {
     name: "",
     prompt: "",
-    injectSchedulerInstructions: true,
     targetMode: "chat",
     projectId: "",
     repoPath: "",
@@ -227,22 +210,9 @@ export function defaultTaskDraft(): TaskDraft {
     cronExpr: defaultCronExpr,
     model: defaultCodexModel,
     reasoningEffort: defaultReasoningEffort,
-    sandboxMode: "read-only",
-    approvalPolicy: "never",
-    maxRuntimeSec: 7200,
-    maxRetries: 0,
-    missedPolicy: "latest_within_window",
-    overlapPolicy: "skip",
-    cleanupPolicy: "keep",
-    allowScheduleCli: true,
-    maxCreatedSchedulesPerRun: 5,
-    capabilities: [
-      "schedule:create",
-      "schedule:update-current",
-      "schedule:list",
-    ],
+    customCodexPath: false,
+    codexPath: "",
     forcePaused: false,
-    dangerConfirmed: false,
     locked: false,
   };
 }
@@ -261,7 +231,6 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     slug: task.slug,
     name: task.name,
     prompt: task.prompt.body,
-    injectSchedulerInstructions: task.prompt.injectSchedulerInstructions,
     targetMode:
       task.target.mode === "chat" ? "chat" : ("repo-worktree" as const),
     projectId: task.target.projectId ?? "",
@@ -276,17 +245,12 @@ export function taskToDraft(task: TaskDto): TaskDraft {
     weeklyDay: presetSchedule?.weeklyDay ?? baseDraft.weeklyDay,
     cronExpr,
     model: normalizeCodexModel(task.codex.model),
-    reasoningEffort: normalizeReasoningEffort(task.codex.reasoningEffort),
-    sandboxMode: task.codex.sandboxMode,
-    approvalPolicy: task.codex.approvalPolicy,
-    maxRuntimeSec: task.policies.maxRuntimeSec,
-    maxRetries: task.policies.maxRetries ?? 0,
-    missedPolicy: task.policies.missedPolicy,
-    overlapPolicy: task.policies.overlapPolicy,
-    cleanupPolicy: task.policies.cleanupPolicy ?? "keep",
-    allowScheduleCli: task.policies.allowScheduleCli,
-    maxCreatedSchedulesPerRun: task.policies.maxCreatedSchedulesPerRun ?? 5,
-    capabilities: task.policies.scheduleCliCapabilities ?? [],
+    reasoningEffort: normalizeReasoningEffort(
+      task.codex.reasoningEffort,
+      normalizeCodexModel(task.codex.model),
+    ),
+    customCodexPath: Boolean(task.codex.codexPath),
+    codexPath: task.codex.codexPath ?? "",
     forcePaused: task.status === "paused",
     locked: task.locked,
   };
@@ -362,44 +326,34 @@ const scheduleSchema = z
 
 const codexSchema = z
   .object({
+    customCodexPath: z.boolean(),
+    codexPath: z.string(),
     model: z.enum(codexModelValues, {
       errorMap: () => ({ message: "フロンティアモデルを選択してください。" }),
     }),
     reasoningEffort: z.enum(reasoningEffortValues, {
       errorMap: () => ({ message: "推論 effort を選択してください。" }),
     }),
-    sandboxMode: sandboxModeSchema,
-    approvalPolicy: approvalPolicySchema,
-    maxRuntimeSec: z.coerce
-      .number()
-      .int()
-      .min(60, "60秒以上を指定してください。"),
-    maxRetries: z.coerce
-      .number()
-      .int()
-      .min(0, "再試行回数は 0 以上にしてください。"),
-    missedPolicy: missedPolicySchema,
-    overlapPolicy: overlapPolicySchema,
-    cleanupPolicy: cleanupPolicySchema,
-    dangerConfirmed: z.boolean(),
   })
   .superRefine((value, context) => {
-    if (value.sandboxMode === "danger-full-access" && !value.dangerConfirmed) {
+    if (value.customCodexPath && !value.codexPath.trim()) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["dangerConfirmed"],
-        message: "続行する前に danger-full-access を確認してください。",
+        path: ["codexPath"],
+        message: "カスタム Codex バイナリパスを入力してください。",
+      });
+    }
+    const allowed = codexModelOptions.find(
+      (option) => option.value === value.model,
+    )?.efforts;
+    if (!allowed?.includes(value.reasoningEffort)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reasoningEffort"],
+        message: "選択したモデルに対応する推論 effort を選択してください。",
       });
     }
   });
-
-const permissionsSchema = z.object({
-  maxCreatedSchedulesPerRun: z.coerce
-    .number()
-    .int()
-    .min(1, "1件以上のスケジュールを指定してください。")
-    .max(100, "スケジュールは 100 件以下にしてください。"),
-});
 
 export function validateTaskDraftStep(
   draft: TaskDraft,
@@ -410,7 +364,6 @@ export function validateTaskDraftStep(
     targetSchema,
     scheduleSchema,
     codexSchema,
-    permissionsSchema,
   ];
   const schema = schemas[step];
   if (!schema) {
@@ -471,26 +424,12 @@ export function buildTaskDto(draft: TaskDraft, paused = false): TaskDto {
         draft.targetMode === "chat" ? undefined : draft.baseRef.trim() || undefined,
     },
     codex: {
+      codexPath: draft.customCodexPath
+        ? draft.codexPath.trim() || undefined
+        : undefined,
       model: draft.model.trim(),
       reasoningEffort: draft.reasoningEffort.trim(),
-      sandboxMode: draft.sandboxMode,
-      approvalPolicy: draft.approvalPolicy,
     },
-    prompt: {
-      body: draft.prompt,
-      injectSchedulerInstructions: draft.injectSchedulerInstructions,
-    },
-    policies: {
-      allowScheduleCli: draft.allowScheduleCli,
-      missedPolicy: draft.missedPolicy,
-      overlapPolicy: draft.overlapPolicy,
-      maxRuntimeSec: Number(draft.maxRuntimeSec),
-      maxCreatedSchedulesPerRun: Number(draft.maxCreatedSchedulesPerRun),
-      scheduleCliCapabilities: draft.capabilities,
-      missedWindowDays: 7,
-      maxRetries: Number(draft.maxRetries),
-      retryBackoffSec: 300,
-      cleanupPolicy: draft.cleanupPolicy,
-    },
+    prompt: { body: draft.prompt },
   };
 }

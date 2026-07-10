@@ -30,7 +30,6 @@ pub struct TaskDto {
     pub target: TaskTargetDto,
     pub codex: TaskCodexDto,
     pub prompt: TaskPromptDto,
-    pub policies: TaskPoliciesDto,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,48 +48,30 @@ pub struct TaskTargetDto {
 #[serde(rename_all = "camelCase")]
 pub struct TaskCodexDto {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    pub sandbox_mode: SandboxMode,
-    pub approval_policy: ApprovalPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskPromptDto {
     pub body: String,
-    pub inject_scheduler_instructions: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskPoliciesDto {
-    pub allow_schedule_cli: bool,
-    pub missed_policy: MissedPolicy,
-    pub overlap_policy: OverlapPolicy,
-    pub max_runtime_sec: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_created_schedules_per_run: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schedule_cli_capabilities: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub missed_window_days: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_retries: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retry_backoff_sec: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cleanup_policy: Option<CleanupPolicy>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cleanup_after_days: Option<i64>,
-}
+pub const SCHEDULE_CLI_CAPABILITIES: &[&str] = &[
+    "schedule:create",
+    "schedule:update-current",
+    "schedule:update-any",
+    "schedule:pause-current",
+    "schedule:run-now",
+    "schedule:list",
+];
 
 impl From<&Task> for TaskDto {
     fn from(task: &Task) -> Self {
-        let schedule_cli_capabilities =
-            serde_json::from_str::<Vec<String>>(&task.schedule_cli_capabilities).ok();
-
         Self {
             id: task.id.clone(),
             slug: task.slug.clone(),
@@ -109,27 +90,12 @@ impl From<&Task> for TaskDto {
                 base_ref: task.base_ref.clone(),
             },
             codex: TaskCodexDto {
+                codex_path: task.codex_path.clone(),
                 model: task.model.clone(),
                 reasoning_effort: task.reasoning_effort.clone(),
-                sandbox_mode: task.sandbox_mode,
-                approval_policy: task.approval_policy,
             },
             prompt: TaskPromptDto {
                 body: task.prompt_body.clone(),
-                inject_scheduler_instructions: task.inject_scheduler_instructions,
-            },
-            policies: TaskPoliciesDto {
-                allow_schedule_cli: task.allow_schedule_cli,
-                missed_policy: task.missed_policy,
-                overlap_policy: task.overlap_policy,
-                max_runtime_sec: task.max_runtime_sec,
-                max_created_schedules_per_run: Some(task.max_created_schedules_per_run),
-                schedule_cli_capabilities,
-                missed_window_days: Some(task.missed_window_days),
-                max_retries: Some(task.max_retries),
-                retry_backoff_sec: Some(task.retry_backoff_sec),
-                cleanup_policy: Some(task.cleanup_policy),
-                cleanup_after_days: task.cleanup_after_days,
             },
         }
     }
@@ -140,13 +106,10 @@ impl TryFrom<TaskDto> for Task {
 
     fn try_from(dto: TaskDto) -> Result<Self> {
         let now = now_rfc3339();
-        let capabilities = dto.policies.schedule_cli_capabilities.unwrap_or_else(|| {
-            vec![
-                "schedule:create".to_owned(),
-                "schedule:update-current".to_owned(),
-                "schedule:list".to_owned(),
-            ]
-        });
+        let capabilities = SCHEDULE_CLI_CAPABILITIES
+            .iter()
+            .map(|capability| (*capability).to_owned())
+            .collect::<Vec<_>>();
 
         Ok(Self {
             id: if dto.id.is_empty() {
@@ -168,30 +131,30 @@ impl TryFrom<TaskDto> for Task {
             schedule_error: None,
             prompt_hash: prompt_hash(&dto.prompt.body),
             prompt_body: dto.prompt.body,
-            inject_scheduler_instructions: dto.prompt.inject_scheduler_instructions,
+            inject_scheduler_instructions: true,
             target_mode: dto.target.mode,
             project_id: dto.target.project_id,
             repo_path: dto.target.repo_path,
             base_ref: dto.target.base_ref,
             model: dto.codex.model,
             reasoning_effort: dto.codex.reasoning_effort,
-            sandbox_mode: dto.codex.sandbox_mode,
-            approval_policy: dto.codex.approval_policy,
-            allow_schedule_cli: dto.policies.allow_schedule_cli,
+            codex_path: dto.codex.codex_path.and_then(|path| {
+                let path = path.trim();
+                (!path.is_empty()).then(|| path.to_owned())
+            }),
+            sandbox_mode: SandboxMode::DangerFullAccess,
+            approval_policy: ApprovalPolicy::Never,
+            allow_schedule_cli: true,
             schedule_cli_capabilities: serde_json::to_string(&capabilities)?,
-            max_created_schedules_per_run: dto
-                .policies
-                .max_created_schedules_per_run
-                .unwrap_or(5)
-                .clamp(1, 100),
-            missed_policy: dto.policies.missed_policy,
-            missed_window_days: dto.policies.missed_window_days.unwrap_or(7),
-            overlap_policy: dto.policies.overlap_policy,
-            max_runtime_sec: dto.policies.max_runtime_sec,
-            max_retries: dto.policies.max_retries.unwrap_or(0),
-            retry_backoff_sec: dto.policies.retry_backoff_sec.unwrap_or(300),
-            cleanup_policy: dto.policies.cleanup_policy.unwrap_or_default(),
-            cleanup_after_days: dto.policies.cleanup_after_days,
+            max_created_schedules_per_run: 0,
+            missed_policy: MissedPolicy::Skip,
+            missed_window_days: 0,
+            overlap_policy: OverlapPolicy::Skip,
+            max_runtime_sec: 0,
+            max_retries: 0,
+            retry_backoff_sec: 0,
+            cleanup_policy: CleanupPolicy::Keep,
+            cleanup_after_days: None,
             created_by: "user".to_owned(),
             created_by_run_id: None,
             created_at: now.clone(),

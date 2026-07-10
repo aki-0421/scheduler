@@ -3,7 +3,7 @@ use scheduler_core::model::*;
 use scheduler_core::time::now_rfc3339;
 use scheduler_core::util::{prompt_hash, unique_slug};
 use scheduler_core::{SchedulerError, ValidationError};
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::fs;
 use tempfile::TempDir;
@@ -39,20 +39,21 @@ fn sample_task(slug: &str) -> Task {
         project_id: None,
         repo_path: None,
         base_ref: None,
-        model: Some("gpt-5-codex".to_owned()),
-        reasoning_effort: Some("default".to_owned()),
-        sandbox_mode: SandboxMode::ReadOnly,
+        model: Some("gpt-5.5".to_owned()),
+        reasoning_effort: Some("medium".to_owned()),
+        codex_path: None,
+        sandbox_mode: SandboxMode::DangerFullAccess,
         approval_policy: ApprovalPolicy::Never,
         allow_schedule_cli: true,
-        schedule_cli_capabilities:
-            r#"["schedule:create","schedule:update-current","schedule:list"]"#.to_owned(),
-        max_created_schedules_per_run: 5,
-        missed_policy: MissedPolicy::LatestWithinWindow,
-        missed_window_days: 7,
+        schedule_cli_capabilities: serde_json::to_string(SCHEDULE_CLI_CAPABILITIES)
+            .expect("capabilities"),
+        max_created_schedules_per_run: 0,
+        missed_policy: MissedPolicy::Skip,
+        missed_window_days: 0,
         overlap_policy: OverlapPolicy::Skip,
-        max_runtime_sec: 7200,
+        max_runtime_sec: 0,
         max_retries: 0,
-        retry_backoff_sec: 300,
+        retry_backoff_sec: 0,
         cleanup_policy: CleanupPolicy::Keep,
         cleanup_after_days: None,
         created_by: "user".to_owned(),
@@ -104,14 +105,14 @@ fn sample_run(task_id: &str, scheduled_for: &str) -> Run {
 }
 
 #[tokio::test]
-async fn migration_creates_v4_schema() {
+async fn migration_creates_v5_schema() {
     let (_temp_dir, db) = temp_db().await;
 
     let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(db.pool())
         .await
         .expect("user_version");
-    assert_eq!(user_version, 4);
+    assert_eq!(user_version, 5);
 
     let description_columns: i64 = sqlx::query_scalar(
         "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'description'",
@@ -120,6 +121,13 @@ async fn migration_creates_v4_schema() {
     .await
     .expect("task columns");
     assert_eq!(description_columns, 0);
+    let codex_path_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM pragma_table_info('tasks') WHERE name = 'codex_path'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .expect("codex path column");
+    assert_eq!(codex_path_columns, 1);
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master
@@ -335,6 +343,152 @@ async fn v3_and_v4_migrations_update_targets_and_remove_descriptions() {
     assert_eq!(after["name"], json!("after"));
     assert!(before.get("description").is_none());
     assert!(after.get("description").is_none());
+}
+
+#[tokio::test]
+async fn v5_migration_normalizes_execution_profile_and_removes_obsolete_settings() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db_path = temp_dir.path().join("scheduler.sqlite3");
+    let db = SchedulerDb::connect(&db_path).await.expect("connect db");
+    let task = sample_task("legacy-execution-profile");
+    db.create_task(&task).await.expect("create task");
+    let run = sample_run(&task.id, &now_rfc3339());
+    db.create_run(&run).await.expect("create run");
+
+    sqlx::query(
+        "UPDATE tasks SET
+            sandbox_mode = 'read-only', approval_policy = 'on-request',
+            inject_scheduler_instructions = 0, allow_schedule_cli = 0,
+            schedule_cli_capabilities = '[]', max_created_schedules_per_run = 17,
+            missed_policy = 'latest_within_window', missed_window_days = 7,
+            overlap_policy = 'queue', max_runtime_sec = 7200, max_retries = 3,
+            retry_backoff_sec = 300, cleanup_policy = 'delete_after_days',
+            cleanup_after_days = 14
+         WHERE id = ?",
+    )
+    .bind(&task.id)
+    .execute(db.pool())
+    .await
+    .expect("seed legacy profile");
+
+    let token = ScheduleCapabilityToken {
+        id: new_schedule_capability_token_id(),
+        run_id: run.id.clone(),
+        task_id: task.id.clone(),
+        token_hash: "legacy-token-hash".to_owned(),
+        capabilities_json: r#"["schedule:create"]"#.to_owned(),
+        expires_at: "2099-01-01T00:00:00Z".to_owned(),
+        max_creates: 17,
+        create_count: 2,
+        revoked_at: None,
+        created_at: now_rfc3339(),
+    };
+    db.create_schedule_capability_token(&token)
+        .await
+        .expect("create token");
+    for key in [
+        "runner.default_sandbox_mode",
+        "runner.default_approval_policy",
+        "worktree.default_cleanup_policy",
+    ] {
+        db.set_setting(key, &"legacy")
+            .await
+            .expect("seed obsolete setting");
+    }
+    sqlx::query(
+        "INSERT INTO task_audit_events (
+            id, task_id, actor_type, action, before_json, after_json, created_at
+         ) VALUES (?, ?, 'user', 'task.update', ?, ?, ?)",
+    )
+    .bind(new_task_audit_event_id())
+    .bind(&task.id)
+    .bind(
+        r#"{"codex":{"model":"gpt-5.4","sandboxMode":"read-only","approvalPolicy":"on-request"},"prompt":{"body":"before","injectSchedulerInstructions":false},"policies":{"maxRuntimeSec":7200}}"#,
+    )
+    .bind(
+        r#"{"codex":{"model":"gpt-5.5","sandboxMode":"workspace-write","approvalPolicy":"never"},"prompt":{"body":"after","injectSchedulerInstructions":true},"policies":{"maxRetries":3}}"#,
+    )
+    .bind(now_rfc3339())
+    .execute(db.pool())
+    .await
+    .expect("seed legacy audit");
+
+    sqlx::query("ALTER TABLE tasks DROP COLUMN codex_path")
+        .execute(db.pool())
+        .await
+        .expect("restore v4 task shape");
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 5")
+        .execute(db.pool())
+        .await
+        .expect("rewind migration record");
+    sqlx::query("PRAGMA user_version = 4")
+        .execute(db.pool())
+        .await
+        .expect("rewind user version");
+    drop(db);
+
+    let migrated = SchedulerDb::connect(&db_path)
+        .await
+        .expect("apply v5 migration");
+    let task = migrated
+        .get_task(&task.id)
+        .await
+        .expect("get task")
+        .expect("task");
+    assert_eq!(task.sandbox_mode, SandboxMode::DangerFullAccess);
+    assert_eq!(task.approval_policy, ApprovalPolicy::Never);
+    assert!(task.inject_scheduler_instructions);
+    assert!(task.allow_schedule_cli);
+    assert_eq!(task.max_created_schedules_per_run, 0);
+    assert_eq!(task.missed_policy, MissedPolicy::Skip);
+    assert_eq!(task.overlap_policy, OverlapPolicy::Skip);
+    assert_eq!(task.max_runtime_sec, 0);
+    assert_eq!(task.max_retries, 0);
+    assert_eq!(task.cleanup_policy, CleanupPolicy::Keep);
+    assert!(task.cleanup_after_days.is_none());
+
+    let migrated_token = migrated
+        .get_schedule_capability_token_by_hash("legacy-token-hash")
+        .await
+        .expect("get token")
+        .expect("token");
+    assert_eq!(migrated_token.max_creates, 0);
+    let capabilities: Vec<String> =
+        serde_json::from_str(&migrated_token.capabilities_json).expect("capabilities");
+    assert_eq!(
+        capabilities,
+        SCHEDULE_CLI_CAPABILITIES
+            .iter()
+            .map(|capability| (*capability).to_owned())
+            .collect::<Vec<_>>()
+    );
+    for key in [
+        "runner.default_sandbox_mode",
+        "runner.default_approval_policy",
+        "worktree.default_cleanup_policy",
+    ] {
+        assert!(migrated
+            .get_setting_row(key)
+            .await
+            .expect("get setting")
+            .is_none());
+    }
+
+    let audit = migrated
+        .list_task_audit_events(&task.id)
+        .await
+        .expect("audit")
+        .into_iter()
+        .find(|event| event.action == "task.update")
+        .expect("audit event");
+    for snapshot in [audit.before_json, audit.after_json] {
+        let value: Value =
+            serde_json::from_str(snapshot.as_deref().expect("snapshot")).expect("snapshot json");
+        assert!(value["codex"].get("sandboxMode").is_none());
+        assert!(value["codex"].get("approvalPolicy").is_none());
+        assert!(value["prompt"].get("injectSchedulerInstructions").is_none());
+        assert!(value.get("policies").is_none());
+    }
 }
 
 #[tokio::test]
@@ -651,7 +805,7 @@ fn task_and_run_dto_serialize_to_spec_camel_case_shape() {
     task.project_id = Some("proj_01900000-0000-7000-8000-000000000000".to_owned());
     task.repo_path = Some("/Users/alice/src/my-app".to_owned());
     task.base_ref = Some("main".to_owned());
-    task.sandbox_mode = SandboxMode::WorkspaceWrite;
+    task.codex_path = Some("/opt/homebrew/bin/codex".to_owned());
 
     let task_value = serde_json::to_value(TaskDto::from(&task)).expect("task dto json");
     assert!(task_value.get("description").is_none());
@@ -659,15 +813,16 @@ fn task_and_run_dto_serialize_to_spec_camel_case_shape() {
     assert_eq!(task_value["nextRunAt"], json!("2026-07-08T00:00:00Z"));
     assert_eq!(task_value["target"]["mode"], json!("repo-worktree"));
     assert_eq!(task_value["target"]["projectId"], json!(task.project_id));
-    assert_eq!(task_value["codex"]["sandboxMode"], json!("workspace-write"));
     assert_eq!(
-        task_value["policies"]["missedPolicy"],
-        json!("latest_within_window")
+        task_value["codex"]["codexPath"],
+        json!("/opt/homebrew/bin/codex")
     );
-    assert_eq!(
-        task_value["policies"]["maxCreatedSchedulesPerRun"],
-        json!(5)
-    );
+    assert!(task_value["codex"].get("sandboxMode").is_none());
+    assert!(task_value["codex"].get("approvalPolicy").is_none());
+    assert!(task_value["prompt"]
+        .get("injectSchedulerInstructions")
+        .is_none());
+    assert!(task_value.get("policies").is_none());
     assert!(task_value.get("cron_expr").is_none());
     assert!(task_value["target"].get("project_id").is_none());
 

@@ -6,10 +6,9 @@ use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::ipc::{JsonRpcErrorCode, METHOD_SETTINGS_SET};
 use scheduler_core::model::{
-    new_run_id, new_schedule_capability_token_id, ApprovalPolicy, AuditActorType, CleanupPolicy,
-    MissedPolicy, OverlapPolicy, Run, RunStatus, RunTargetMode, SandboxMode,
-    ScheduleCapabilityToken, Task, TaskCodexDto, TaskDto, TaskKind, TaskPoliciesDto, TaskPromptDto,
-    TaskStatus, TaskTargetDto, TriggerType,
+    new_run_id, new_schedule_capability_token_id, AuditActorType, Run, RunStatus, RunTargetMode,
+    ScheduleCapabilityToken, Task, TaskCodexDto, TaskDto, TaskKind, TaskPromptDto, TaskStatus,
+    TaskTargetDto, TriggerType,
 };
 use scheduler_core::time::{format_utc_rfc3339, now_rfc3339};
 use scheduler_core::util::sha256_hex;
@@ -144,33 +143,18 @@ fn sample_task_dto() -> TaskDto {
             base_ref: None,
         },
         codex: TaskCodexDto {
+            codex_path: None,
             model: None,
             reasoning_effort: None,
-            sandbox_mode: SandboxMode::ReadOnly,
-            approval_policy: ApprovalPolicy::Never,
         },
         prompt: TaskPromptDto {
             body: "Fallback prompt.".to_owned(),
-            inject_scheduler_instructions: true,
-        },
-        policies: TaskPoliciesDto {
-            allow_schedule_cli: true,
-            missed_policy: MissedPolicy::LatestWithinWindow,
-            overlap_policy: OverlapPolicy::Skip,
-            max_runtime_sec: 7200,
-            max_created_schedules_per_run: Some(5),
-            schedule_cli_capabilities: Some(vec!["schedule:list".to_owned()]),
-            missed_window_days: Some(7),
-            max_retries: Some(0),
-            retry_backoff_sec: Some(300),
-            cleanup_policy: Some(CleanupPolicy::Keep),
-            cleanup_after_days: None,
         },
     }
 }
 
 #[test]
-fn task_help_does_not_expose_description_flags() {
+fn task_help_only_exposes_customizable_codex_fields() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
 
     for args in [["create", "--help"], ["update", "--help"]] {
@@ -179,6 +163,21 @@ fn task_help_does_not_expose_description_flags() {
         let help = String::from_utf8_lossy(&output.stdout);
         assert!(!help.contains("--description"));
         assert!(!help.contains("--clear-description"));
+        assert!(help.contains("--codex-path"));
+        for fixed_flag in [
+            "--sandbox",
+            "--approval-policy",
+            "--allow-schedule-cli",
+            "--max-runtime-sec",
+            "--max-created-schedules",
+            "--missed-policy",
+            "--overlap-policy",
+        ] {
+            assert!(!help.contains(fixed_flag), "unexpected flag: {fixed_flag}");
+        }
+        if args[0] == "update" {
+            assert!(help.contains("--clear-codex-path"));
+        }
     }
 }
 
@@ -693,8 +692,8 @@ async fn create_manual_chat_falls_back_to_sqlite_with_direct_db_flag() {
             "--chat",
             "--prompt",
             "Fallback without daemon.",
-            "--max-created-schedules",
-            "12",
+            "--codex-path",
+            "/tmp/custom-codex",
             "--json",
         ],
     );
@@ -713,7 +712,10 @@ async fn create_manual_chat_falls_back_to_sqlite_with_direct_db_flag() {
     let task = db.get_task(task_id).await.expect("get task").expect("task");
     assert_eq!(task.name, "sqlite fallback");
     assert_eq!(task.created_by, "cli");
-    assert_eq!(task.max_created_schedules_per_run, 12);
+    assert_eq!(task.codex_path.as_deref(), Some("/tmp/custom-codex"));
+    assert_eq!(task.max_created_schedules_per_run, 0);
+    assert_eq!(task.max_runtime_sec, 0);
+    assert_eq!(task.max_retries, 0);
     let audits = db
         .list_task_audit_events(task_id)
         .await

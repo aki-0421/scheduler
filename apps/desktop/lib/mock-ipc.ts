@@ -92,30 +92,12 @@ let tasks: TaskDto[] = [
       baseRef: "main",
     },
     codex: {
+      codexPath: "/opt/homebrew/bin/codex",
       model: "gpt-5.5",
       reasoningEffort: "medium",
-      sandboxMode: "workspace-write",
-      approvalPolicy: "never",
     },
     prompt: {
       body: "最新の scheduler 変更をレビューし、リグレッションを要約してください。",
-      injectSchedulerInstructions: true,
-    },
-    policies: {
-      allowScheduleCli: true,
-      missedPolicy: "latest_within_window",
-      overlapPolicy: "skip",
-      maxRuntimeSec: 7200,
-      scheduleCliCapabilities: [
-        "schedule:create",
-        "schedule:update-current",
-        "schedule:list",
-      ],
-      missedWindowDays: 7,
-      maxRetries: 1,
-      retryBackoffSec: 300,
-      cleanupPolicy: "keep",
-      maxCreatedSchedulesPerRun: 5,
     },
     auditEvents: [
       {
@@ -126,11 +108,11 @@ let tasks: TaskDto[] = [
         action: "task.update",
         beforeJson: {
           status: "paused",
-          codex: { sandboxMode: "read-only" },
+          codex: { model: "gpt-5.4" },
         },
         afterJson: {
           status: "active",
-          codex: { sandboxMode: "workspace-write" },
+          codex: { model: "gpt-5.5" },
         },
         reason: "デスクトップ UI から設定を調整",
         createdAt: minutesAgo(60),
@@ -168,24 +150,9 @@ let tasks: TaskDto[] = [
     codex: {
       model: "gpt-5.4-mini",
       reasoningEffort: "low",
-      sandboxMode: "read-only",
-      approvalPolicy: "never",
     },
     prompt: {
       body: "古い依存関係を探し、安全な更新計画を提案してください。",
-      injectSchedulerInstructions: true,
-    },
-    policies: {
-      allowScheduleCli: true,
-      missedPolicy: "skip",
-      overlapPolicy: "queue",
-      maxRuntimeSec: 5400,
-      scheduleCliCapabilities: ["schedule:create", "schedule:update-current"],
-      missedWindowDays: 3,
-      maxRetries: 0,
-      retryBackoffSec: 300,
-      cleanupPolicy: "delete_on_success",
-      maxCreatedSchedulesPerRun: 5,
     },
   },
   {
@@ -203,24 +170,9 @@ let tasks: TaskDto[] = [
     codex: {
       model: "gpt-5.4",
       reasoningEffort: "medium",
-      sandboxMode: "read-only",
-      approvalPolicy: "never",
     },
     prompt: {
       body: "最新のマージ済み作業からリリースノートの下書きを作成してください。",
-      injectSchedulerInstructions: false,
-    },
-    policies: {
-      allowScheduleCli: false,
-      missedPolicy: "latest_within_window",
-      overlapPolicy: "skip",
-      maxRuntimeSec: 3600,
-      scheduleCliCapabilities: [],
-      missedWindowDays: 7,
-      maxRetries: 0,
-      retryBackoffSec: 300,
-      cleanupPolicy: "keep",
-      maxCreatedSchedulesPerRun: 5,
     },
   },
 ];
@@ -515,7 +467,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       const health: HealthDto = {
         ok: true,
         version: "dev-mock",
-        dbSchemaVersion: 4,
+        dbSchemaVersion: 5,
         schedulerEnabled: enabled,
         runningCount: runs.filter((run) => run.status === "running").length,
         queuedCount: runs.filter((run) => run.status === "queued").length,
@@ -531,7 +483,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
       ) as boolean;
       const diagnostics: DaemonDiagnostics = {
         version: "dev-mock",
-        dbSchemaVersion: 4,
+        dbSchemaVersion: 5,
         dataDir: "/tmp/codex-scheduler",
         socketPath: "/tmp/codex-scheduler/scheduler.sock",
         dbSizeBytes: 4096,

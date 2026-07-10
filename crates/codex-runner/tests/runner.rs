@@ -112,6 +112,24 @@ async fn success_run_captures_logs_last_message_and_exit_code() {
 }
 
 #[tokio::test]
+async fn reasoning_effort_uses_config_when_dedicated_flag_is_unavailable() {
+    let temp = TempDir::new().unwrap();
+    let mut request = base_request(fixture("dummy-codex-mixed-output.sh"), &temp);
+    request.codex.max_runtime_sec = 0;
+    let runner = CodexRunner::new();
+
+    let outcome = runner
+        .run(request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, RunStatus::Succeeded);
+    let command_json = fs::read_to_string(outcome.log_paths.command_json).unwrap();
+    assert!(!command_json.contains("--reasoning-effort"));
+    assert!(command_json.contains("model_reasoning_effort=\\\"medium\\\""));
+}
+
+#[tokio::test]
 async fn unsafe_run_id_is_rejected_before_path_creation() {
     let temp = TempDir::new().unwrap();
     let runner = CodexRunner::new();

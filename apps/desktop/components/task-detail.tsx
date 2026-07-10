@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode } from "react";
 import {
-  AlertTriangle,
   LockKeyhole,
   LockOpen,
   PlusCircle,
@@ -137,25 +136,6 @@ function PathValue({
   );
 }
 
-function formatSeconds(value?: number) {
-  if (!value) {
-    return "未設定";
-  }
-
-  if (value < 60) {
-    return `${value}秒`;
-  }
-  if (value < 3_600) {
-    const minutes = Math.floor(value / 60);
-    const seconds = value % 60;
-    return seconds ? `${minutes}分 ${seconds}秒` : `${minutes}分`;
-  }
-
-  const hours = Math.floor(value / 3_600);
-  const minutes = Math.round((value % 3_600) / 60);
-  return minutes ? `${hours}時間 ${minutes}分` : `${hours}時間`;
-}
-
 function formatAuditJson(value: unknown) {
   if (value === undefined || value === null || value === "") {
     return undefined;
@@ -245,15 +225,9 @@ export function TaskDetail({
     )
     .slice();
   const auditEvents = loadedAuditEvents ?? task.auditEvents ?? [];
-  const isDangerFullAccess = task.codex.sandboxMode === "danger-full-access";
   const schedule = describeTaskSchedule(task);
   const target = describeTaskTarget(task);
   const updateTask = useUpdateTask();
-  const capabilities = task.policies.scheduleCliCapabilities ?? [];
-  const retryDetail =
-    task.policies.maxRetries && task.policies.maxRetries > 0
-      ? `${task.policies.maxRetries} 回再試行 · ${formatSeconds(task.policies.retryBackoffSec)} 待機`
-      : "自動再試行なし";
 
   function toggleLock() {
     updateTask.mutate(
@@ -297,12 +271,6 @@ export function TaskDetail({
                   <Badge variant="outline" className="gap-1">
                     <LockKeyhole className="size-3" aria-hidden="true" />
                     ロック中
-                  </Badge>
-                ) : null}
-                {isDangerFullAccess ? (
-                  <Badge variant="warning" className="gap-1">
-                    <AlertTriangle className="size-3" aria-hidden="true" />
-                    フルアクセス
                   </Badge>
                 ) : null}
               </div>
@@ -429,15 +397,6 @@ export function TaskDetail({
                     </span>
                   }
                 />
-                <DefinitionItem
-                  label="未実行分"
-                  value={formatReadableEnum(task.policies.missedPolicy)}
-                  detail={
-                    task.policies.missedWindowDays
-                      ? `${task.policies.missedWindowDays}日間の期間`
-                      : undefined
-                  }
-                />
               </dl>
             </div>
 
@@ -471,7 +430,7 @@ export function TaskDetail({
             </div>
 
             <div className="grid gap-3">
-              <h3 className="text-sm font-semibold">実行と安全性</h3>
+              <h3 className="text-sm font-semibold">Codex</h3>
               <dl className="grid gap-3 md:grid-cols-3">
                 <DefinitionItem
                   value={task.codex.model ?? "既定モデル"}
@@ -482,62 +441,12 @@ export function TaskDetail({
                   value={formatReadableEnum(task.codex.reasoningEffort)}
                 />
                 <DefinitionItem
-                  label="サンドボックス"
+                  label="Codex バイナリ"
                   value={
-                    <Badge variant={isDangerFullAccess ? "warning" : "outline"}>
-                      {formatReadableEnum(task.codex.sandboxMode)}
-                    </Badge>
-                  }
-                />
-                <DefinitionItem
-                  label="承認ポリシー"
-                  value={formatReadableEnum(task.codex.approvalPolicy)}
-                />
-                <DefinitionItem
-                  label="最大実行時間"
-                  value={formatSeconds(task.policies.maxRuntimeSec)}
-                />
-                <DefinitionItem label="再試行" value={retryDetail} />
-                <DefinitionItem
-                  label="重複ポリシー"
-                  value={formatReadableEnum(task.policies.overlapPolicy)}
-                />
-                <DefinitionItem
-                  label="スケジュール CLI"
-                  value={
-                    <Badge
-                      variant={
-                        task.policies.allowScheduleCli ? "success" : "muted"
-                      }
-                    >
-                      {task.policies.allowScheduleCli ? "許可" : "ブロック"}
-                    </Badge>
-                  }
-                  detail={
-                    capabilities.length
-                      ? capabilities.map(formatReadableEnum).join(", ")
-                      : "追加の schedule 権限なし"
-                  }
-                />
-                <DefinitionItem
-                  label="作成スケジュール上限"
-                  value={task.policies.maxCreatedSchedulesPerRun ?? "上限なし"}
-                />
-                <DefinitionItem
-                  label="クリーンアップ"
-                  value={formatReadableEnum(task.policies.cleanupPolicy)}
-                  detail={
-                    task.policies.cleanupAfterDays
-                      ? `${task.policies.cleanupAfterDays}日間保持`
-                      : undefined
-                  }
-                />
-                <DefinitionItem
-                  label="スケジューラー指示"
-                  value={
-                    task.prompt.injectSchedulerInstructions
-                      ? "挿入済み"
-                      : "未挿入"
+                    <PathValue
+                      value={task.codex.codexPath}
+                      fallback="全体設定を使用"
+                    />
                   }
                 />
               </dl>

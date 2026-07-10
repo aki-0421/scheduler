@@ -3,7 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskWizard } from "@/components/task-wizard";
-import { defaultCodexModel, defaultReasoningEffort } from "@/lib/codex-options";
+import {
+  codexModelOptions,
+  defaultCodexModel,
+  defaultReasoningEffort,
+  defaultReasoningEffortForModel,
+  reasoningEffortOptionsForModel,
+} from "@/lib/codex-options";
 import { ipcClient } from "@/lib/ipc";
 import { buildTaskDto, defaultTaskDraft, taskToDraft } from "@/lib/task-draft";
 import { getSystemTimezone } from "@/lib/timezone";
@@ -169,36 +175,56 @@ describe("TaskWizard cron validation", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows hardening warnings in advanced settings", async () => {
+  it("shows the Codex path input only when customization is enabled", async () => {
     const user = userEvent.setup();
     const draft = {
       ...defaultTaskDraft(),
-      name: "Danger task",
-      prompt: "Run with broad permissions.",
-      targetMode: "repo-worktree" as const,
-      projectId: "proj_demo",
-      repoPath: "/tmp/repo",
-      sandboxMode: "danger-full-access" as const,
-      allowScheduleCli: true,
-      capabilities: ["schedule:create", "schedule:update-any"],
+      name: "Custom Codex task",
+      prompt: "Run with a task-specific Codex binary.",
     };
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
 
     await user.click(screen.getByRole("tab", { name: "詳細" }));
 
-    expect(
-      screen.getByLabelText(
-        "ファイルシステムのフルアクセスのリスクを理解しています",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("任意のスケジュールを更新できます"),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "タスク" }));
-    expect(
-      screen.getByRole("button", { name: "Gitリポジトリを追加" }),
-    ).toBeInTheDocument();
+    const customize = screen.getByRole("checkbox", {
+      name: /Codex バイナリパスをカスタマイズ/,
+    });
+    expect(customize).not.toBeChecked();
+    expect(screen.queryByLabelText("Codex バイナリパス")).not.toBeInTheDocument();
+
+    await user.click(customize);
+    const path = screen.getByLabelText("Codex バイナリパス");
+    await user.type(path, "/opt/homebrew/bin/codex");
+    expect(path).toHaveValue("/opt/homebrew/bin/codex");
+
+    const dto = buildTaskDto(
+      {
+        ...draft,
+        customCodexPath: true,
+        codexPath: "/opt/homebrew/bin/codex",
+      },
+      false,
+    );
+    expect(dto.codex.codexPath).toBe("/opt/homebrew/bin/codex");
+    expect(dto).not.toHaveProperty("policies");
+    expect(dto.codex).not.toHaveProperty("sandboxMode");
+    expect(dto.codex).not.toHaveProperty("approvalPolicy");
+    expect(dto.prompt).not.toHaveProperty("injectSchedulerInstructions");
+
+    for (const removedLabel of [
+      "サンドボックス",
+      "承認ポリシー",
+      "最大実行時間",
+      "再試行",
+      "重複",
+      "未実行分",
+      "クリーンアップ",
+      "schedule CLI を許可",
+      "1実行あたりの作成スケジュール上限",
+    ]) {
+      expect(screen.queryByLabelText(removedLabel)).not.toBeInTheDocument();
+    }
   });
 
   it("uses frontier model and effort selects in advanced settings", async () => {
@@ -220,6 +246,18 @@ describe("TaskWizard cron validation", () => {
       screen.getByRole("combobox", { name: "推論 effort" }),
     ).toHaveTextContent("中");
     expect(screen.queryByDisplayValue("gpt-5-codex")).not.toBeInTheDocument();
+
+    expect(codexModelOptions.map((model) => model.value)).toContain(
+      "gpt-5.3-codex-spark",
+    );
+    expect(
+      reasoningEffortOptionsForModel("gpt-5.3-codex-spark").map(
+        (effort) => effort.value,
+      ),
+    ).toEqual(["low", "medium", "high", "xhigh"]);
+    expect(defaultReasoningEffortForModel("gpt-5.3-codex-spark")).toBe(
+      "high",
+    );
   });
 
   it("normalizes deprecated Codex model values when editing a task", () => {
@@ -289,9 +327,8 @@ describe("TaskWizard cron validation", () => {
       presetMode: "daily" as const,
       presetTime: "09:00",
       timezone: "UTC",
-      sandboxMode: "workspace-write" as const,
-      capabilities: ["schedule:create", "schedule:list"],
-      maxCreatedSchedulesPerRun: 3,
+      customCodexPath: true,
+      codexPath: "/usr/local/bin/codex",
     };
     const expectedDto = buildTaskDto(
       { ...draft, timezone: getSystemTimezone() },

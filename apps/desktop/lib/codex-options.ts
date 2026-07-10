@@ -1,5 +1,4 @@
 export const reasoningEffortOptions = [
-  { value: "none", label: "なし" },
   { value: "low", label: "低" },
   { value: "medium", label: "中" },
   { value: "high", label: "高" },
@@ -18,24 +17,35 @@ const reasoningEffortLabelByValue = new Map(
 
 const allFrontierReasoningEfforts = reasoningEffortValues;
 
+// Keep task-facing options aligned with `codex debug models`; internal-only models stay hidden.
 export const codexModelOptions = [
   {
     value: "gpt-5.5",
     label: "GPT-5.5",
     detail: "複雑なコーディングと長い調査向け",
     efforts: allFrontierReasoningEfforts,
+    defaultEffort: "medium",
   },
   {
     value: "gpt-5.4",
     label: "GPT-5.4",
     detail: "品質とコストのバランス",
     efforts: allFrontierReasoningEfforts,
+    defaultEffort: "medium",
   },
   {
     value: "gpt-5.4-mini",
     label: "GPT-5.4 mini",
     detail: "軽いタスクとサブエージェント向け",
     efforts: allFrontierReasoningEfforts,
+    defaultEffort: "medium",
+  },
+  {
+    value: "gpt-5.3-codex-spark",
+    label: "GPT-5.3 Codex Spark",
+    detail: "低レイテンシの対話的なコーディング向け",
+    efforts: allFrontierReasoningEfforts,
+    defaultEffort: "high",
   },
 ] as const;
 
@@ -58,10 +68,23 @@ export function normalizeCodexModel(
 
 export function normalizeReasoningEffort(
   value: string | undefined | null,
+  model: CodexModel = defaultCodexModel,
 ): ReasoningEffort {
-  return reasoningEffortValues.includes(value as ReasoningEffort)
+  const efforts = codexModelOptions.find(
+    (option) => option.value === model,
+  )?.efforts;
+  return efforts?.includes(value as ReasoningEffort)
     ? (value as ReasoningEffort)
-    : defaultReasoningEffort;
+    : defaultReasoningEffortForModel(model);
+}
+
+export function defaultReasoningEffortForModel(
+  model: CodexModel,
+): ReasoningEffort {
+  return (
+    codexModelOptions.find((option) => option.value === model)?.defaultEffort ??
+    defaultReasoningEffort
+  );
 }
 
 export function reasoningEffortOptionsForModel(model: CodexModel) {

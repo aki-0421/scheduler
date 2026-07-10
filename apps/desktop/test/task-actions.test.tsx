@@ -18,18 +18,9 @@ const activeTask: TaskDto = {
   codex: {
     model: "gpt-5.5",
     reasoningEffort: "medium",
-    sandboxMode: "read-only",
-    approvalPolicy: "never",
   },
   prompt: {
     body: "Test",
-    injectSchedulerInstructions: true,
-  },
-  policies: {
-    allowScheduleCli: true,
-    missedPolicy: "skip",
-    overlapPolicy: "skip",
-    maxRuntimeSec: 300,
   },
 };
 

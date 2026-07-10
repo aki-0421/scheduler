@@ -53,8 +53,6 @@ pub enum RunnerError {
     BaseRefUnresolved(String),
     #[error("not enough free disk space at {path}: {available_bytes} bytes available")]
     InsufficientDiskSpace { path: PathBuf, available_bytes: u64 },
-    #[error("max_runtime_sec must be greater than zero")]
-    InvalidRuntime,
     #[error("danger-full-access requires allow_danger_full_access=true")]
     DangerousSandboxNotAllowed,
     #[error("failed to spawn codex: {0}")]
@@ -600,9 +598,6 @@ fn validate_required_flags(capabilities: &CodexCapabilities) -> Result<()> {
 }
 
 fn validate_runtime(codex: &CodexConfig) -> Result<()> {
-    if codex.max_runtime_sec == 0 {
-        return Err(RunnerError::InvalidRuntime);
-    }
     if codex.sandbox_mode == Some(SandboxMode::DangerFullAccess) && !codex.allow_danger_full_access
     {
         return Err(RunnerError::DangerousSandboxNotAllowed);
@@ -1007,14 +1002,23 @@ fn build_command_record(
         }
     }
 
-    if request.codex.reasoning_effort.is_some() && !capabilities.supports_flag("--reasoning-effort")
-    {
-        warnings.push(RunnerWarning::new(
-            "unsupported_flag",
-            "codex exec does not support --reasoning-effort; configured reasoning effort was not passed",
-        ));
-    } else if let Some(reasoning_effort) = &request.codex.reasoning_effort {
-        argv.extend(["--reasoning-effort".to_owned(), reasoning_effort.clone()]);
+    if let Some(reasoning_effort) = &request.codex.reasoning_effort {
+        if capabilities.supports_flag("--reasoning-effort") {
+            argv.extend(["--reasoning-effort".to_owned(), reasoning_effort.clone()]);
+        } else if capabilities.supports_flag("--config") {
+            argv.extend([
+                "--config".to_owned(),
+                format!(
+                    "model_reasoning_effort={}",
+                    serde_json::to_string(reasoning_effort)?
+                ),
+            ]);
+        } else {
+            warnings.push(RunnerWarning::new(
+                "unsupported_flag",
+                "codex exec cannot receive the configured reasoning effort",
+            ));
+        }
     }
 
     argv.extend(["--sandbox".to_owned(), sandbox.as_str().to_owned()]);
@@ -1215,7 +1219,7 @@ async fn execute_codex(
             status = &mut wait_future => {
                 exit_status = Some(status?);
             }
-            _ = sleep(Duration::from_secs(max_runtime_sec)) => {
+            _ = sleep(Duration::from_secs(max_runtime_sec)), if max_runtime_sec > 0 => {
                 terminal_status = RunStatus::TimedOut;
             }
             _ = cancellation.cancelled() => {
@@ -1681,7 +1685,7 @@ fn render_scheduler_instructions(request: &RunRequest) -> String {
     let can_update_current = capabilities
         .iter()
         .any(|cap| cap == "schedule:update-current");
-    let can_repo = capabilities.iter().any(|cap| cap == "repo");
+    let can_repo = request.target.mode != RunTargetMode::Chat;
 
     let mut text = format!(
         "あなたは Codex Scheduler によって起動されたローカル macOS 上の Codex CLI セッションです。\n\n\
@@ -1738,8 +1742,7 @@ fn render_scheduler_instructions(request: &RunRequest) -> String {
     }
     text.push_str(
         "- 不確実または影響が大きいタスクは `--paused` で作り、ユーザーが確認できるようにしてください。\n\
-- ユーザーの依頼と無関係なスケジュールは作成しないでください。\n\
-- ユーザーが明示しない限り `danger-full-access` を使わないでください。",
+- ユーザーの依頼と無関係なスケジュールは作成しないでください。",
     );
 
     text

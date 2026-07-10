@@ -1,7 +1,7 @@
 ---
 title: S001 Tasks
 description: Tasks screen の archived list、task detail、task run history、tabbed operations、lock behavior を定義する。
-updated: 2026-07-09
+updated: 2026-07-10
 read_when:
   - Tasks page、archived task list、task detail、task action、edit dialog、duplicate flow、lock behavior、audit display を変更するとき。
 ---
@@ -51,7 +51,6 @@ read_when:
 - Empty archived list: 表示領域を埋める高さで `アーカイブ済みタスクはありません` と active task creation action を表示する。
 - Selected task loading: page skeleton。
 - Selected task populated: summary、session history、prompt、settings、audit log、actions を tabs で切り替える。
-- Full filesystem access: row と detail に warning badge が表示される。
 - Locked task: lock badge、edit / delete disabled state、unlock action を表示する。
 
 バリデーションとエラー:
@@ -69,7 +68,6 @@ read_when:
 
 セキュリティと安全性:
 
-- `danger-full-access` task は `Full access` warning badge を表示する必要がある。
 - locked task は scheduled Codex session と CLI actor による destructive / mutating action を拒否する。lock / unlock は audit event に記録する。
 - audit event は actor、action、timestamp、任意の before / after JSON detail を表示する。
 

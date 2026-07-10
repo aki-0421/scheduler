@@ -17,9 +17,8 @@ use scheduler_core::ipc::{
     METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
 };
 use scheduler_core::model::{
-    new_task_audit_event_id, ApprovalPolicy, AuditActorType, CleanupPolicy, MissedPolicy,
-    OverlapPolicy, Project, ProjectKind, RunDto, RunStatus, RunTargetMode, SandboxMode,
-    ScheduleStatus, Task, TaskAuditEvent, TaskCodexDto, TaskDto, TaskKind, TaskPoliciesDto,
+    new_task_audit_event_id, AuditActorType, Project, ProjectKind, RunDto, RunStatus,
+    RunTargetMode, ScheduleStatus, Task, TaskAuditEvent, TaskCodexDto, TaskDto, TaskKind,
     TaskPromptDto, TaskStatus, TaskTargetDto,
 };
 use scheduler_core::schedule::{
@@ -35,7 +34,6 @@ use tokio::net::UnixStream;
 
 const PROMPT_MAX_BYTES: usize = 200 * 1024;
 const DEFAULT_TIMEZONE: &str = "UTC";
-const DEFAULT_MAX_RUNTIME_SEC: i64 = 7_200;
 const RPC_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub fn cli_name() -> &'static str {
@@ -168,28 +166,10 @@ struct TaskFields {
     reasoning_effort: Option<String>,
 
     #[arg(long)]
-    sandbox: Option<String>,
-
-    #[arg(long)]
-    approval_policy: Option<String>,
-
-    #[arg(long)]
-    allow_schedule_cli: Option<bool>,
+    codex_path: Option<PathBuf>,
 
     #[arg(long)]
     paused: bool,
-
-    #[arg(long)]
-    max_runtime_sec: Option<i64>,
-
-    #[arg(long = "max-created-schedules")]
-    max_created_schedules: Option<i64>,
-
-    #[arg(long)]
-    missed_policy: Option<String>,
-
-    #[arg(long)]
-    overlap_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Args, Default)]
@@ -208,6 +188,9 @@ struct ClearFlags {
 
     #[arg(long)]
     clear_reasoning_effort: bool,
+
+    #[arg(long)]
+    clear_codex_path: bool,
 }
 
 #[derive(Debug, Args)]
@@ -1397,36 +1380,14 @@ fn build_create_task(fields: &TaskFields, slug: String) -> Result<TaskDto, CliEr
         next_run_at: schedule.next_run_at,
         target,
         codex: TaskCodexDto {
+            codex_path: fields
+                .codex_path
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned()),
             model: fields.model.clone(),
             reasoning_effort: fields.reasoning_effort.clone(),
-            sandbox_mode: parse_enum_or_default::<SandboxMode>(fields.sandbox.as_deref())?,
-            approval_policy: parse_enum_or_default::<ApprovalPolicy>(
-                fields.approval_policy.as_deref(),
-            )?,
         },
-        prompt: TaskPromptDto {
-            body: prompt,
-            inject_scheduler_instructions: true,
-        },
-        policies: TaskPoliciesDto {
-            allow_schedule_cli: fields.allow_schedule_cli.unwrap_or(true),
-            missed_policy: parse_enum_or_default::<MissedPolicy>(fields.missed_policy.as_deref())?,
-            overlap_policy: parse_enum_or_default::<OverlapPolicy>(
-                fields.overlap_policy.as_deref(),
-            )?,
-            max_runtime_sec: fields.max_runtime_sec.unwrap_or(DEFAULT_MAX_RUNTIME_SEC),
-            max_created_schedules_per_run: Some(max_created_schedules_value(fields)),
-            schedule_cli_capabilities: Some(vec![
-                "schedule:create".to_owned(),
-                "schedule:update-current".to_owned(),
-                "schedule:list".to_owned(),
-            ]),
-            missed_window_days: Some(7),
-            max_retries: Some(0),
-            retry_backoff_sec: Some(300),
-            cleanup_policy: Some(CleanupPolicy::Keep),
-            cleanup_after_days: None,
-        },
+        prompt: TaskPromptDto { body: prompt },
     })
 }
 
@@ -1484,29 +1445,11 @@ fn apply_task_patch(
     if clear.clear_reasoning_effort {
         task.codex.reasoning_effort = None;
     }
-    if let Some(sandbox) = &fields.sandbox {
-        task.codex.sandbox_mode = parse_enum::<SandboxMode>(sandbox, "sandbox")?;
+    if let Some(codex_path) = &fields.codex_path {
+        task.codex.codex_path = Some(codex_path.to_string_lossy().into_owned());
     }
-    if let Some(approval_policy) = &fields.approval_policy {
-        task.codex.approval_policy =
-            parse_enum::<ApprovalPolicy>(approval_policy, "approval-policy")?;
-    }
-    if let Some(allow_schedule_cli) = fields.allow_schedule_cli {
-        task.policies.allow_schedule_cli = allow_schedule_cli;
-    }
-    if let Some(max_runtime_sec) = fields.max_runtime_sec {
-        validate_positive(max_runtime_sec, "max-runtime-sec")?;
-        task.policies.max_runtime_sec = max_runtime_sec;
-    }
-    if fields.max_created_schedules.is_some() {
-        task.policies.max_created_schedules_per_run = Some(max_created_schedules_value(fields));
-    }
-    if let Some(missed_policy) = &fields.missed_policy {
-        task.policies.missed_policy = parse_enum::<MissedPolicy>(missed_policy, "missed-policy")?;
-    }
-    if let Some(overlap_policy) = &fields.overlap_policy {
-        task.policies.overlap_policy =
-            parse_enum::<OverlapPolicy>(overlap_policy, "overlap-policy")?;
+    if clear.clear_codex_path {
+        task.codex.codex_path = None;
     }
     if fields.paused {
         task.status = TaskStatus::Paused;
@@ -1686,13 +1629,11 @@ fn validate_task_fields(fields: &TaskFields, mode: ValidationMode) -> Result<(),
         let prompt = read_prompt(fields)?;
         validate_prompt_size(&prompt)?;
     }
-    if let Some(max_runtime_sec) = fields.max_runtime_sec {
-        validate_positive(max_runtime_sec, "max-runtime-sec")?;
+    if let Some(codex_path) = &fields.codex_path {
+        if codex_path.as_os_str().is_empty() {
+            return Err(CliError::validation("codex-path must not be empty"));
+        }
     }
-    parse_optional_enum::<SandboxMode>(fields.sandbox.as_deref(), "sandbox")?;
-    parse_optional_enum::<ApprovalPolicy>(fields.approval_policy.as_deref(), "approval-policy")?;
-    parse_optional_enum::<MissedPolicy>(fields.missed_policy.as_deref(), "missed-policy")?;
-    parse_optional_enum::<OverlapPolicy>(fields.overlap_policy.as_deref(), "overlap-policy")?;
 
     Ok(())
 }
@@ -1715,6 +1656,11 @@ fn validate_clear_flags(clear: &ClearFlags, fields: &TaskFields) -> Result<(), C
     if clear.clear_reasoning_effort && fields.reasoning_effort.is_some() {
         return Err(CliError::validation(
             "--clear-reasoning-effort conflicts with --reasoning-effort",
+        ));
+    }
+    if clear.clear_codex_path && fields.codex_path.is_some() {
+        return Err(CliError::validation(
+            "--clear-codex-path conflicts with --codex-path",
         ));
     }
     Ok(())
@@ -1742,18 +1688,6 @@ fn validate_prompt_size(prompt: &str) -> Result<(), CliError> {
             json!({ "bytes": len, "maxBytes": PROMPT_MAX_BYTES }),
         ))
     }
-}
-
-fn validate_positive(value: i64, field: &str) -> Result<(), CliError> {
-    if value > 0 {
-        Ok(())
-    } else {
-        Err(CliError::validation(format!("{field} must be positive")))
-    }
-}
-
-fn max_created_schedules_value(fields: &TaskFields) -> i64 {
-    fields.max_created_schedules.unwrap_or(5).clamp(1, 100)
 }
 
 fn validate_count(count: usize) -> Result<(), CliError> {
@@ -1825,17 +1759,6 @@ where
     T::Err: std::fmt::Display,
 {
     value.map(|value| parse_enum(value, field)).transpose()
-}
-
-fn parse_enum_or_default<T>(value: Option<&str>) -> Result<T, CliError>
-where
-    T: FromStr + Default,
-    T::Err: std::fmt::Display,
-{
-    value
-        .map(|value| parse_enum(value, "value"))
-        .transpose()
-        .map(|value| value.unwrap_or_default())
 }
 
 fn parse_enum<T>(value: &str, field: &str) -> Result<T, CliError>
