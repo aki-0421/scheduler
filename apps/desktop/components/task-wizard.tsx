@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   FileText,
   FolderGit2,
-  FolderOpen,
   MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -48,12 +47,7 @@ import {
 } from "@/lib/task-draft";
 import { getSystemTimezone } from "@/lib/timezone";
 import type { TaskDto } from "@/lib/types";
-import {
-  useCreateTask,
-  useProjects,
-  useTrustProject,
-  useUpdateTask,
-} from "@/lib/queries";
+import { useCreateTask, useProjects, useUpdateTask } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 type SelectOption<T extends string> = {
@@ -179,15 +173,6 @@ function formatCronError(message?: string) {
   }
 
   return message;
-}
-
-function formatProjectRegistrationError(error: unknown) {
-  if (error instanceof Error) {
-    return error.message.includes("Git repository")
-      ? "Gitリポジトリ内のフォルダを選択してください。"
-      : error.message;
-  }
-  return "プロジェクトコマンドに失敗しました。";
 }
 
 function normalizeErrors(
@@ -331,9 +316,7 @@ export function TaskWizard({
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isImportingPrompt, setIsImportingPrompt] = useState(false);
-  const [isPickingRepo, setIsPickingRepo] = useState(false);
   const projects = useProjects();
-  const trustProject = useTrustProject();
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const isSaving = createTask.isPending || updateTask.isPending;
@@ -525,46 +508,6 @@ export function TaskWizard({
     }
   }
 
-  async function pickRepositoryFolder() {
-    setIsPickingRepo(true);
-    try {
-      const path = await ipcClient.projectPickFolder();
-      if (path) {
-        trustProject.mutate(path, {
-          onSuccess: (project) => {
-            if (project.kind !== "git" || !project.gitRoot) {
-              toast.error("Gitリポジトリを選択してください");
-              return;
-            }
-            const gitRoot = project.gitRoot;
-            setDraft((current) => ({
-              ...current,
-              projectId: project.id,
-              repoPath: gitRoot,
-              baseRef: project.defaultBranch ?? current.baseRef,
-              targetMode: "repo-worktree",
-            }));
-            clearErrors("projectId", "repoPath", "targetMode");
-            toast.success("Gitプロジェクトを追加しました");
-          },
-          onError: (error) =>
-            toast.error("Gitプロジェクトを追加できませんでした", {
-              description: formatProjectRegistrationError(error),
-            }),
-        });
-      }
-    } catch (error) {
-      toast.error("Gitリポジトリを選択できませんでした", {
-        description:
-          error instanceof Error
-            ? error.message
-            : "ダイアログコマンドに失敗しました。",
-      });
-    } finally {
-      setIsPickingRepo(false);
-    }
-  }
-
   async function importPromptFile() {
     setIsImportingPrompt(true);
     try {
@@ -670,121 +613,114 @@ export function TaskWizard({
             />
           </Field>
 
-          <div className="grid gap-2">
-            <div className="flex flex-wrap items-start gap-3">
-              <SelectField
-                id="schedule"
-                label="スケジュール"
-                value={scheduleChoice}
-                options={scheduleOptions}
-                onChange={updateScheduleChoice}
-                required
-                className="w-full sm:w-44"
-              />
+          <div className="flex flex-wrap items-start gap-3">
+            <SelectField
+              id="schedule"
+              label="スケジュール"
+              value={scheduleChoice}
+              options={scheduleOptions}
+              onChange={updateScheduleChoice}
+              required
+              className="w-full sm:w-44"
+            />
 
-              {scheduleChoice === "once" ? (
-                <>
-                  <Field
-                    label="日付"
-                    htmlFor="once-date"
-                    error={errors.onceDate}
-                    required
-                    className="w-full sm:w-44"
-                  >
-                    <Input
-                      id="once-date"
-                      type="date"
-                      required
-                      value={draft.onceDate}
-                      onChange={(event) =>
-                        update("onceDate", event.currentTarget.value)
-                      }
-                    />
-                  </Field>
-                  <Field
-                    label="時刻"
-                    htmlFor="once-time"
-                    error={errors.onceTime}
-                    required
-                    className="w-full sm:w-36"
-                  >
-                    <Input
-                      id="once-time"
-                      type="time"
-                      required
-                      value={draft.onceTime}
-                      onChange={(event) =>
-                        update("onceTime", event.currentTarget.value)
-                      }
-                    />
-                  </Field>
-                </>
-              ) : null}
-
-              {scheduleChoice === "daily" ||
-              scheduleChoice === "weekdays" ||
-              scheduleChoice === "weekly" ? (
-                <>
-                  {scheduleChoice === "weekly" ? (
-                    <SelectField
-                      id="weekly-day"
-                      label="曜日"
-                      value={draft.weeklyDay}
-                      options={weekdayOptions}
-                      onChange={(value) => update("weeklyDay", value)}
-                      error={errors.weeklyDay}
-                      required
-                      className="w-full sm:w-36"
-                    />
-                  ) : null}
-                  <Field
-                    label="時刻"
-                    htmlFor="preset-time"
-                    error={errors.presetTime}
-                    required
-                    className="w-full sm:w-36"
-                  >
-                    <Input
-                      id="preset-time"
-                      type="time"
-                      required
-                      value={draft.presetTime}
-                      onChange={(event) =>
-                        update("presetTime", event.currentTarget.value)
-                      }
-                    />
-                  </Field>
-                </>
-              ) : null}
-
-              {scheduleChoice === "cron" ? (
+            {scheduleChoice === "once" ? (
+              <>
                 <Field
-                  label="カスタム cron 式"
-                  htmlFor="cron-expression"
-                  error={errors.cronPreview ?? cronError}
-                  description="5フィールドの cron 式を使ってください。"
+                  label="日付"
+                  htmlFor="once-date"
+                  error={errors.onceDate}
                   required
-                  className="w-full sm:w-72"
+                  className="w-full sm:w-44"
                 >
                   <Input
-                    id="cron-expression"
+                    id="once-date"
+                    type="date"
                     required
-                    value={draft.cronExpr}
-                    aria-invalid={Boolean(errors.cronPreview ?? cronError)}
+                    value={draft.onceDate}
                     onChange={(event) =>
-                      update("cronExpr", event.currentTarget.value, [
-                        "cronPreview",
-                      ])
+                      update("onceDate", event.currentTarget.value)
                     }
-                    placeholder="0 9 * * 1-5"
                   />
                 </Field>
-              ) : null}
-            </div>
-            {scheduleChoice !== "manual" ? (
-              <p className="text-xs text-muted-foreground">
-                PCのタイムゾーン（{draft.timezone}）を使用します。
-              </p>
+                <Field
+                  label="時刻"
+                  htmlFor="once-time"
+                  error={errors.onceTime}
+                  required
+                  className="w-full sm:w-36"
+                >
+                  <Input
+                    id="once-time"
+                    type="time"
+                    required
+                    value={draft.onceTime}
+                    onChange={(event) =>
+                      update("onceTime", event.currentTarget.value)
+                    }
+                  />
+                </Field>
+              </>
+            ) : null}
+
+            {scheduleChoice === "daily" ||
+            scheduleChoice === "weekdays" ||
+            scheduleChoice === "weekly" ? (
+              <>
+                {scheduleChoice === "weekly" ? (
+                  <SelectField
+                    id="weekly-day"
+                    label="曜日"
+                    value={draft.weeklyDay}
+                    options={weekdayOptions}
+                    onChange={(value) => update("weeklyDay", value)}
+                    error={errors.weeklyDay}
+                    required
+                    className="w-full sm:w-36"
+                  />
+                ) : null}
+                <Field
+                  label="時刻"
+                  htmlFor="preset-time"
+                  error={errors.presetTime}
+                  required
+                  className="w-full sm:w-36"
+                >
+                  <Input
+                    id="preset-time"
+                    type="time"
+                    required
+                    value={draft.presetTime}
+                    onChange={(event) =>
+                      update("presetTime", event.currentTarget.value)
+                    }
+                  />
+                </Field>
+              </>
+            ) : null}
+
+            {scheduleChoice === "cron" ? (
+              <Field
+                label="カスタム cron 式"
+                htmlFor="cron-expression"
+                error={errors.cronPreview ?? cronError}
+                description="5フィールドの cron 式を使ってください。"
+                required
+                className="w-full sm:w-72"
+              >
+                <Input
+                  id="cron-expression"
+                  required
+                  value={draft.cronExpr}
+                  aria-invalid={Boolean(errors.cronPreview ?? cronError)}
+                  onChange={(event) =>
+                    update("cronExpr", event.currentTarget.value, [
+                      "cronPreview",
+                    ])
+                  }
+                  placeholder="0 9 * * 1-5"
+                />
+              </Field>
             ) : null}
           </div>
         </section>
@@ -828,23 +764,9 @@ export function TaskWizard({
               className="grid gap-3"
               aria-labelledby="target-choice-label"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 id="target-choice-label" className="text-sm font-semibold">
-                  実行先
-                </h3>
-                {isRepoTarget ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isPickingRepo || trustProject.isPending}
-                    onClick={() => void pickRepositoryFolder()}
-                  >
-                    <FolderOpen data-icon="inline-start" aria-hidden="true" />
-                    Gitリポジトリを追加
-                  </Button>
-                ) : null}
-              </div>
+              <h3 id="target-choice-label" className="text-sm font-semibold">
+                実行先
+              </h3>
               <RadioGroup
                 value={targetChoice}
                 aria-labelledby="target-choice-label"
@@ -901,42 +823,16 @@ export function TaskWizard({
                 </Label>
               </RadioGroup>
               {isRepoTarget ? (
-                <div className="grid gap-3">
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
-                    <SelectField
-                      id="project"
-                      label="Gitプロジェクト"
-                      value={draft.projectId || "none"}
-                      options={projectOptions}
-                      onChange={selectProject}
-                      error={errors.repoPath}
-                      required
-                    />
-                    <Field label="ベース参照" htmlFor="base-ref">
-                      <Input
-                        id="base-ref"
-                        value={draft.baseRef}
-                        onChange={(event) =>
-                          update("baseRef", event.currentTarget.value)
-                        }
-                      />
-                    </Field>
-                  </div>
-                  {matchedProject ? (
-                    <div className="break-all rounded-md border p-3 text-xs text-muted-foreground">
-                      {matchedProject.gitRoot}
-                    </div>
-                  ) : null}
-                  <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                    <FolderGit2
-                      className="mt-0.5 size-4 shrink-0"
-                      aria-hidden="true"
-                    />
-                    <p className="text-pretty">
-                      登録した作業ツリーは変更せず、実行ごとに分離ワークツリーを作成します。
-                    </p>
-                  </div>
-                </div>
+                <SelectField
+                  id="project"
+                  label="Gitプロジェクト"
+                  value={draft.projectId || "none"}
+                  options={projectOptions}
+                  onChange={selectProject}
+                  error={errors.repoPath}
+                  required
+                  className="w-full sm:max-w-md"
+                />
               ) : null}
             </section>
 

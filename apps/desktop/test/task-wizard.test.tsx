@@ -91,7 +91,7 @@ describe("TaskWizard cron validation", () => {
     expect(screen.queryByText("平日 09:00")).not.toBeInTheDocument();
   });
 
-  it("uses the PC timezone without presenting a timezone selector", async () => {
+  it("uses the PC timezone without presenting timezone UI", () => {
     const draft = {
       ...defaultTaskDraft(),
       timezone: "America/New_York",
@@ -103,10 +103,8 @@ describe("TaskWizard cron validation", () => {
       screen.queryByRole("combobox", { name: "タイムゾーン" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        `PCのタイムゾーン（${getSystemTimezone()}）を使用します。`,
-      ),
-    ).toBeInTheDocument();
+      screen.queryByText(/PCのタイムゾーン/),
+    ).not.toBeInTheDocument();
   });
 
   it("uses only the task name and prompt for task content", () => {
@@ -195,8 +193,12 @@ describe("TaskWizard cron validation", () => {
       screen.getByRole("combobox", { name: "Gitプロジェクト" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Gitリポジトリを追加" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Gitリポジトリを追加" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("ベース参照")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("登録した作業ツリーは変更せず、実行ごとに分離ワークツリーを作成します。"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the global Codex path out of task configuration", () => {

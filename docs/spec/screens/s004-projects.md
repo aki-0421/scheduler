@@ -12,6 +12,8 @@ read_when:
 
 目的: scheduled task の isolated worktree source として使う Git repository を登録、確認、編集できるようにする。project は追加された時点でユーザーが worktree source として使うことを許可した scope とみなし、`Trusted Project` という別概念は UI から排除する。
 
+責務: project の追加と設定は Projects screen だけで行う。task wizard は登録済み project を読み取り専用の Select から選択し、追加・設定 action を持たない。
+
 入口: sidebar 先頭の `プロジェクト` item、task wizard の project selector、root route redirect。
 
 出口: project list、project settings dialog、task wizard、project removal confirmation。
@@ -78,6 +80,7 @@ read_when:
 受け入れ条件:
 
 - Projects page に path text input が表示されず、directory selection は file browser UI から開始される。
+- project の追加・設定 action は Projects screen にだけ表示され、task wizard には表示されない。
 - Git repository ではない directory を追加しようとすると登録は拒否される。
 - Projects table に local path 文字列は表示されず、folder icon button から path をコピーできる。
 - Projects table に `種類` column は表示されず、project kind は project title 先頭の icon で判別できる。

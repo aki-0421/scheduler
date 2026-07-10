@@ -25,7 +25,6 @@ read_when:
 
 - follow-up prefill には `useTask(prefillFromTask)` を使う。
 - project selection には `useProjects()` を使う。
-- inline project add には `ipcClient.projectPickFolder()` と project registration mutation を使う。
 - save には `useCreateTask()` と `useUpdateTask()` を使う。
 - prompt import には `ipcClient.promptImportFile()` を使う。
 - schedule validation と next-run calculation には `getCronPreview()`、`getSystemTimezone()`、timezone conversion helper を使う。実行タイミングの preview は画面に表示しない。
@@ -36,11 +35,11 @@ read_when:
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - create、follow-up、duplicate page の `一時停止で作成` と `タスクを作成` は page title と同じ header section の右側に置く。狭い width では title の下に折り返す。
 - validation failure 時の error summary alert。
-- task name、schedule、model、思考レベル、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、prompt、lock / pause control を tab 切り替えなしの 1 画面にまとめる。task description field は置かない。
+- task name、schedule、model、思考レベル、`チャット` / `プロジェクト` radio cards、Git project selector、prompt、lock / pause control を tab 切り替えなしの 1 画面にまとめる。task description field は置かない。
 - first section は task name と schedule を等分の 2 column で表示する。schedule selector と schedule-specific control は内容に合う compact width で左寄せし、desktop width で column 幅いっぱいに stretch しない。狭い width では 1 column に戻す。
 - second section は model と `思考レベル` を左寄せの compact control として横並びにし、狭い width では折り返す。
 - third section は desktop width でおよそ `3:1` の 2 column にする。左側は target と prompt、右側は compact な `オプション` group として lock / pause control を表示する。狭い width では 1 column に戻す。
-- prompt textarea は resize 可能なまま compact な初期高にする。実行タイミングの summary、next-five-runs、once preview、manual guidance は表示しない。PC timezone は schedule control 直下の補助文として表示する。
+- prompt textarea は resize 可能なまま compact な初期高にする。実行タイミングの summary、next-five-runs、once preview、manual guidance、PC timezone の補助文は表示しない。
 - section は page canvas に直接配置し、separator で区切る。panel surface や固定 execution policy の summary は置かない。
 - edit dialog の footer には cancel と save action を置く。create、follow-up、duplicate page には footer action を置かない。
 
@@ -48,11 +47,10 @@ read_when:
 
 - prompt textarea、import prompt button、task name。task の内容は task name と prompt だけで表す。
 - target radio cards: `チャット` は app-managed workspace、`プロジェクト` は registered Git project の isolated worktree。
-- project selector: registered Git project、または Git repository folder picker から追加した project。folder project は選択肢に出さない。
-- repository path は手入力ではなく project selection / Git folder picker によって設定する。project target は常に `repo-worktree` DTO を生成する。
-- base ref。
+- project selector: Projects screen で登録済みの Git project だけを選択する。task wizard には project の追加・設定 action、repository path、base ref input を表示しない。project selection 時に repository path と default branch を draft へ内部設定する。folder project は選択肢に出さない。
+- project target は常に `repo-worktree` DTO を生成する。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
-- once date and time、preset time、weekly day、custom 5-field cron、PC timezone indicator。実行タイミングの preview は表示しない。
+- once date and time、preset time、weekly day、custom 5-field cron。実行タイミングの preview と PC timezone indicator は表示しない。
 - model select と、model が対応する `思考レベル` select。DTO field 名は `reasoningEffort` のままとする。Codex binary path は global setting のため表示しない。
 - options: task lock switch と start paused switch。third section の右 column に compact にまとめる。
 - lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
@@ -82,10 +80,9 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 
 - follow-up prefill loading は skeleton content を表示する。
 - follow-up prefill は source run ID の文脈を prompt 冒頭に追加し、元 task の prompt を続ける。duplicate は元 task の prompt をそのまま複製する。
-- project selection state は registered project name と local path を表示する。
-- project target は実行ごとに isolated worktree を作成し、登録した project root を直接変更しないことを表示する。
+- project selection state は registered project name を Select に表示する。local path や project registration action は表示しない。
 - locked task edit は lock badge と unlock guidance を表示する。
-- schedule control は実行タイミングの preview を表示しない。manual 以外では、現在の PC timezone を自動使用することと IANA timezone 名だけを補助文として表示する。
+- schedule control は実行タイミングの preview、timezone selector、PC timezone の補助文を表示しない。現在の PC timezone は内部で自動使用する。
 
 アクセシビリティ:
 
@@ -97,7 +94,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 検証:
 
 - `pnpm --filter desktop exec vitest run test/task-wizard.test.tsx` は required field、schedule validation、create action の disabled / enabled 遷移、保存 DTO を検証する。
-- UI を変更した場合は `agent-browser` で `/tasks/new/` を開き、required field が空または schedule が invalid な状態では両 create action が disabled、すべて valid な状態では enabled になることを accessibility snapshot と screenshot で確認する。
+- UI を変更した場合は `agent-browser` で `/tasks/new/` を開き、required field が空または schedule が invalid な状態では両 create action が disabled、すべて valid な状態では enabled になることを accessibility snapshot と screenshot で確認する。project target では登録済み project の Select だけが表示され、project 追加 action、base ref input、PC timezone の補助文がないことも確認する。
 
 セキュリティと安全性:
 
@@ -110,6 +107,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - task name、schedule、model、思考レベル、prompt のいずれか、または選択中 schedule の固有 field が未入力・invalid な間は create action が disabled で、すべて valid になると enabled になる。`一時停止で作成` と edit の `変更を保存` も同じ条件を使う。
 - save handler が prompt、name、repository、schedule、advanced field の error を検出した場合は error summary を表示し、同じ画面内の最初の invalid field に focus する。
 - project target に registered Git project がない場合、save は blocked される。
+- task wizard では project の追加・設定ができず、Projects screen で登録済みの Git project を Select で選ぶだけにする。repository path、base ref input、PC timezone の補助文は表示しない。
 - 実行先は `チャット` / `プロジェクト` の keyboard-operable radio cards で選択でき、`プロジェクト` を保存した DTO は `repo-worktree` になる。
 - locked task を edit しようとした場合、unlock なしでは save できない。
 - create、follow-up、duplicate、edit のいずれにも Codex binary path field は表示されず、保存 DTO に task 固有 path を含めない。
