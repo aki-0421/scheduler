@@ -36,7 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useRun, useRuns, useTasks } from "@/lib/queries";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useRun, useRuns, useTask, useTasks } from "@/lib/queries";
 import { runStatuses, type RunDto, type RunStatus } from "@/lib/types";
 
 type RunPreset = "recent" | "failed" | "needs_attention";
@@ -107,11 +108,9 @@ function RunPresetButton({
 function RunRow({
   run,
   taskName,
-  isSelected,
 }: {
   run: RunDto;
   taskName: string;
-  isSelected: boolean;
 }) {
   const startedAt = run.startedAt ?? run.queuedAt ?? run.scheduledFor;
   const needsAttention =
@@ -122,8 +121,7 @@ function RunRow({
   return (
     <Link
       href={`/runs?run=${encodeURIComponent(run.id)}`}
-      data-state={isSelected ? "selected" : undefined}
-      className="grid gap-3 border-b p-4 transition-colors duration-150 last:border-b-0 hover:bg-muted/50 data-[state=selected]:bg-accent data-[state=selected]:text-accent-foreground"
+      className="grid gap-3 border-b p-4 transition-colors duration-150 last:border-b-0 hover:bg-muted/50"
     >
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div className="min-w-0">
@@ -194,9 +192,53 @@ function RunRow({
   );
 }
 
-function RunsPageContent() {
-  const searchParams = useSearchParams();
-  const selectedRunId = searchParams.get("run") ?? undefined;
+function RunDetailSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-4xl space-y-6 pb-12">
+      <Skeleton className="h-8 w-28" />
+      <div className="flex items-end justify-between gap-4">
+        <div className="space-y-3">
+          <Skeleton className="h-7 w-64" />
+          <Skeleton className="h-5 w-80 max-w-full" />
+        </div>
+        <Skeleton className="h-8 w-24" />
+      </div>
+      <div className="border-t pt-6">
+        <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-4">
+          <Skeleton className="size-9" />
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-28 w-full" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SelectedRunPage({ runId }: { runId: string }) {
+  const selectedRun = useRun(runId);
+  const task = useTask(selectedRun.data?.taskId);
+
+  if (selectedRun.isLoading || (selectedRun.data && task.isLoading)) {
+    return <RunDetailSkeleton />;
+  }
+
+  if (selectedRun.isError || !selectedRun.data) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="実行を読み込めませんでした"
+        description="実行が削除されたか、スケジューラーに接続できない可能性があります。"
+        action={{ label: "実行履歴へ戻る", href: "/runs" }}
+      />
+    );
+  }
+
+  return <RunDetail run={selectedRun.data} task={task.data} />;
+}
+
+function RunHistoryPage() {
   const [preset, setPreset] = useState<RunPreset>("recent");
   const [statusFilter, setStatusFilter] = useState<RunStatus | "all">("all");
   const [taskFilter, setTaskFilter] = useState("all");
@@ -205,7 +247,6 @@ function RunsPageContent() {
     status: statusFilter === "all" ? undefined : statusFilter,
     taskId: taskFilter === "all" ? undefined : taskFilter,
   });
-  const selectedRun = useRun(selectedRunId);
   const taskList = tasks.data ?? [];
   const runList = runs.data ?? [];
   const taskById = new Map(taskList.map((task) => [task.id, task]));
@@ -246,7 +287,7 @@ function RunsPageContent() {
     <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-5">
       <PageHeader
         title="実行履歴"
-        description="Codex 実行の状態、出力、ログ、成果物を確認します。"
+        description="Codex 実行の状態と結果を確認します。"
         className="md:flex-col md:items-stretch xl:flex-row xl:items-center"
         actions={
           <>
@@ -323,7 +364,6 @@ function RunsPageContent() {
                   key={run.id}
                   run={run}
                   taskName={taskById.get(run.taskId)?.name ?? run.taskId}
-                  isSelected={selectedRunId === run.id}
                 />
               ))
             ) : (
@@ -338,21 +378,19 @@ function RunsPageContent() {
             {/* TODO: Add mark reviewed/archive actions when the DB schema supports triage state. */}
           </div>
         </section>
-
-        {selectedRunId ? (
-          selectedRun.data ? (
-            <RunDetail
-              run={selectedRun.data}
-              task={taskById.get(selectedRun.data.taskId)}
-            />
-          ) : (
-            <div className="py-4 text-sm text-muted-foreground">
-              選択した実行を読み込んでいます。
-            </div>
-          )
-        ) : null}
       </div>
     </div>
+  );
+}
+
+function RunsPageContent() {
+  const searchParams = useSearchParams();
+  const selectedRunId = searchParams.get("run");
+
+  return selectedRunId ? (
+    <SelectedRunPage runId={selectedRunId} />
+  ) : (
+    <RunHistoryPage />
   );
 }
 

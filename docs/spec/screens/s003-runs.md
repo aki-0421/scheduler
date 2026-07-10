@@ -1,53 +1,52 @@
 ---
 title: S003 Task Sessions
-description: Task Session screen の chat UI、tool usage display、history filter、log tail、export、cancel、follow-up requirement を定義する。
+description: Task Session の chat transcript、tool usage disclosure、history filter、cancel / retry requirement を定義する。
 updated: 2026-07-10
 read_when:
-  - Runs page、task session page、run filtering、chat transcript、tool usage display、artifact action、cancel/retry/follow-up flow を変更するとき。
+  - Runs page、task session page、run filtering、chat transcript、tool usage display、cancel / retry flow を変更するとき。
 ---
 
 # S003 Task Sessions
 
 ルート: `/runs`、`/runs?run=<runId>`
 
-目的: 1 回の task execution を session として inspect し、その実行での Codex の挙動、利用された tool、stdout / stderr / event log、artifact を確認できるようにする。global history list は補助的な triage surface として残す。
+目的: 1 回の task execution を独立した chat session として inspect し、その実行に渡された指示、利用された tool、最終 output を会話の流れのまま確認できるようにする。global history list は session を選ぶ triage surface として `/runs` にだけ残す。
 
-入口: task detail の session history row、archived task row、global history route、follow-up / retry flow。
+入口: task detail の session history row、archived task row、global history route。
 
-出口: parent task、linked follow-up task wizard、task retry、workspace または artifact の Finder open、logs export。
+出口: parent task、task retry。
 
 データ依存:
 
-- task name と follow-up context には `useTasks()` を使う。
+- selected session の task name と system prompt には `useTask(taskId)` を使う。
 - filtered history には `useRuns({ status, taskId })` を使う。
 - selected session detail には `useRun(runId)` を使い、active run は 3 秒ごとに refetch する。
 - active run cancellation には `useCancelRun()` を使う。
 - retry には `useRunTaskNow()` を使う。
-- stdout、stderr、event log polling には `ipcClient.runTailLog()` を使う。
-- local file operation には `ipcClient.exportRunLogs()` と `ipcClient.openPath()` を使う。
+- tool call と agent message の transcript には event log を使い、`ipcClient.runTailLog()` で取得する。
 
 レイアウト領域:
 
 - status filter と task filter を持つ header。header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - preset button、list row を持つ run history section。list count の説明文は表示しない。
-- `/runs?run=<runId>` は session detail page として開く。
-- session detail header は task name、run status、trigger、scheduled / started time、parent task link を持つ。
-- selected session detail は `概要`、`チャット`、`プロンプト`、`出力`、`ログ`、`成果物` の tabs で表示する。
-- session detail と `ログ` 内の nested tabs は tab list を選択中 content の直上に配置し、横スクロール領域にはしない。利用可能な幅に収まらない tab は複数行へ折り返し、選択中の tab content は page canvas に直接表示する。
-- `チャット` tab は system / user prompt、assistant output、tool call、tool result、daemon event を時系列 bubble として表示する。
-- right or top action area は workspace / follow-up / cancel / retry / export logs を持つ。
-- tab content の先頭には、tab label と同義の section heading や説明文を置かない。
+- `/runs?run=<runId>` は global history list、filter、preset を描画しない独立した session detail page として開く。
+- session detail は tabs、overview、別 session の history を持たず、最大幅を抑えた 1 本の chat transcript だけを表示する。
+- session header は parent task link、task name、run status、開始時刻を compact に表示する。active run の cancel と terminal run の retry は header 右側に置く。
+- transcript は system prompt、agent message、tool call、final output の順序を event log に従って維持する。
+- Codex の `thread.started`、`turn.started`、`turn.completed` など内部 lifecycle event は通常表示しない。`turn.failed` と `error` は会話中の error row として表示する。
+- command、web search、file change、MCP tool call は tool name、短い要約、status だけを常時表示する。command output、arguments、result は disclosure 内に置き、既定では閉じる。known tool の raw event 全体は重複表示しない。
+- 同じ item ID の `item.started` と `item.completed` は 1 行に統合し、実行中から完了または失敗へ status を更新する。
+- `resultSummary` と最後の `agent_message` が同じ内容の場合は重複表示せず、1 つの final output として表示する。
 
 フィールドとコントロール:
 
 - Presets: recent、failed、review。
 - Status filter: all run statuses。
 - Task filter: all tasks または specific task。
-- Session actions: open workspace、create follow-up task、cancel active run、retry、export logs、copy prompt / output / logs、show artifact in Finder。
+- Session actions: parent task へ戻る、cancel active run、retry terminal run。
 - Run list row の trigger、scheduled time、duration、exit code は icon と semantic color を持つ compact token で表示する。exit code `0` は success、non-zero は error、未記録は muted とする。
 - Run status と review state は text だけでなく icon と color tone で区別できる。
-- Chat transcript: prompt bubble、assistant message bubble、tool call row、tool output disclosure、daemon event row。
-- Logs tabs: stdout、stderr、events。
+- Chat transcript: system prompt message、assistant message、compact tool row、collapsed tool detail、final output。
 
 状態:
 
@@ -56,42 +55,41 @@ read_when:
 - Selected session loading: page skeleton。
 - Review badge は failed、timed out、interrupted、findings、created schedules の場合に表示される。
 - Active run は 3 秒ごとに log を poll する。
-- missing log は availability fallback を表示する。
-- output、prompt、events、artifact がない場合、それぞれ explicit empty state を持つ。
-- Tool usage が structured event として取れない場合は raw event log から readable fallback を生成し、raw disclosure を保持する。
+- missing event log は tool call が記録されていない旨を transcript 内で簡潔に表示する。
+- output または prompt がない場合は、それぞれ transcript 内に explicit empty state を持つ。
+- structured event を parse できない行は画面全体を壊さず無視する。error event の raw payload は disclosure から確認できる。
 
 バリデーションとエラー:
 
-- cancel、retry、open path、export failure は利用可能な error detail を含む toast を使う。
-- event log は JSONL を readable event card に parse し、raw event disclosure を保持する。
+- cancel と retry failure は利用可能な error detail を含む toast を使う。
+- event log は JSONL を readable transcript entry に parse し、tool の開始 / 完了 event を item ID で統合する。
 
 アクセシビリティ:
 
 - filter と preset は keyboard-reachable control である。
 - status は color だけでなく text badge で伝える。
 - chat transcript は `role="log"` または ordered list として読み上げ順を維持する。
-- tool call row は tool name、status、summary を text で含む。
-- log は tab と copy control で segmented される。
+- tool call row は tool name、status、summary を text で含み、detail disclosure は native keyboard interaction で開閉できる。
 
 セキュリティと安全性:
 
-- Finder open action は run DTO または artifact が返した path だけを使う。
-- follow-up task prefill は source run ID の文脈を task prompt 冒頭に保持する。
+- transcript に command output や tool arguments を表示するときも HTML として解釈せず text として表示する。
 
 受け入れ条件:
 
 - preset `Failed` の場合、failed run だけが表示される。
 - preset `Review` の場合、failed、timed-out、interrupted、findings、created-schedule run が表示される。
 - task detail の session history row を押すと `/runs?run=<runId>` が開く。
-- session detail はチャット UI で prompt、assistant output、tool usage、daemon event を確認できる。
+- `/runs?run=<runId>` では global history、filter、preset、tabs、overview、raw log panel、artifact panel を表示しない。
+- session detail は chat UI で system prompt、agent message、tool usage、final output を時系列に確認できる。
+- tool call は開始 / 完了を 1 行に統合し、command output や tool result は初期状態で閉じている。
+- lifecycle event は transcript を占有せず、error event だけが user-visible row になる。
 - active run が selected の場合、run が active status を離れるまで log が poll される。
 - cancel が成功した場合、scheduler data は invalidate され、detail は refresh する。
 - failed / interrupted / timed-out session の `再実行` は新しい manual run を enqueue する。scheduler 自身は自動 retry を作成しない。
-- export logs が成功した場合、user は exported local path を見る。
-- `ログ` tab の stdout、stderr、events を切り替えた場合、nested tab list の直下に選択した log と copy / export action が panel surface なしで表示される。
-- session detail と nested log の tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
-- run history list と session detail は page-level panel surface を持たず、row divider と section spacing で情報を判別できる。
+- run history list と session detail は同時に表示されず、browser back または parent task link で session 選択画面へ戻れる。
 
 既知の gap:
 
 - review state は derived であり、persisted reviewed または archived state はない。
+- system prompt は現在の task prompt を参照しており、run 開始時点の prompt snapshot は保持していない。

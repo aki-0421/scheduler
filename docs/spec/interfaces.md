@@ -30,7 +30,7 @@ Codex binary path は Settings の global customization checkbox を選択した
 
 full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持、Scheduler CLI の全 action と作成数無制限は app-wide invariant であり、task wizard と Settings には選択肢や warning を表示しない。
 
-task detail は `/tasks?task=<taskId>` で開き、初期表示の `実行履歴` と `設定` の 2 tabs を持つ。`実行履歴` は session history table だけを表示し、`設定` は task creation と同じ inline form だけを表示する。lock は CLI / scheduled-run actor の mutation を防ぐ control であり、desktop UI の form と user action は lock 中も利用できる。task name と同じ header の右側には primary の run now、secondary の pause / resume、label 付きの `管理` menu を置く。menu は duplicate、lock / unlock、separator、delete の順に構造化し、変更履歴は task detail に表示しない。session row は `/runs?run=<runId>` に遷移し、run detail は chat UI で prompt、assistant output、tool usage、daemon event を表示する。
+task detail は `/tasks?task=<taskId>` で開き、初期表示の `実行履歴` と `設定` の 2 tabs を持つ。`実行履歴` は session history table だけを表示し、`設定` は task creation と同じ inline form だけを表示する。lock は CLI / scheduled-run actor の mutation を防ぐ control であり、desktop UI の form と user action は lock 中も利用できる。task name と同じ header の右側には primary の run now、secondary の pause / resume、label 付きの `管理` menu を置く。menu は duplicate、lock / unlock、separator、delete の順に構造化し、変更履歴は task detail に表示しない。session row は `/runs?run=<runId>` に遷移する。run detail は global history や tabs を併設せず、system prompt、compact な tool usage、agent message、final output だけを時系列に並べた chat UI とする。tool の arguments、output、raw event は既定で閉じた disclosure に置く。
 
 ## Tauri Commands
 

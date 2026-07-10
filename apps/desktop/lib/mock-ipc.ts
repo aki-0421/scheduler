@@ -30,6 +30,10 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+function jsonLines(...events: JsonObject[]) {
+  return `${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
+}
+
 function id(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -307,8 +311,60 @@ const logs = new Map<string, Record<LogStream, string>>([
       stdout:
         "Codex Scheduler レビューを開始しています\n18 件の変更ファイルを読み込みました\nFinal: 重大な問題は見つかりませんでした\n",
       stderr: "",
-      events:
-        "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n{\"event_type\":\"run.completed\",\"message\":\"実行は正常に完了しました\"}\n",
+      events: jsonLines(
+        { type: "thread.started", thread_id: "sess_success" },
+        { type: "turn.started" },
+        {
+          type: "item.started",
+          item: {
+            id: "item_command_review",
+            type: "command_execution",
+            command: "git diff --stat origin/main...HEAD",
+            aggregated_output: "",
+            exit_code: null,
+            status: "in_progress",
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "item_command_review",
+            type: "command_execution",
+            command: "git diff --stat origin/main...HEAD",
+            aggregated_output:
+              "apps/desktop/components/run-detail.tsx | 128 +++++++++++++\n1 file changed, 96 insertions(+), 32 deletions(-)",
+            exit_code: 0,
+            status: "completed",
+          },
+        },
+        {
+          type: "item.started",
+          item: {
+            id: "item_search_release",
+            type: "web_search",
+            query: "Next.js 15 release notes",
+            action: { type: "search", query: "Next.js 15 release notes" },
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "item_search_release",
+            type: "web_search",
+            query: "Next.js 15 release notes",
+            action: { type: "search", query: "Next.js 15 release notes" },
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "item_final",
+            type: "agent_message",
+            text: "重大な問題は見つかりませんでした。フォローアップメモを2件記録しました。",
+          },
+        },
+        { type: "turn.completed", usage: { input_tokens: 8420, output_tokens: 614 } },
+      ),
     },
   ],
   [
@@ -316,8 +372,36 @@ const logs = new Map<string, Record<LogStream, string>>([
     {
       stdout: "依存関係スキャンを開始しています\nパッケージメタデータを解決しています\n",
       stderr: "registry lookup timed out\nretry budget exhausted\n",
-      events:
-        "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n{\"event_type\":\"run.failed\",\"message\":\"Codex はコード 1 で終了しました\"}\n",
+      events: jsonLines(
+        { type: "thread.started", thread_id: "sess_failed" },
+        { type: "turn.started" },
+        {
+          type: "item.started",
+          item: {
+            id: "item_command_dependencies",
+            type: "command_execution",
+            command: "pnpm outdated --json",
+            aggregated_output: "",
+            exit_code: null,
+            status: "in_progress",
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "item_command_dependencies",
+            type: "command_execution",
+            command: "pnpm outdated --json",
+            aggregated_output: "registry lookup timed out\nretry budget exhausted",
+            exit_code: 1,
+            status: "failed",
+          },
+        },
+        {
+          type: "turn.failed",
+          error: { message: "パッケージメタデータを取得できませんでした。" },
+        },
+      ),
     },
   ],
   [
@@ -326,7 +410,21 @@ const logs = new Map<string, Record<LogStream, string>>([
       stdout:
         "仕様を読んでいます...\n現在のワークスペースを確認しています...\nIPC モジュールを調査しています...\n",
       stderr: "",
-      events: "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n",
+      events: jsonLines(
+        { type: "thread.started", thread_id: "sess_running" },
+        { type: "turn.started" },
+        {
+          type: "item.started",
+          item: {
+            id: "item_command_running",
+            type: "command_execution",
+            command: "rg --files apps/desktop",
+            aggregated_output: "",
+            exit_code: null,
+            status: "in_progress",
+          },
+        },
+      ),
     },
   ],
 ]);
