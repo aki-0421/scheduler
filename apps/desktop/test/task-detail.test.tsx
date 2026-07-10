@@ -1,16 +1,10 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { TaskDetail } from "@/components/task-detail";
 import type { RunDto, TaskDto } from "@/lib/types";
 import { renderWithClient } from "./test-utils";
-
-const routerPush = vi.hoisted(() => vi.fn());
-
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: routerPush }),
-}));
 
 const task: TaskDto = {
   id: "task_test",
@@ -58,6 +52,13 @@ describe("TaskDetail", () => {
     expect(
       screen.getByText("問題は見つかりませんでした。"),
     ).toBeInTheDocument();
+    const history = screen.getByRole("tabpanel", { name: "実行履歴" });
+    expect(within(history).getAllByText("状態")).not.toHaveLength(0);
+    expect(within(history).getByText("予定時刻")).toBeInTheDocument();
+    expect(within(history).getByText("所要時間")).toBeInTheDocument();
+    expect(within(history).getByText("結果")).toBeInTheDocument();
+    expect(within(history).queryByText(task.id)).not.toBeInTheDocument();
+    expect(within(history).queryByText("スケジュール")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "概要" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("tab", { name: "プロンプト" }),
@@ -80,8 +81,8 @@ describe("TaskDetail", () => {
     expect(
       screen.queryByRole("button", { name: "キャンセル" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("タスク操作")).toBeInTheDocument();
-    expect(screen.getByText("変更履歴")).toBeInTheDocument();
+    expect(screen.queryByText("タスク操作")).not.toBeInTheDocument();
+    expect(screen.queryByText("変更履歴")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -99,7 +100,10 @@ describe("TaskDetail", () => {
     expect(screen.getByLabelText("タスク名")).toBeDisabled();
     expect(screen.getByRole("button", { name: "変更を保存" })).toBeDisabled();
     expect(
-      screen.getAllByRole("button", { name: "ロックを解除" }),
-    ).not.toHaveLength(0);
+      screen.getByText(/右上の「ロックを解除」を使用してください/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "ロックを解除" }),
+    ).not.toBeInTheDocument();
   });
 });

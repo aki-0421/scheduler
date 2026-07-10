@@ -81,7 +81,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - follow-up prefill loading は skeleton content を表示する。
 - follow-up prefill は source run ID の文脈を prompt 冒頭に追加し、元 task の prompt を続ける。duplicate は元 task の prompt をそのまま複製する。
 - project selection state は registered project name を Select に表示する。local path や project registration action は表示しない。
-- locked task edit は task detail 側で form controls を disabled にし、lock badge、unlock guidance、unlock action を表示する。
+- locked task edit は task detail 側で form controls を disabled にし、settings 内に unlock guidance、detail header に unlock action を表示する。
 - schedule control は実行タイミングの preview、timezone selector、PC timezone の補助文を表示しない。現在の PC timezone は内部で自動使用する。
 
 アクセシビリティ:

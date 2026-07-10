@@ -2,7 +2,10 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { TaskRowActions } from "@/components/task-actions";
+import {
+  TaskHeaderActions,
+  TaskRowActions,
+} from "@/components/task-actions";
 import { ipcClient } from "@/lib/ipc";
 import type { TaskDto } from "@/lib/types";
 import { renderWithClient } from "./test-utils";
@@ -105,5 +108,37 @@ describe("TaskRowActions", () => {
     await user.click(await screen.findByRole("button", { name: "タスクを削除" }));
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("task_test"));
+  });
+});
+
+describe("TaskHeaderActions", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("groups run, duplicate, overflow, and lock actions beside the title", () => {
+    renderWithClient(<TaskHeaderActions task={activeTask} />);
+
+    expect(
+      screen.getByRole("button", { name: "Task Testを今すぐ実行" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Task Testのその他の操作" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "複製" })).toHaveAttribute(
+      "href",
+      "/tasks/new?duplicateFromTask=task_test",
+    );
+    expect(screen.getByRole("button", { name: "ロック" })).toBeInTheDocument();
+  });
+
+  it("shows unlock as the header action for locked tasks", () => {
+    renderWithClient(
+      <TaskHeaderActions task={{ ...activeTask, locked: true }} />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "ロックを解除" }),
+    ).toBeInTheDocument();
   });
 });

@@ -1,7 +1,18 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { LockKeyhole, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import Link from "next/link";
+import {
+  LockKeyhole,
+  LockOpen,
+  MoreHorizontal,
+  Pause,
+  Pencil,
+  Play,
+  PlusCircle,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -21,6 +32,7 @@ import {
   usePauseTask,
   useResumeTask,
   useRunTaskNow,
+  useUpdateTask,
 } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -31,6 +43,67 @@ type TaskRowActionsProps = {
   onDeleted?: (task: TaskDto) => void;
   className?: string;
 };
+
+type TaskHeaderActionsProps = {
+  task: TaskDto;
+  onDeleted?: (task: TaskDto) => void;
+};
+
+export function TaskHeaderActions({
+  task,
+  onDeleted,
+}: TaskHeaderActionsProps) {
+  const updateTask = useUpdateTask();
+
+  function toggleLock() {
+    updateTask.mutate(
+      { ...task, locked: !task.locked },
+      {
+        onSuccess: (updated) =>
+          toast.success(
+            updated.locked
+              ? "タスクをロックしました"
+              : "タスクのロックを解除しました",
+          ),
+        onError: (error) =>
+          toast.error("ロック状態を更新できませんでした", {
+            description:
+              error instanceof Error
+                ? error.message
+                : "スケジューラーコマンドに失敗しました。",
+          }),
+      },
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <TaskRowActions task={task} onDeleted={onDeleted} />
+      <Button variant="outline" size="sm" asChild>
+        <Link
+          href={`/tasks/new?duplicateFromTask=${encodeURIComponent(task.id)}`}
+        >
+          <PlusCircle data-icon="inline-start" aria-hidden="true" />
+          複製
+        </Link>
+      </Button>
+      <Button
+        type="button"
+        variant={task.locked ? "default" : "outline"}
+        size="sm"
+        disabled={updateTask.isPending}
+        onClick={toggleLock}
+      >
+        {task.locked ? (
+          <LockOpen data-icon="inline-start" aria-hidden="true" />
+        ) : (
+          <LockKeyhole data-icon="inline-start" aria-hidden="true" />
+        )}
+        {task.locked ? "ロックを解除" : "ロック"}
+      </Button>
+    </div>
+  );
+}
 
 export function TaskRowActions({ task, onEdit, onDeleted, className }: TaskRowActionsProps) {
   const [menuOpen, setMenuOpen] = useState(false);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarClock,
   CircleSlash,
@@ -18,6 +18,7 @@ import { Suspense } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
+import { TaskHeaderActions } from "@/components/task-actions";
 import { TaskDetail } from "@/components/task-detail";
 import {
   describeTaskSchedule,
@@ -28,7 +29,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ValueBadge } from "@/components/value-badge";
 import { taskLastRun } from "@/lib/format";
-import { useRuns, useTask, useTaskAudits, useTasks } from "@/lib/queries";
+import { useRuns, useTask, useTasks } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
 
 function isArchivedTask(task: TaskDto) {
@@ -65,9 +66,9 @@ function taskScheduleIcon(task: TaskDto) {
 }
 
 function TaskScreen({ taskId }: { taskId: string }) {
+  const router = useRouter();
   const task = useTask(taskId);
   const runs = useRuns({ taskId });
-  const audits = useTaskAudits(taskId);
 
   if (task.isLoading) {
     return (
@@ -92,12 +93,14 @@ function TaskScreen({ taskId }: { taskId: string }) {
       <PageHeader
         title={task.data.name}
         description="このタスクの実行履歴を確認し、設定と操作を管理します。"
+        actions={
+          <TaskHeaderActions
+            task={task.data}
+            onDeleted={() => router.push("/tasks?view=archived")}
+          />
+        }
       />
-      <TaskDetail
-        task={task.data}
-        runs={runs.data ?? []}
-        auditEvents={audits.data}
-      />
+      <TaskDetail task={task.data} runs={runs.data ?? []} />
     </div>
   );
 }
