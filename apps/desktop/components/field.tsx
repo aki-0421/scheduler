@@ -15,6 +15,7 @@ type FieldProps = {
   htmlFor?: string;
   description?: string;
   error?: string;
+  required?: boolean;
   className?: string;
   children: ReactNode;
 };
@@ -24,6 +25,7 @@ export function Field({
   htmlFor,
   description,
   error,
+  required = false,
   className,
   children,
 }: FieldProps) {
@@ -72,7 +74,14 @@ export function Field({
 
   return (
     <div className={cn("grid gap-2", className)}>
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <div className="flex items-center">
+        <Label htmlFor={htmlFor}>{label}</Label>
+        {required ? (
+          <span className="ml-1 text-destructive" aria-hidden="true">
+            *
+          </span>
+        ) : null}
+      </div>
       {Children.map(children, enhanceChild)}
       {description ? (
         <p id={descriptionId} className="text-xs text-muted-foreground text-pretty">

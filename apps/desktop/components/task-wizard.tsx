@@ -41,9 +41,9 @@ import {
   defaultTaskDraft,
   getDraftCronExpression,
   taskToDraft,
-  validateTaskDraftStep,
+  validateTaskDraft,
   type PresetMode,
-  type StepErrors,
+  type TaskDraftErrors,
   type TaskDraft,
 } from "@/lib/task-draft";
 import { getSystemTimezone } from "@/lib/timezone";
@@ -99,6 +99,10 @@ const weekdayOptions = [
 const japaneseErrorMessages: Record<string, string> = {
   name: "タスク名は必須です。",
   prompt: "プロンプトは必須です。",
+  scheduleMode: "スケジュールは必須です。",
+  presetMode: "スケジュールは必須です。",
+  presetTime: "時刻は必須です。",
+  weeklyDay: "曜日は必須です。",
   repoPath: "プロジェクト実行にはGitプロジェクトを選択してください。",
   onceDate: "有効な日付と時刻を選択してください。",
   onceTime: "有効な日付と時刻を選択してください。",
@@ -107,8 +111,12 @@ const japaneseErrorMessages: Record<string, string> = {
 };
 
 const errorFieldOrder = [
-  "prompt",
   "name",
+  "scheduleMode",
+  "presetMode",
+  "presetTime",
+  "weeklyDay",
+  "prompt",
   "repoPath",
   "onceDate",
   "onceTime",
@@ -120,6 +128,10 @@ const errorFieldOrder = [
 const errorLabelByKey: Record<string, string> = {
   prompt: "プロンプト",
   name: "タスク名",
+  scheduleMode: "スケジュール",
+  presetMode: "スケジュール",
+  presetTime: "時刻",
+  weeklyDay: "曜日",
   repoPath: "プロジェクト",
   onceDate: "日付",
   onceTime: "時刻",
@@ -131,6 +143,10 @@ const errorLabelByKey: Record<string, string> = {
 const errorTargetIds: Record<string, string[]> = {
   prompt: ["task-prompt"],
   name: ["task-name"],
+  scheduleMode: ["schedule"],
+  presetMode: ["schedule"],
+  presetTime: ["preset-time"],
+  weeklyDay: ["weekly-day"],
   repoPath: ["project"],
   onceDate: ["once-date"],
   onceTime: ["once-time"],
@@ -174,8 +190,10 @@ function formatProjectRegistrationError(error: unknown) {
   return "プロジェクトコマンドに失敗しました。";
 }
 
-function normalizeErrors(stepErrors: StepErrors): Record<string, string> {
-  return Object.entries(stepErrors).reduce<Record<string, string>>(
+function normalizeErrors(
+  draftErrors: TaskDraftErrors,
+): Record<string, string> {
+  return Object.entries(draftErrors).reduce<Record<string, string>>(
     (normalized, [key, message]) => {
       normalized[key] =
         key === "cronPreview"
@@ -218,6 +236,7 @@ function SelectField<T extends string>({
   onChange,
   description,
   error,
+  required = false,
   className,
 }: {
   id: string;
@@ -227,6 +246,7 @@ function SelectField<T extends string>({
   onChange: (value: T) => void;
   description?: string;
   error?: string;
+  required?: boolean;
   className?: string;
 }) {
   return (
@@ -235,10 +255,15 @@ function SelectField<T extends string>({
       htmlFor={id}
       description={description}
       error={error}
+      required={required}
       className={className}
     >
-      <Select value={value} onValueChange={(next) => onChange(next as T)}>
-        <SelectTrigger id={id}>
+      <Select
+        value={value}
+        required={required}
+        onValueChange={(next) => onChange(next as T)}
+      >
+        <SelectTrigger id={id} aria-required={required || undefined}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -346,6 +371,10 @@ export function TaskWizard({
     () => reasoningEffortOptionsForModel(draft.model),
     [draft.model],
   );
+  const draftValidation = useMemo(() => validateTaskDraft(draft), [draft]);
+  const canSave =
+    Object.keys(draftValidation).length === 0 &&
+    (!isRepoTarget || Boolean(matchedProject));
   const hasErrors = Object.keys(errors).length > 0;
   const errorSummary = getOrderedErrorEntries(errors);
 
@@ -430,17 +459,9 @@ export function TaskWizard({
   }
 
   function collectErrors() {
-    const allErrors = [0, 1, 2, 3]
-      .map((index) => normalizeErrors(validateTaskDraftStep(draft, index)))
-      .reduce<
-        Record<string, string>
-      >((accumulator, value) => ({ ...accumulator, ...value }), {});
+    const allErrors = normalizeErrors(validateTaskDraft(draft));
 
-    if (
-      draft.targetMode === "repo-worktree" &&
-      projects.data &&
-      !matchedProject
-    ) {
+    if (draft.targetMode === "repo-worktree" && !matchedProject) {
       allErrors.repoPath =
         "プロジェクト実行には登録済みGitプロジェクトが必要です。";
     }
@@ -577,7 +598,7 @@ export function TaskWizard({
           <Button
             type="button"
             variant="outline"
-            disabled={isSaving}
+            disabled={isSaving || !canSave}
             onClick={() => void save(true)}
           >
             一時停止で作成
@@ -585,7 +606,7 @@ export function TaskWizard({
         ) : null}
         <Button
           type="button"
-          disabled={isSaving}
+          disabled={isSaving || !canSave}
           onClick={() => void save(false)}
         >
           {task ? "変更を保存" : "タスクを作成"}
@@ -634,9 +655,15 @@ export function TaskWizard({
           aria-label="基本設定"
           className="grid items-start gap-5 md:grid-cols-2"
         >
-          <Field label="タスク名" htmlFor="task-name" error={errors.name}>
+          <Field
+            label="タスク名"
+            htmlFor="task-name"
+            error={errors.name}
+            required
+          >
             <Input
               id="task-name"
+              required
               value={draft.name}
               placeholder="毎日のリポジトリレビュー"
               onChange={(event) => update("name", event.currentTarget.value)}
@@ -651,6 +678,7 @@ export function TaskWizard({
                 value={scheduleChoice}
                 options={scheduleOptions}
                 onChange={updateScheduleChoice}
+                required
                 className="w-full sm:w-44"
               />
 
@@ -660,11 +688,13 @@ export function TaskWizard({
                     label="日付"
                     htmlFor="once-date"
                     error={errors.onceDate}
+                    required
                     className="w-full sm:w-44"
                   >
                     <Input
                       id="once-date"
                       type="date"
+                      required
                       value={draft.onceDate}
                       onChange={(event) =>
                         update("onceDate", event.currentTarget.value)
@@ -675,11 +705,13 @@ export function TaskWizard({
                     label="時刻"
                     htmlFor="once-time"
                     error={errors.onceTime}
+                    required
                     className="w-full sm:w-36"
                   >
                     <Input
                       id="once-time"
                       type="time"
+                      required
                       value={draft.onceTime}
                       onChange={(event) =>
                         update("onceTime", event.currentTarget.value)
@@ -700,17 +732,22 @@ export function TaskWizard({
                       value={draft.weeklyDay}
                       options={weekdayOptions}
                       onChange={(value) => update("weeklyDay", value)}
+                      error={errors.weeklyDay}
+                      required
                       className="w-full sm:w-36"
                     />
                   ) : null}
                   <Field
                     label="時刻"
                     htmlFor="preset-time"
+                    error={errors.presetTime}
+                    required
                     className="w-full sm:w-36"
                   >
                     <Input
                       id="preset-time"
                       type="time"
+                      required
                       value={draft.presetTime}
                       onChange={(event) =>
                         update("presetTime", event.currentTarget.value)
@@ -726,10 +763,12 @@ export function TaskWizard({
                   htmlFor="cron-expression"
                   error={errors.cronPreview ?? cronError}
                   description="5フィールドの cron 式を使ってください。"
+                  required
                   className="w-full sm:w-72"
                 >
                   <Input
                     id="cron-expression"
+                    required
                     value={draft.cronExpr}
                     aria-invalid={Boolean(errors.cronPreview ?? cronError)}
                     onChange={(event) =>
@@ -763,6 +802,7 @@ export function TaskWizard({
             options={codexModelOptions}
             onChange={updateModel}
             error={errors.model}
+            required
             className="w-full sm:w-56"
           />
           <SelectField
@@ -772,6 +812,7 @@ export function TaskWizard({
             options={modelReasoningEffortOptions}
             onChange={(value) => update("reasoningEffort", value)}
             error={errors.reasoningEffort}
+            required
             className="w-full sm:w-44"
           />
         </section>
@@ -869,6 +910,7 @@ export function TaskWizard({
                       options={projectOptions}
                       onChange={selectProject}
                       error={errors.repoPath}
+                      required
                     />
                     <Field label="ベース参照" htmlFor="base-ref">
                       <Input
@@ -902,10 +944,12 @@ export function TaskWizard({
               label="プロンプト"
               htmlFor="task-prompt"
               error={errors.prompt}
+              required
             >
               <div className="grid gap-2">
                 <Textarea
                   id="task-prompt"
+                  required
                   className="min-h-48 resize-y font-mono text-sm leading-6"
                   value={draft.prompt}
                   placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"

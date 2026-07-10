@@ -12,7 +12,12 @@ import {
   reasoningEffortOptionsForModel,
 } from "@/lib/codex-options";
 import { ipcClient } from "@/lib/ipc";
-import { buildTaskDto, defaultTaskDraft, taskToDraft } from "@/lib/task-draft";
+import {
+  buildTaskDto,
+  defaultTaskDraft,
+  taskToDraft,
+  validateTaskDraft,
+} from "@/lib/task-draft";
 import { getSystemTimezone } from "@/lib/timezone";
 import { renderWithClient } from "./test-utils";
 
@@ -34,7 +39,13 @@ describe("TaskWizard cron validation", () => {
     renderWithClient(<TaskWizard initialDraft={draft} />);
 
     const cronInput = screen.getByLabelText("カスタム cron 式");
+    const createButton = screen.getByRole("button", {
+      name: "タスクを作成",
+    });
+    expect(createButton).toBeEnabled();
+
     await user.clear(cronInput);
+    expect(createButton).toBeDisabled();
     await user.type(cronInput, "0 0 1 1 * *");
 
     expect(
@@ -42,6 +53,11 @@ describe("TaskWizard cron validation", () => {
         "秒フィールドはサポートしていません。5フィールドの cron 式を使ってください。",
       ),
     ).toBeInTheDocument();
+    expect(createButton).toBeDisabled();
+
+    await user.clear(cronInput);
+    await user.type(cronInput, "*/15 * * * *");
+    expect(createButton).toBeEnabled();
   });
 
   it("does not render execution timing previews", () => {
@@ -295,52 +311,103 @@ describe("TaskWizard cron validation", () => {
     expect(draft.reasoningEffort).toBe(defaultReasoningEffort);
   });
 
-  it("shows inline required-field errors from the one-screen composer", async () => {
+  it("disables create actions until all required fields are valid", async () => {
     const user = userEvent.setup();
 
     renderWithClient(<TaskWizard />);
 
-    await user.click(screen.getByRole("button", { name: "タスクを作成" }));
+    const createButton = screen.getByRole("button", {
+      name: "タスクを作成",
+    });
+    const pausedButton = screen.getByRole("button", {
+      name: "一時停止で作成",
+    });
+    const taskName = screen.getByLabelText("タスク名");
+    const prompt = screen.getByLabelText("プロンプト");
 
+    expect(createButton).toBeDisabled();
+    expect(pausedButton).toBeDisabled();
+    expect(taskName).toBeRequired();
+    expect(prompt).toBeRequired();
     expect(
-      await screen.findByText("確認が必要な項目があります"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", {
-        name: "プロンプト: プロンプトは必須です。",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "タスク名: タスク名は必須です。" }),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByText("タスク名は必須です。", { selector: "p" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("プロンプトは必須です。", { selector: "p" }),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("プロンプト")).toHaveAttribute(
-      "aria-invalid",
+      screen.getByRole("combobox", { name: "スケジュール" }),
+    ).toHaveAttribute("aria-required", "true");
+    expect(screen.getByRole("combobox", { name: "モデル" })).toHaveAttribute(
+      "aria-required",
       "true",
     );
-    expect(screen.getByLabelText("タスク名")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    await waitFor(() =>
-      expect(screen.getByLabelText("プロンプト")).toHaveFocus(),
-    );
+    expect(
+      screen.getByRole("combobox", { name: "思考レベル" }),
+    ).toHaveAttribute("aria-required", "true");
+
+    await user.type(taskName, "Daily review");
+    expect(createButton).toBeDisabled();
+
+    await user.type(prompt, "Review the repository.");
+    expect(createButton).toBeEnabled();
+    expect(pausedButton).toBeEnabled();
+
+    await user.clear(prompt);
+    expect(createButton).toBeDisabled();
+    expect(pausedButton).toBeDisabled();
+  });
+
+  it("validates every required task field through the shared schema", () => {
+    const validDraft = {
+      ...defaultTaskDraft(),
+      name: "Daily review",
+      prompt: "Review the repository.",
+    };
+
+    expect(validateTaskDraft({ ...validDraft, name: " " }).name).toBeDefined();
+    expect(
+      validateTaskDraft({ ...validDraft, scheduleMode: "" as never })
+        .scheduleMode,
+    ).toBeDefined();
+    expect(
+      validateTaskDraft({ ...validDraft, model: "" as never }).model,
+    ).toBeDefined();
+    expect(
+      validateTaskDraft({ ...validDraft, reasoningEffort: "" as never })
+        .reasoningEffort,
+    ).toBeDefined();
+    expect(
+      validateTaskDraft({ ...validDraft, prompt: " " }).prompt,
+    ).toBeDefined();
+    expect(
+      validateTaskDraft({
+        ...validDraft,
+        scheduleMode: "preset",
+        presetMode: "daily",
+        presetTime: "",
+      }).presetTime,
+    ).toBeDefined();
   });
 
   it("submits the existing task DTO shape through the create mutation", async () => {
     const user = userEvent.setup();
+    const repoPath = "/Users/alice/src/my-app";
+    const timestamp = "2026-07-10T00:00:00.000Z";
+    vi.spyOn(ipcClient, "projectList").mockResolvedValue([
+      {
+        id: "proj_demo",
+        name: "my-app",
+        path: repoPath,
+        kind: "git",
+        gitRoot: repoPath,
+        defaultBranch: "main",
+        trustedAt: timestamp,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ]);
     const draft = {
       ...defaultTaskDraft(),
       name: "Daily review",
       prompt: "Review the repository and report the riskiest changes.",
       targetMode: "repo-worktree" as const,
       projectId: "proj_demo",
-      repoPath: "/Users/alice/src/my-app",
+      repoPath,
       baseRef: "main",
       scheduleMode: "preset" as const,
       presetMode: "daily" as const,
@@ -358,7 +425,11 @@ describe("TaskWizard cron validation", () => {
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
 
-    await user.click(screen.getByRole("button", { name: "タスクを作成" }));
+    const createButton = screen.getByRole("button", {
+      name: "タスクを作成",
+    });
+    await waitFor(() => expect(createButton).toBeEnabled());
+    await user.click(createButton);
 
     await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
     expect(createSpy).toHaveBeenCalledWith(expectedDto);

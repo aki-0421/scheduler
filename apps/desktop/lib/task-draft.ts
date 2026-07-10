@@ -48,7 +48,7 @@ export type TaskDraft = {
   locked: boolean;
 };
 
-export type StepErrors = Partial<
+export type TaskDraftErrors = Partial<
   Record<keyof TaskDraft | "cronPreview", string>
 >;
 type PresetSchedule = Pick<
@@ -274,12 +274,25 @@ const targetSchema = z
     }
   });
 
+function isValidTimeValue(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) {
+    return false;
+  }
+
+  const [, hour, minute] = match;
+  return Number(hour) <= 23 && Number(minute) <= 59;
+}
+
 const scheduleSchema = z
   .object({
     scheduleMode: z.enum(scheduleModes),
     timezone: z.string().trim().min(1, "タイムゾーンは必須です。"),
     onceDate: z.string(),
     onceTime: z.string(),
+    presetMode: z.enum(presetModes),
+    presetTime: z.string(),
+    weeklyDay: z.string(),
     cronExpr: z.string(),
   })
   .superRefine((value, context) => {
@@ -304,6 +317,30 @@ const scheduleSchema = z
               : "このタイムゾーンでは日付と時刻が無効です。",
         });
       }
+    }
+
+    if (
+      value.scheduleMode === "preset" &&
+      value.presetMode !== "hourly" &&
+      !isValidTimeValue(value.presetTime)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["presetTime"],
+        message: "時刻は必須です。",
+      });
+    }
+
+    if (
+      value.scheduleMode === "preset" &&
+      value.presetMode === "weekly" &&
+      !/^[0-6]$/.test(value.weeklyDay)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["weeklyDay"],
+        message: "曜日は必須です。",
+      });
     }
 
     if (value.scheduleMode === "cron") {
@@ -340,30 +377,32 @@ const codexSchema = z
     }
   });
 
-export function validateTaskDraftStep(
-  draft: TaskDraft,
-  step: number,
-): StepErrors {
-  const schemas = [
-    basicsSchema,
-    targetSchema,
-    scheduleSchema,
-    codexSchema,
-  ];
-  const schema = schemas[step];
-  if (!schema) {
-    return {};
-  }
+const taskDraftSchemas = [
+  basicsSchema,
+  targetSchema,
+  scheduleSchema,
+  codexSchema,
+];
 
-  const result = schema.safeParse(draft);
-  if (result.success) {
-    return {};
-  }
-
-  return result.error.issues.reduce<StepErrors>((errors, issue) => {
-    const key = issue.path[0] as keyof StepErrors;
-    errors[key] = issue.message;
+function validationIssuesToErrors(issues: z.ZodIssue[]): TaskDraftErrors {
+  return issues.reduce<TaskDraftErrors>((errors, issue) => {
+    const key = issue.path[0] as keyof TaskDraftErrors;
+    errors[key] ??= issue.message;
     return errors;
+  }, {});
+}
+
+export function validateTaskDraft(draft: TaskDraft): TaskDraftErrors {
+  return taskDraftSchemas.reduce<TaskDraftErrors>((errors, schema) => {
+    const result = schema.safeParse(draft);
+    if (result.success) {
+      return errors;
+    }
+
+    return {
+      ...errors,
+      ...validationIssuesToErrors(result.error.issues),
+    };
   }, {});
 }
 

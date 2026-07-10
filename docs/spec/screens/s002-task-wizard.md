@@ -69,12 +69,14 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 
 バリデーションとエラー:
 
-- required: prompt、task name、frontier model、選択 model が対応する思考レベル。timezone は PC から自動設定される内部必須値である。
+- required: task name、schedule、frontier model、選択 model が対応する思考レベル、prompt。required field の label には必須表示を付け、native control と custom select の両方へ required semantics を設定する。timezone は PC から自動設定される内部必須値である。
+- create、follow-up、duplicate の `一時停止で作成` と `タスクを作成`、edit の `変更を保存` は、全 required field と選択中 schedule の固有 field が valid になるまで disabled にする。save handler でも同じ validation を再実行する。
 - project target には Git root を持つ registered Git project が必要。
 - once schedule には現在の PC timezone に対して valid な date and time が必要。
+- daily、weekdays、weekly schedule には valid な time が必要で、weekly schedule には day of week も必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。
 - locked task の edit は unlock されるまで blocked される。
-- validation failure は clickable field link を含む destructive summary を表示し、同じ画面内の first error へ scroll して focus する。
+- save handler が validation failure を検出した場合は clickable field link を含む destructive summary を表示し、同じ画面内の first error へ scroll して focus する。
 
 状態:
 
@@ -92,6 +94,11 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - switch と checkbox は label と description を含む。
 - lock switch は lock が AI / scheduled-run actor に対して何を防ぐかを説明する。
 
+検証:
+
+- `pnpm --filter desktop exec vitest run test/task-wizard.test.tsx` は required field、schedule validation、create action の disabled / enabled 遷移、保存 DTO を検証する。
+- UI を変更した場合は `agent-browser` で `/tasks/new/` を開き、required field が空または schedule が invalid な状態では両 create action が disabled、すべて valid な状態では enabled になることを accessibility snapshot と screenshot で確認する。
+
 セキュリティと安全性:
 
 - project task は save 前に Git project scope と isolated worktree execution を surface する。
@@ -100,7 +107,8 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 
 受け入れ条件:
 
-- prompt、name、repository、schedule、advanced field に error がある場合、save は error summary を表示し、同じ画面内の最初の invalid field に focus する。
+- task name、schedule、model、思考レベル、prompt のいずれか、または選択中 schedule の固有 field が未入力・invalid な間は create action が disabled で、すべて valid になると enabled になる。`一時停止で作成` と edit の `変更を保存` も同じ条件を使う。
+- save handler が prompt、name、repository、schedule、advanced field の error を検出した場合は error summary を表示し、同じ画面内の最初の invalid field に focus する。
 - project target に registered Git project がない場合、save は blocked される。
 - 実行先は `チャット` / `プロジェクト` の keyboard-operable radio cards で選択でき、`プロジェクト` を保存した DTO は `repo-worktree` になる。
 - locked task を edit しようとした場合、unlock なしでは save できない。
