@@ -19,7 +19,7 @@ read_when:
 - create または follow-up 成功時は `/tasks?task=<newTaskId>` に redirect する。
 - duplicate 成功時は複製された task の `/tasks?task=<newTaskId>` に redirect する。
 - edit 成功時は dialog を閉じ、task detail を refresh する。
-- cancel は `/tasks` または task detail に戻るか edit dialog を閉じる。
+- create、follow-up、duplicate page には cancel button を置かず、sidebar、breadcrumb、browser navigation から離脱する。edit dialog の cancel は dialog を閉じる。
 
 データ依存:
 
@@ -34,14 +34,12 @@ read_when:
 
 - page または dialog header。
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
+- create、follow-up、duplicate page の `一時停止で作成` と `タスクを作成` は page title と同じ header section の右側に置く。狭い width では title の下に折り返す。
 - validation failure 時の error summary alert。
-- tabs: `タスク`、`詳細`。従来の `基本`、`実行先`、`スケジュール` は `タスク` tab に統合する。
-- tab list は選択中 content の直上に配置する。横スクロール領域にはせず、利用可能な幅に収まらない場合は複数行へ折り返す。選択中の tab content と footer action は page canvas に直接配置し、外側の bordered panel とその内側 padding を置かない。
-- `タスク` tab: task name、prompt、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、schedule selector、schedule-specific fields、PC timezone indicator、preview を同じ画面にまとめる。task description field は置かない。desktop width では task content と execution condition を 2 column に分け、狭い width では 1 column に戻す。
+- task name、prompt、`チャット` / `プロジェクト` radio cards、Git project selector、Git folder picker、base ref、schedule selector、schedule-specific fields、PC timezone indicator、preview、Codex customization、lock / pause control を tab 切り替えなしの 1 画面にまとめる。task description field は置かない。desktop width では task content と execution condition を 2 column に分け、狭い width では 1 column に戻す。
 - prompt textarea は resize 可能なまま compact な初期高にし、next-five-runs preview は複数列で表示できる幅では 2 column にして縦方向の占有を抑える。
-- `詳細` tab: 任意の Codex binary path customization、Codex model、reasoning effort、lock / pause controls。field は 2 column の compact layout で表示し、policy 説明や固定値の summary を置かない。
-- tab content の先頭には、tab label と同義の section heading や説明文を置かない。
-- cancel、save paused、save active の footer action。
+- `詳細` section: 任意の Codex binary path customization、Codex model、reasoning effort、lock / pause controls。main task fields の下に separator を挟んで置き、field は 2 column の compact layout で表示し、policy 説明や固定値の summary を置かない。
+- edit dialog の footer には cancel と save action を置く。create、follow-up、duplicate page には footer action を置かない。
 
 フィールドとコントロール:
 
@@ -52,7 +50,7 @@ read_when:
 - base ref。
 - schedule selector: manual、once、hourly、daily、weekdays、weekly、custom cron。
 - once date and time、preset time、weekly day、custom 5-field cron、PC timezone indicator、next-five-runs preview。
-- advanced settings: `Codex バイナリパスをカスタマイズ` checkbox、checkbox が on の場合だけ表示する path input、model select、model が対応する reasoning effort select、start paused switch。通常は default のままでよいため `詳細` tab に置き、main flow から外す。
+- advanced settings: `Codex バイナリパスをカスタマイズ` checkbox、checkbox が on の場合だけ表示する path input、model select、model が対応する reasoning effort select、start paused switch。`詳細` section に compact にまとめる。
 - lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
 
 既定値:
@@ -74,7 +72,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - once schedule には現在の PC timezone に対して valid な date and time が必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。
 - locked task の edit は unlock されるまで blocked される。
-- validation failure は clickable field link を含む destructive summary を表示し、first error がある tab へ切り替えてから focus する。
+- validation failure は clickable field link を含む destructive summary を表示し、同じ画面内の first error へ scroll して focus する。
 
 状態:
 
@@ -85,7 +83,6 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - locked task edit は lock badge と unlock guidance を表示する。
 - cron preview は valid な場合に next five runs、once schedule の場合に once preview、manual task の場合に manual guidance、invalid な場合に fix-schedule guidance を表示する。
 - manual 以外の schedule summary は、現在の PC timezone を自動使用することと IANA timezone 名を表示する。
-- hidden tab の field に validation error がある場合、対象 tab は自動で選択される。
 
 アクセシビリティ:
 
@@ -102,8 +99,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 
 受け入れ条件:
 
-- prompt、name、repository、schedule field に error がある場合、save は error summary を表示し、`タスク` tab 内の最初の invalid field に focus する。
-- advanced field に error がある場合、save は `詳細` tab を開いて field に focus する。
+- prompt、name、repository、schedule、advanced field に error がある場合、save は error summary を表示し、同じ画面内の最初の invalid field に focus する。
 - project target に registered Git project がない場合、save は blocked される。
 - 実行先は `チャット` / `プロジェクト` の keyboard-operable radio cards で選択でき、`プロジェクト` を保存した DTO は `repo-worktree` になる。
 - locked task を edit しようとした場合、unlock なしでは save できない。
@@ -114,9 +110,9 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - create が成功した場合、user は `/tasks?task=<newTaskId>` に遷移する。
 - duplicate が成功した場合、lock state は unlocked で作成される。
 - edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
-- create、follow-up、duplicate、edit のすべてで、`タスク` / `詳細` の tab content と footer action は page-level panel surface なしで表示される。
-- tab list は横方向にスクロールせず、狭い幅でもすべての tab が表示される。
-- desktop width の `タスク` tab は主要フィールドを 2 column に分け、既定の chat / weekdays state を過度な縦スクロールなしで確認できる。
+- create、follow-up、duplicate、edit のすべてで、task fields と `詳細` section が tab 切り替えなしの 1 画面に表示される。
+- create、follow-up、duplicate page では cancel button が表示されず、`一時停止で作成` と `タスクを作成` が page title と同じ header section の右側に表示される。
+- desktop width では主要フィールドを 2 column に分け、既定の chat / weekdays state と `詳細` section を少ないスクロールで確認できる。
 - create、follow-up、duplicate、edit のいずれにも task description input は表示されず、保存 DTO に description field を含めない。
 
 既知の gap:

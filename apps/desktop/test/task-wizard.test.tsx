@@ -1,8 +1,9 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskWizard } from "@/components/task-wizard";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   codexModelOptions,
   defaultCodexModel,
@@ -157,11 +158,8 @@ describe("TaskWizard cron validation", () => {
     const user = userEvent.setup();
 
     renderWithClient(<TaskWizard />);
-    expect(screen.getByRole("tablist")).toHaveClass("flex-wrap");
-    expect(screen.getByRole("tablist")).not.toHaveClass("overflow-x-auto");
-    expect(
-      screen.getAllByRole("tab").map((tab) => tab.textContent),
-    ).toEqual(["タスク", "詳細"]);
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "詳細" })).toBeInTheDocument();
 
     expect(screen.getByRole("radio", { name: /チャット/ })).toBeChecked();
     await user.click(screen.getByRole("radio", { name: /プロジェクト/ }));
@@ -185,13 +183,13 @@ describe("TaskWizard cron validation", () => {
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
 
-    await user.click(screen.getByRole("tab", { name: "詳細" }));
-
     const customize = screen.getByRole("checkbox", {
       name: /Codex バイナリパスをカスタマイズ/,
     });
     expect(customize).not.toBeChecked();
-    expect(screen.queryByLabelText("Codex バイナリパス")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Codex バイナリパス"),
+    ).not.toBeInTheDocument();
 
     await user.click(customize);
     const path = screen.getByLabelText("Codex バイナリパス");
@@ -227,8 +225,7 @@ describe("TaskWizard cron validation", () => {
     }
   });
 
-  it("uses frontier model and effort selects in advanced settings", async () => {
-    const user = userEvent.setup();
+  it("uses frontier model and effort selects in advanced settings", () => {
     const draft = {
       ...defaultTaskDraft(),
       name: "Frontier task",
@@ -236,8 +233,6 @@ describe("TaskWizard cron validation", () => {
     };
 
     renderWithClient(<TaskWizard initialDraft={draft} />);
-
-    await user.click(screen.getByRole("tab", { name: "詳細" }));
 
     expect(screen.getByRole("combobox", { name: "モデル" })).toHaveTextContent(
       "GPT-5.5",
@@ -255,9 +250,37 @@ describe("TaskWizard cron validation", () => {
         (effort) => effort.value,
       ),
     ).toEqual(["low", "medium", "high", "xhigh"]);
-    expect(defaultReasoningEffortForModel("gpt-5.3-codex-spark")).toBe(
-      "high",
+    expect(defaultReasoningEffortForModel("gpt-5.3-codex-spark")).toBe("high");
+  });
+
+  it("places create actions beside the page title without a cancel action", () => {
+    renderWithClient(
+      <TooltipProvider>
+        <TaskWizard
+          pageHeader={{
+            title: "新規タスク",
+            description: "タスクを1画面で設定します。",
+          }}
+        />
+      </TooltipProvider>,
     );
+
+    const title = screen.getByRole("heading", { name: "新規タスク" });
+    const header = title.parentElement?.parentElement;
+    expect(header).not.toBeNull();
+    expect(
+      within(header as HTMLElement).getByRole("button", {
+        name: "一時停止で作成",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(header as HTMLElement).getByRole("button", {
+        name: "タスクを作成",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "キャンセル" }),
+    ).not.toBeInTheDocument();
   });
 
   it("normalizes deprecated Codex model values when editing a task", () => {

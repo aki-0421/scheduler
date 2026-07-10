@@ -13,14 +13,12 @@ import {
 import { toast } from "sonner";
 
 import { Field } from "@/components/field";
+import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  RadioGroup,
-  RadioGroupItem,
-} from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -30,7 +28,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   codexModelOptions,
@@ -71,11 +68,14 @@ type TaskWizardProps = {
   cancelHref?: string;
   onCancel?: () => void;
   onSaved?: (task: TaskDto) => void;
+  pageHeader?: {
+    title: string;
+    description?: string;
+  };
 };
 
 type ScheduleChoice = "manual" | "once" | PresetMode | "cron";
 type TargetChoice = "chat" | "project";
-type WizardTab = "task" | "advanced";
 
 const scheduleOptions: SelectOption<ScheduleChoice>[] = [
   { value: "manual", label: "手動のみ" },
@@ -112,8 +112,6 @@ const japaneseErrorMessages: Record<string, string> = {
   codexPath: "カスタム Codex バイナリパスを入力してください。",
 };
 
-const advancedErrorKeys = new Set(["codexPath", "model", "reasoningEffort"]);
-
 const errorFieldOrder = [
   "prompt",
   "name",
@@ -149,13 +147,6 @@ const errorTargetIds: Record<string, string[]> = {
   model: ["model"],
   reasoningEffort: ["reasoning"],
 };
-
-function getTabForErrorKey(key: string): WizardTab {
-  if (advancedErrorKeys.has(key)) {
-    return "advanced";
-  }
-  return "task";
-}
 
 function formatCronError(message?: string) {
   if (!message) {
@@ -414,15 +405,13 @@ export function TaskWizard({
   cancelHref = "/tasks",
   onCancel,
   onSaved,
+  pageHeader,
 }: TaskWizardProps) {
-  const [draft, setDraft] = useState<TaskDraft>(
-    () => ({
-      ...(initialDraft ?? (task ? taskToDraft(task) : defaultTaskDraft())),
-      timezone: getSystemTimezone(),
-    }),
-  );
+  const [draft, setDraft] = useState<TaskDraft>(() => ({
+    ...(initialDraft ?? (task ? taskToDraft(task) : defaultTaskDraft())),
+    timezone: getSystemTimezone(),
+  }));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<WizardTab>("task");
   const [isImportingPrompt, setIsImportingPrompt] = useState(false);
   const [isPickingRepo, setIsPickingRepo] = useState(false);
   const projects = useProjects();
@@ -519,12 +508,7 @@ export function TaskWizard({
         presetMode: value,
       };
     });
-    clearErrors(
-      "scheduleMode",
-      "onceDate",
-      "onceTime",
-      "cronPreview",
-    );
+    clearErrors("scheduleMode", "onceDate", "onceTime", "cronPreview");
   }
 
   function selectProject(value: string) {
@@ -569,10 +553,6 @@ export function TaskWizard({
     }
 
     setErrors(allErrors);
-    const [firstError] = getOrderedErrorEntries(allErrors);
-    if (firstError) {
-      setActiveTab(getTabForErrorKey(firstError.key));
-    }
     return allErrors;
   }
 
@@ -601,7 +581,6 @@ export function TaskWizard({
       return;
     }
 
-    setActiveTab(getTabForErrorKey(firstError.key));
     window.setTimeout(() => focusErrorField(firstError.key), 0);
   }
 
@@ -698,26 +677,55 @@ export function TaskWizard({
       ? formatCronError(cronPreview.error)
       : undefined;
 
+  function renderSaveActions() {
+    return (
+      <>
+        {!task ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isSaving}
+            onClick={() => void save(true)}
+          >
+            一時停止で作成
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          disabled={isSaving}
+          onClick={() => void save(false)}
+        >
+          {task ? "変更を保存" : "タスクを作成"}
+        </Button>
+      </>
+    );
+  }
+
   return (
     <div className="grid gap-4">
+      {pageHeader ? (
+        <PageHeader
+          title={pageHeader.title}
+          description={pageHeader.description}
+          actions={renderSaveActions()}
+        />
+      ) : null}
+
       {hasErrors ? (
         <Alert variant="destructive">
           <AlertTriangle className="size-4" aria-hidden="true" />
           <AlertTitle>確認が必要な項目があります</AlertTitle>
           <AlertDescription className="grid gap-2">
-            <p>
-              強調表示された項目を修正してから、もう一度保存してください。
-            </p>
+            <p>強調表示された項目を修正してから、もう一度保存してください。</p>
             <ul className="list-disc space-y-1 pl-4">
               {errorSummary.map(({ key, label, message }) => (
                 <li key={key}>
                   <button
                     type="button"
                     className="text-left underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
-                    onClick={() => {
-                      setActiveTab(getTabForErrorKey(key));
-                      window.setTimeout(() => focusErrorField(key), 0);
-                    }}
+                    onClick={() =>
+                      window.setTimeout(() => focusErrorField(key), 0)
+                    }
                   >
                     <span className="font-medium">{label}:</span> {message}
                   </button>
@@ -728,450 +736,406 @@ export function TaskWizard({
         </Alert>
       ) : null}
 
-      <Tabs
-        value={activeTab}
-        className="grid gap-3"
-        onValueChange={(value) => setActiveTab(value as WizardTab)}
-      >
-        <TabsList className="w-full justify-start">
-          <TabsTrigger value="task">タスク</TabsTrigger>
-          <TabsTrigger value="advanced">詳細</TabsTrigger>
-        </TabsList>
-
-        <div className="grid gap-5">
-            <TabsContent value="task" className="mt-0">
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
-                <section
-                  className="grid content-start gap-4"
-                  aria-labelledby="task-content-heading"
-                >
-                  <h3 id="task-content-heading" className="text-sm font-semibold">
-                    依頼内容
-                  </h3>
-                  <Field
-                    label="タスク名"
-                    htmlFor="task-name"
-                    error={errors.name}
-                  >
-                    <Input
-                      id="task-name"
-                      value={draft.name}
-                      placeholder="毎日のリポジトリレビュー"
-                      onChange={(event) =>
-                        update("name", event.currentTarget.value)
-                      }
-                    />
-                  </Field>
-                  <Field
-                    label="プロンプト"
-                    htmlFor="task-prompt"
-                    error={errors.prompt}
-                  >
-                    <div className="grid gap-2">
-                      <Textarea
-                        id="task-prompt"
-                        className="min-h-56 resize-y font-mono text-sm leading-6"
-                        value={draft.prompt}
-                        placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"
-                        onChange={(event) =>
-                          update("prompt", event.currentTarget.value)
-                        }
-                      />
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {draft.prompt.length.toLocaleString("ja-JP")} 文字
-                        </span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={isImportingPrompt}
-                          onClick={() => void importPromptFile()}
-                        >
-                          <FileText className="size-4" aria-hidden="true" />
-                          プロンプトをインポート
-                        </Button>
-                      </div>
-                    </div>
-                  </Field>
-                </section>
-
-                <div className="grid content-start gap-5 lg:border-l lg:pl-6">
-                  <section
-                    className="grid gap-3"
-                    aria-labelledby="target-choice-label"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3
-                        id="target-choice-label"
-                        className="text-sm font-semibold"
-                      >
-                        実行先
-                      </h3>
-                      {isRepoTarget ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={isPickingRepo || trustProject.isPending}
-                          onClick={() => void pickRepositoryFolder()}
-                        >
-                          <FolderOpen
-                            data-icon="inline-start"
-                            aria-hidden="true"
-                          />
-                          Gitリポジトリを追加
-                        </Button>
-                      ) : null}
-                    </div>
-                    <RadioGroup
-                      value={targetChoice}
-                      aria-labelledby="target-choice-label"
-                      className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
-                      onValueChange={(value) =>
-                        updateTargetChoice(value as TargetChoice)
-                      }
-                    >
-                      <Label
-                        htmlFor="target-chat"
-                        className={cn(
-                          "flex cursor-pointer items-start gap-2.5 rounded-lg border bg-background p-3 transition-colors duration-150 hover:bg-muted/50",
-                          targetChoice === "chat" &&
-                            "border-ring bg-accent/50",
-                        )}
-                      >
-                        <RadioGroupItem
-                          id="target-chat"
-                          value="chat"
-                          className="mt-0.5 shrink-0"
-                        />
-                        <MessageSquare
-                          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                        <span className="grid gap-0.5">
-                          <span className="text-sm font-medium">チャット</span>
-                          <span className="text-xs font-normal text-muted-foreground text-pretty">
-                            アプリ管理のワークスペースで実行します。
-                          </span>
-                        </span>
-                      </Label>
-                      <Label
-                        htmlFor="target-project"
-                        className={cn(
-                          "flex cursor-pointer items-start gap-2.5 rounded-lg border bg-background p-3 transition-colors duration-150 hover:bg-muted/50",
-                          targetChoice === "project" &&
-                            "border-ring bg-accent/50",
-                        )}
-                      >
-                        <RadioGroupItem
-                          id="target-project"
-                          value="project"
-                          className="mt-0.5 shrink-0"
-                        />
-                        <FolderGit2
-                          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                        <span className="grid gap-0.5">
-                          <span className="text-sm font-medium">
-                            プロジェクト
-                          </span>
-                          <span className="text-xs font-normal text-muted-foreground text-pretty">
-                            実行ごとにGitワークツリーを作成します。
-                          </span>
-                        </span>
-                      </Label>
-                    </RadioGroup>
-                    {isRepoTarget ? (
-                      <div className="grid gap-3">
-                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
-                          <SelectField
-                            id="project"
-                            label="Gitプロジェクト"
-                            value={draft.projectId || "none"}
-                            options={projectOptions}
-                            onChange={selectProject}
-                            error={errors.repoPath}
-                          />
-                          <Field label="ベース参照" htmlFor="base-ref">
-                            <Input
-                              id="base-ref"
-                              value={draft.baseRef}
-                              onChange={(event) =>
-                                update("baseRef", event.currentTarget.value)
-                              }
-                            />
-                          </Field>
-                        </div>
-                        {matchedProject ? (
-                          <div className="break-all rounded-md border p-3 text-xs text-muted-foreground">
-                            {matchedProject.gitRoot}
-                          </div>
-                        ) : null}
-                        <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                          <FolderGit2
-                            className="mt-0.5 size-4 shrink-0"
-                            aria-hidden="true"
-                          />
-                          <p className="text-pretty">
-                            登録した作業ツリーは変更せず、実行ごとに分離ワークツリーを作成します。
-                          </p>
-                        </div>
-                      </div>
-                    ) : null}
-                  </section>
-
-                  <section
-                    className="grid gap-3 border-t pt-5"
-                    aria-labelledby="schedule-heading"
-                  >
-                    <h3 id="schedule-heading" className="text-sm font-semibold">
-                      スケジュール
-                    </h3>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <SelectField
-                        id="schedule"
-                        label="実行タイミング"
-                        value={scheduleChoice}
-                        options={scheduleOptions}
-                        onChange={updateScheduleChoice}
-                      />
-
-                      {scheduleChoice === "once" ? (
-                        <>
-                          <Field
-                            label="日付"
-                            htmlFor="once-date"
-                            error={errors.onceDate}
-                          >
-                            <Input
-                              id="once-date"
-                              type="date"
-                              value={draft.onceDate}
-                              onChange={(event) =>
-                                update("onceDate", event.currentTarget.value)
-                              }
-                            />
-                          </Field>
-                          <Field
-                            label="時刻"
-                            htmlFor="once-time"
-                            error={errors.onceTime}
-                          >
-                            <Input
-                              id="once-time"
-                              type="time"
-                              value={draft.onceTime}
-                              onChange={(event) =>
-                                update("onceTime", event.currentTarget.value)
-                              }
-                            />
-                          </Field>
-                        </>
-                      ) : null}
-
-                      {scheduleChoice === "daily" ||
-                      scheduleChoice === "weekdays" ||
-                      scheduleChoice === "weekly" ? (
-                        <>
-                          {scheduleChoice === "weekly" ? (
-                            <SelectField
-                              id="weekly-day"
-                              label="曜日"
-                              value={draft.weeklyDay}
-                              options={weekdayOptions}
-                              onChange={(value) => update("weeklyDay", value)}
-                            />
-                          ) : null}
-                          <Field label="時刻" htmlFor="preset-time">
-                            <Input
-                              id="preset-time"
-                              type="time"
-                              value={draft.presetTime}
-                              onChange={(event) =>
-                                update("presetTime", event.currentTarget.value)
-                              }
-                            />
-                          </Field>
-                        </>
-                      ) : null}
-
-                      {scheduleChoice === "cron" ? (
-                        <Field
-                          label="カスタム cron 式"
-                          htmlFor="cron-expression"
-                          error={errors.cronPreview ?? cronError}
-                          description="5フィールドの cron 式を使ってください。"
-                          className="sm:col-span-2"
-                        >
-                          <Input
-                            id="cron-expression"
-                            value={draft.cronExpr}
-                            aria-invalid={Boolean(
-                              errors.cronPreview ?? cronError,
-                            )}
-                            onChange={(event) =>
-                              update("cronExpr", event.currentTarget.value, [
-                                "cronPreview",
-                              ])
-                            }
-                            placeholder="0 9 * * 1-5"
-                          />
-                        </Field>
-                      ) : null}
-                    </div>
-
-                    <div className="rounded-md border bg-muted/30 p-3">
-                      <div className="flex items-start gap-2">
-                        <CalendarClock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                        <div className="grid min-w-0 gap-1">
-                          <p className="text-sm font-medium">
-                            {getScheduleSummary(draft)}
-                          </p>
-                          {scheduleChoice !== "manual" ? (
-                            <p className="text-xs text-muted-foreground">
-                              PCのタイムゾーン（{draft.timezone}）を使用します。
-                            </p>
-                          ) : null}
-                          {cronPreview.ok && cronPreview.dates.length ? (
-                            <div
-                              data-testid="cron-preview"
-                              className="grid gap-1"
-                            >
-                              <p className="text-xs text-muted-foreground">
-                                次の5回
-                              </p>
-                              <div className="grid gap-x-3 gap-y-1 text-sm tabular-nums sm:grid-cols-2">
-                                {cronPreview.dates.map((date) => (
-                                  <span key={date}>{formatDateTime(date)}</span>
-                                ))}
-                              </div>
-                            </div>
-                          ) : scheduleChoice === "once" ? (
-                            <p className="text-xs text-muted-foreground">
-                              次回実行: {getOncePreview(draft)}
-                            </p>
-                          ) : scheduleChoice === "manual" ? (
-                            <p className="text-xs text-muted-foreground">
-                              タスク詳細または scheduler CLI
-                              からこのタスクを実行します。
-                            </p>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              今後の実行をプレビューするにはスケジュールを修正してください。
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="advanced" className="mt-0 grid gap-4">
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="grid content-start gap-3">
-                  <CheckboxRow
-                    id="custom-codex-path"
-                    checked={draft.customCodexPath}
-                    label="Codex バイナリパスをカスタマイズ"
-                    description="このタスクだけ別の Codex CLI を使う場合に有効にします。"
-                    onChange={(checked) => {
-                      update("customCodexPath", checked, ["codexPath"]);
-                    }}
-                  />
-                  {draft.customCodexPath ? (
-                    <Field
-                      label="Codex バイナリパス"
-                      htmlFor="codex-path"
-                      error={errors.codexPath}
-                    >
-                      <Input
-                        id="codex-path"
-                        value={draft.codexPath}
-                        placeholder="/opt/homebrew/bin/codex"
-                        autoComplete="off"
-                        spellCheck={false}
-                        onChange={(event) =>
-                          update("codexPath", event.currentTarget.value)
-                        }
-                      />
-                    </Field>
-                  ) : null}
-                </div>
-
-                <div className="grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                  <SelectField
-                    id="model"
-                    label="モデル"
-                    value={draft.model}
-                    options={codexModelOptions}
-                    onChange={updateModel}
-                    error={errors.model}
-                  />
-                  <SelectField
-                    id="reasoning"
-                    label="推論 effort"
-                    value={draft.reasoningEffort}
-                    options={modelReasoningEffortOptions}
-                    onChange={(value) => update("reasoningEffort", value)}
-                    error={errors.reasoningEffort}
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-3 border-t pt-4 md:grid-cols-2">
-                <SwitchRow
-                  id="task-locked"
-                  checked={draft.locked}
-                  label="タスクをロック"
-                  description="スケジュール実行からの変更・停止・削除を防ぎます。"
-                  onChange={(checked) => update("locked", checked)}
+      <div className="grid gap-6">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
+          <section
+            className="grid content-start gap-4"
+            aria-labelledby="task-content-heading"
+          >
+            <h3 id="task-content-heading" className="text-sm font-semibold">
+              依頼内容
+            </h3>
+            <Field label="タスク名" htmlFor="task-name" error={errors.name}>
+              <Input
+                id="task-name"
+                value={draft.name}
+                placeholder="毎日のリポジトリレビュー"
+                onChange={(event) => update("name", event.currentTarget.value)}
+              />
+            </Field>
+            <Field
+              label="プロンプト"
+              htmlFor="task-prompt"
+              error={errors.prompt}
+            >
+              <div className="grid gap-2">
+                <Textarea
+                  id="task-prompt"
+                  className="min-h-56 resize-y font-mono text-sm leading-6"
+                  value={draft.prompt}
+                  placeholder="Codex にリポジトリの確認、変更、失敗レビュー、レポート作成などを依頼します。"
+                  onChange={(event) =>
+                    update("prompt", event.currentTarget.value)
+                  }
                 />
-                <SwitchRow
-                  id="force-paused"
-                  checked={draft.forcePaused}
-                  label="一時停止状態で保存"
-                  description="内容を確認してから手動で有効化できます。"
-                  onChange={(checked) => update("forcePaused", checked)}
-                />
-              </div>
-            </TabsContent>
-
-            <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-              {onCancel ? (
-                <Button type="button" variant="outline" onClick={onCancel}>
-                  キャンセル
-                </Button>
-              ) : (
-                <Button variant="outline" asChild>
-                  <Link href={cancelHref}>キャンセル</Link>
-                </Button>
-              )}
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-                {!task ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {draft.prompt.length.toLocaleString("ja-JP")} 文字
+                  </span>
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={isSaving}
-                    onClick={() => void save(true)}
+                    size="sm"
+                    disabled={isImportingPrompt}
+                    onClick={() => void importPromptFile()}
                   >
-                    一時停止で作成
+                    <FileText className="size-4" aria-hidden="true" />
+                    プロンプトをインポート
+                  </Button>
+                </div>
+              </div>
+            </Field>
+          </section>
+
+          <div className="grid content-start gap-5 lg:border-l lg:pl-6">
+            <section
+              className="grid gap-3"
+              aria-labelledby="target-choice-label"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 id="target-choice-label" className="text-sm font-semibold">
+                  実行先
+                </h3>
+                {isRepoTarget ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPickingRepo || trustProject.isPending}
+                    onClick={() => void pickRepositoryFolder()}
+                  >
+                    <FolderOpen data-icon="inline-start" aria-hidden="true" />
+                    Gitリポジトリを追加
                   </Button>
                 ) : null}
-                <Button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={() => void save(false)}
-                >
-                  {task ? "変更を保存" : "タスクを作成"}
-                </Button>
               </div>
-            </div>
+              <RadioGroup
+                value={targetChoice}
+                aria-labelledby="target-choice-label"
+                className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
+                onValueChange={(value) =>
+                  updateTargetChoice(value as TargetChoice)
+                }
+              >
+                <Label
+                  htmlFor="target-chat"
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2.5 rounded-lg border bg-background p-3 transition-colors duration-150 hover:bg-muted/50",
+                    targetChoice === "chat" && "border-ring bg-accent/50",
+                  )}
+                >
+                  <RadioGroupItem
+                    id="target-chat"
+                    value="chat"
+                    className="mt-0.5 shrink-0"
+                  />
+                  <MessageSquare
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="grid gap-0.5">
+                    <span className="text-sm font-medium">チャット</span>
+                    <span className="text-xs font-normal text-muted-foreground text-pretty">
+                      アプリ管理のワークスペースで実行します。
+                    </span>
+                  </span>
+                </Label>
+                <Label
+                  htmlFor="target-project"
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2.5 rounded-lg border bg-background p-3 transition-colors duration-150 hover:bg-muted/50",
+                    targetChoice === "project" && "border-ring bg-accent/50",
+                  )}
+                >
+                  <RadioGroupItem
+                    id="target-project"
+                    value="project"
+                    className="mt-0.5 shrink-0"
+                  />
+                  <FolderGit2
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="grid gap-0.5">
+                    <span className="text-sm font-medium">プロジェクト</span>
+                    <span className="text-xs font-normal text-muted-foreground text-pretty">
+                      実行ごとにGitワークツリーを作成します。
+                    </span>
+                  </span>
+                </Label>
+              </RadioGroup>
+              {isRepoTarget ? (
+                <div className="grid gap-3">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+                    <SelectField
+                      id="project"
+                      label="Gitプロジェクト"
+                      value={draft.projectId || "none"}
+                      options={projectOptions}
+                      onChange={selectProject}
+                      error={errors.repoPath}
+                    />
+                    <Field label="ベース参照" htmlFor="base-ref">
+                      <Input
+                        id="base-ref"
+                        value={draft.baseRef}
+                        onChange={(event) =>
+                          update("baseRef", event.currentTarget.value)
+                        }
+                      />
+                    </Field>
+                  </div>
+                  {matchedProject ? (
+                    <div className="break-all rounded-md border p-3 text-xs text-muted-foreground">
+                      {matchedProject.gitRoot}
+                    </div>
+                  ) : null}
+                  <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    <FolderGit2
+                      className="mt-0.5 size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <p className="text-pretty">
+                      登録した作業ツリーは変更せず、実行ごとに分離ワークツリーを作成します。
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            <section
+              className="grid gap-3 border-t pt-5"
+              aria-labelledby="schedule-heading"
+            >
+              <h3 id="schedule-heading" className="text-sm font-semibold">
+                スケジュール
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SelectField
+                  id="schedule"
+                  label="実行タイミング"
+                  value={scheduleChoice}
+                  options={scheduleOptions}
+                  onChange={updateScheduleChoice}
+                />
+
+                {scheduleChoice === "once" ? (
+                  <>
+                    <Field
+                      label="日付"
+                      htmlFor="once-date"
+                      error={errors.onceDate}
+                    >
+                      <Input
+                        id="once-date"
+                        type="date"
+                        value={draft.onceDate}
+                        onChange={(event) =>
+                          update("onceDate", event.currentTarget.value)
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label="時刻"
+                      htmlFor="once-time"
+                      error={errors.onceTime}
+                    >
+                      <Input
+                        id="once-time"
+                        type="time"
+                        value={draft.onceTime}
+                        onChange={(event) =>
+                          update("onceTime", event.currentTarget.value)
+                        }
+                      />
+                    </Field>
+                  </>
+                ) : null}
+
+                {scheduleChoice === "daily" ||
+                scheduleChoice === "weekdays" ||
+                scheduleChoice === "weekly" ? (
+                  <>
+                    {scheduleChoice === "weekly" ? (
+                      <SelectField
+                        id="weekly-day"
+                        label="曜日"
+                        value={draft.weeklyDay}
+                        options={weekdayOptions}
+                        onChange={(value) => update("weeklyDay", value)}
+                      />
+                    ) : null}
+                    <Field label="時刻" htmlFor="preset-time">
+                      <Input
+                        id="preset-time"
+                        type="time"
+                        value={draft.presetTime}
+                        onChange={(event) =>
+                          update("presetTime", event.currentTarget.value)
+                        }
+                      />
+                    </Field>
+                  </>
+                ) : null}
+
+                {scheduleChoice === "cron" ? (
+                  <Field
+                    label="カスタム cron 式"
+                    htmlFor="cron-expression"
+                    error={errors.cronPreview ?? cronError}
+                    description="5フィールドの cron 式を使ってください。"
+                    className="sm:col-span-2"
+                  >
+                    <Input
+                      id="cron-expression"
+                      value={draft.cronExpr}
+                      aria-invalid={Boolean(errors.cronPreview ?? cronError)}
+                      onChange={(event) =>
+                        update("cronExpr", event.currentTarget.value, [
+                          "cronPreview",
+                        ])
+                      }
+                      placeholder="0 9 * * 1-5"
+                    />
+                  </Field>
+                ) : null}
+              </div>
+
+              <div className="rounded-md border bg-muted/30 p-3">
+                <div className="flex items-start gap-2">
+                  <CalendarClock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="grid min-w-0 gap-1">
+                    <p className="text-sm font-medium">
+                      {getScheduleSummary(draft)}
+                    </p>
+                    {scheduleChoice !== "manual" ? (
+                      <p className="text-xs text-muted-foreground">
+                        PCのタイムゾーン（{draft.timezone}）を使用します。
+                      </p>
+                    ) : null}
+                    {cronPreview.ok && cronPreview.dates.length ? (
+                      <div data-testid="cron-preview" className="grid gap-1">
+                        <p className="text-xs text-muted-foreground">次の5回</p>
+                        <div className="grid gap-x-3 gap-y-1 text-sm tabular-nums sm:grid-cols-2">
+                          {cronPreview.dates.map((date) => (
+                            <span key={date}>{formatDateTime(date)}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : scheduleChoice === "once" ? (
+                      <p className="text-xs text-muted-foreground">
+                        次回実行: {getOncePreview(draft)}
+                      </p>
+                    ) : scheduleChoice === "manual" ? (
+                      <p className="text-xs text-muted-foreground">
+                        タスク詳細または scheduler CLI
+                        からこのタスクを実行します。
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        今後の実行をプレビューするにはスケジュールを修正してください。
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
-      </Tabs>
+
+        <section
+          className="grid gap-4 border-t pt-5"
+          aria-labelledby="advanced-settings-heading"
+        >
+          <h2 id="advanced-settings-heading" className="text-sm font-semibold">
+            詳細
+          </h2>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid content-start gap-3">
+              <CheckboxRow
+                id="custom-codex-path"
+                checked={draft.customCodexPath}
+                label="Codex バイナリパスをカスタマイズ"
+                description="このタスクだけ別の Codex CLI を使う場合に有効にします。"
+                onChange={(checked) => {
+                  update("customCodexPath", checked, ["codexPath"]);
+                }}
+              />
+              {draft.customCodexPath ? (
+                <Field
+                  label="Codex バイナリパス"
+                  htmlFor="codex-path"
+                  error={errors.codexPath}
+                >
+                  <Input
+                    id="codex-path"
+                    value={draft.codexPath}
+                    placeholder="/opt/homebrew/bin/codex"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) =>
+                      update("codexPath", event.currentTarget.value)
+                    }
+                  />
+                </Field>
+              ) : null}
+            </div>
+
+            <div className="grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <SelectField
+                id="model"
+                label="モデル"
+                value={draft.model}
+                options={codexModelOptions}
+                onChange={updateModel}
+                error={errors.model}
+              />
+              <SelectField
+                id="reasoning"
+                label="推論 effort"
+                value={draft.reasoningEffort}
+                options={modelReasoningEffortOptions}
+                onChange={(value) => update("reasoningEffort", value)}
+                error={errors.reasoningEffort}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-3 border-t pt-4 md:grid-cols-2">
+            <SwitchRow
+              id="task-locked"
+              checked={draft.locked}
+              label="タスクをロック"
+              description="スケジュール実行からの変更・停止・削除を防ぎます。"
+              onChange={(checked) => update("locked", checked)}
+            />
+            <SwitchRow
+              id="force-paused"
+              checked={draft.forcePaused}
+              label="一時停止状態で保存"
+              description="内容を確認してから手動で有効化できます。"
+              onChange={(checked) => update("forcePaused", checked)}
+            />
+          </div>
+        </section>
+
+        {!pageHeader ? (
+          <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+            {onCancel ? (
+              <Button type="button" variant="outline" onClick={onCancel}>
+                キャンセル
+              </Button>
+            ) : (
+              <Button variant="outline" asChild>
+                <Link href={cancelHref}>キャンセル</Link>
+              </Button>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+              {renderSaveActions()}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
