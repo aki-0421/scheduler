@@ -15,10 +15,16 @@ describe("RunsPage selected session", () => {
     expect(
       await screen.findByRole("heading", { name: "毎日のリポジトリレビュー" }),
     ).toBeInTheDocument();
-    expect(await screen.findByText("システムプロンプト")).toBeInTheDocument();
     expect(await screen.findByText("最終出力")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "タスク情報" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "タスクプロンプト" }),
+    ).toBeInTheDocument();
 
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.queryByText("システムプロンプト")).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "最近" })).not.toBeInTheDocument();
     expect(screen.queryByText("run_failed")).not.toBeInTheDocument();

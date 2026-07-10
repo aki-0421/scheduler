@@ -11,7 +11,6 @@ import {
   Clock3,
   FilePenLine,
   Globe2,
-  MessageSquareCode,
   RotateCcw,
   Square,
   Terminal,
@@ -22,6 +21,10 @@ import {
 import { toast } from "sonner";
 
 import { RunStatusBadge } from "@/components/status-badge";
+import {
+  TaskInfoSheet,
+  TaskPromptDialog,
+} from "@/components/run-task-context";
 import {
   CopyButton,
   formatAbsoluteDateTime,
@@ -79,13 +82,11 @@ function MessageRow({
   label,
   actions,
   children,
-  muted = false,
 }: {
   icon: LucideIcon;
   label: string;
   actions?: ReactNode;
   children: ReactNode;
-  muted?: boolean;
 }) {
   return (
     <li className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 py-5 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4">
@@ -100,15 +101,7 @@ function MessageRow({
           <p className="text-sm font-medium">{label}</p>
           {actions}
         </div>
-        <div
-          className={
-            muted
-              ? "rounded-lg bg-muted/60 px-4 py-3 text-sm leading-7"
-              : "text-sm leading-7"
-          }
-        >
-          {children}
-        </div>
+        <div className="text-sm leading-7">{children}</div>
       </div>
     </li>
   );
@@ -249,7 +242,6 @@ export function RunDetail({ run, task }: RunDetailProps) {
   const hasToolEntries = transcriptEntries.some(
     (entry) => entry.kind === "tool",
   );
-  const promptText = task?.prompt.body.trim() ?? "";
   const startedAt = run.startedAt ?? run.queuedAt ?? run.scheduledFor;
 
   useEffect(() => {
@@ -354,7 +346,9 @@ export function RunDetail({ run, task }: RunDetailProps) {
               </span>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            <TaskInfoSheet task={task} />
+            <TaskPromptDialog task={task} />
             {active ? (
               <Button
                 type="button"
@@ -384,27 +378,7 @@ export function RunDetail({ run, task }: RunDetailProps) {
 
       <Separator />
 
-      <ol role="log" aria-label="実行セッション">
-        <MessageRow
-          icon={MessageSquareCode}
-          label="システムプロンプト"
-          muted
-          actions={
-            promptText ? (
-              <CopyButton
-                value={promptText}
-                label="コピー"
-                toastLabel="システムプロンプト"
-                variant="ghost"
-              />
-            ) : undefined
-          }
-        >
-          <p className="whitespace-pre-wrap break-words text-pretty">
-            {promptText || "この実行のシステムプロンプトは利用できません。"}
-          </p>
-        </MessageRow>
-
+      <ol role="log" aria-label="実行セッション" className="pt-4">
         {transcriptEntries.map((entry) => {
           if (entry.kind === "tool") {
             return <ToolRow key={entry.id} entry={entry} />;

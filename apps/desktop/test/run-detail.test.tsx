@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -73,7 +73,7 @@ describe("RunDetail", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders a chat-only transcript with compact, collapsed tool details", async () => {
+  it("renders task context actions and a chat-only transcript with collapsed tool details", async () => {
     const user = userEvent.setup();
     const tailSpy = vi
       .spyOn(ipcClient, "runTailLog")
@@ -89,10 +89,15 @@ describe("RunDetail", () => {
     renderWithClient(<RunDetail run={run} task={task} />);
 
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
-    expect(screen.getByText("システムプロンプト")).toBeInTheDocument();
+    expect(screen.queryByText("システムプロンプト")).not.toBeInTheDocument();
     expect(
-      screen.getByText("Repository status を確認してください。"),
-    ).toBeInTheDocument();
+      screen.queryByText("Repository status を確認してください。"),
+    ).not.toBeInTheDocument();
+
+    const header = screen.getByRole("heading", { name: "テストタスク" }).closest("header");
+    expect(
+      within(header!).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["タスク情報", "タスクプロンプト", "再実行"]);
 
     const commandSummary = await screen.findByText(
       "git status --short run_test",
@@ -114,6 +119,48 @@ describe("RunDetail", () => {
       limit: 16_384,
     });
     expect(tailSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the task prompt in a dialog and task settings in a right sheet", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(ipcClient, "runTailLog").mockResolvedValue({
+      runId: "run_test",
+      stream: "events",
+      cursor: 0,
+      nextCursor: 0,
+      eof: true,
+      data: "",
+    });
+
+    renderWithClient(<RunDetail run={run} task={task} />);
+
+    await user.click(screen.getByRole("button", { name: "タスクプロンプト" }));
+    const promptDialog = screen.getByRole("dialog", {
+      name: "タスクプロンプト",
+    });
+    expect(
+      within(promptDialog).getByText("Repository status を確認してください。"),
+    ).toBeInTheDocument();
+    expect(
+      within(promptDialog).getByRole("button", { name: "プロンプトをコピー" }),
+    ).toBeInTheDocument();
+    await user.click(within(promptDialog).getByRole("button", { name: "閉じる" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "タスクプロンプト" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "タスク情報" }));
+    const taskSheet = screen.getByRole("dialog", { name: "タスク情報" });
+    expect(within(taskSheet).getByText("テストタスク")).toBeInTheDocument();
+    expect(within(taskSheet).getByText("手動")).toBeInTheDocument();
+    expect(within(taskSheet).getByText("Asia/Tokyo")).toBeInTheDocument();
+    expect(within(taskSheet).getByText("既定モデル")).toBeInTheDocument();
+    expect(within(taskSheet).getByText("モデル既定")).toBeInTheDocument();
+    expect(
+      within(taskSheet).queryByText("Repository status を確認してください。"),
+    ).not.toBeInTheDocument();
   });
 
   it("does not expose lifecycle events or raw log tabs", async () => {
