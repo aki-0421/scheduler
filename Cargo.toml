@@ -18,6 +18,7 @@ repository = "https://github.com/aki-0421/scheduler.git"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+semver = "1"
 anyhow = "1"
 thiserror = "1"
 uuid = { version = "=1.11.0", features = ["v7", "serde"] }

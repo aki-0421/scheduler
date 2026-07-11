@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -192,6 +193,63 @@ pub struct DaemonHealthResult {
     pub scheduler_enabled: bool,
     pub running_count: i64,
     pub queued_count: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonCompatibility {
+    Compatible,
+    Older,
+    Newer,
+    Unhealthy,
+    UnknownVersion,
+}
+
+pub fn daemon_compatibility(
+    health: &DaemonHealthResult,
+    expected_version: &str,
+    expected_schema_version: i64,
+) -> DaemonCompatibility {
+    let schema_ordering = health.db_schema_version.cmp(&expected_schema_version);
+    let version_ordering = if health.version == expected_version {
+        Ordering::Equal
+    } else {
+        let Ok(actual_version) = semver::Version::parse(&health.version) else {
+            return DaemonCompatibility::UnknownVersion;
+        };
+        let Ok(expected_version) = semver::Version::parse(expected_version) else {
+            return DaemonCompatibility::UnknownVersion;
+        };
+
+        if actual_version.major == expected_version.major
+            && actual_version.minor == expected_version.minor
+            && actual_version.patch == expected_version.patch
+            && actual_version.pre == expected_version.pre
+        {
+            return DaemonCompatibility::UnknownVersion;
+        }
+        actual_version.cmp(&expected_version)
+    };
+
+    match (schema_ordering, version_ordering) {
+        (Ordering::Less, Ordering::Greater) | (Ordering::Greater, Ordering::Less) => {
+            DaemonCompatibility::UnknownVersion
+        }
+        (Ordering::Greater, _) | (_, Ordering::Greater) => DaemonCompatibility::Newer,
+        (Ordering::Less, _) | (_, Ordering::Less) => {
+            if health.ok {
+                DaemonCompatibility::Older
+            } else {
+                DaemonCompatibility::Unhealthy
+            }
+        }
+        (Ordering::Equal, Ordering::Equal) => {
+            if health.ok {
+                DaemonCompatibility::Compatible
+            } else {
+                DaemonCompatibility::Unhealthy
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -471,4 +529,77 @@ pub struct SettingsSetParams {
 #[serde(rename_all = "camelCase")]
 pub struct SettingsSetResult {
     pub setting: SettingDto,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{daemon_compatibility, DaemonCompatibility, DaemonHealthResult};
+
+    fn health(version: &str, db_schema_version: i64) -> DaemonHealthResult {
+        DaemonHealthResult {
+            ok: true,
+            version: version.to_owned(),
+            db_schema_version,
+            scheduler_enabled: true,
+            running_count: 0,
+            queued_count: 0,
+        }
+    }
+
+    #[test]
+    fn daemon_compatibility_requires_matching_version_and_schema() {
+        assert_eq!(
+            daemon_compatibility(&health("0.2.1", 6), "0.2.1", 6),
+            DaemonCompatibility::Compatible
+        );
+        assert_eq!(
+            daemon_compatibility(&health("0.1.0", 1), "0.2.1", 6),
+            DaemonCompatibility::Older
+        );
+        assert_eq!(
+            daemon_compatibility(&health("0.3.0", 7), "0.2.1", 6),
+            DaemonCompatibility::Newer
+        );
+        assert_eq!(
+            daemon_compatibility(&health("0.2.0", 6), "0.2.1", 6),
+            DaemonCompatibility::Older
+        );
+        assert_eq!(
+            daemon_compatibility(&health("0.3.0", 6), "0.2.1", 6),
+            DaemonCompatibility::Newer
+        );
+        assert_eq!(
+            daemon_compatibility(&health("0.3.0", 5), "0.2.1", 6),
+            DaemonCompatibility::UnknownVersion
+        );
+        assert_eq!(
+            daemon_compatibility(&health("0.1.0", 7), "0.2.1", 6),
+            DaemonCompatibility::UnknownVersion
+        );
+    }
+
+    #[test]
+    fn daemon_compatibility_rejects_unhealthy_or_unordered_versions() {
+        let mut unhealthy = health("0.2.1", 6);
+        unhealthy.ok = false;
+
+        assert_eq!(
+            daemon_compatibility(&unhealthy, "0.2.1", 6),
+            DaemonCompatibility::Unhealthy
+        );
+        unhealthy.version = "0.3.0".to_owned();
+        unhealthy.db_schema_version = 7;
+        assert_eq!(
+            daemon_compatibility(&unhealthy, "0.2.1", 6),
+            DaemonCompatibility::Newer
+        );
+        assert_eq!(
+            daemon_compatibility(&health("development", 6), "0.2.1", 6),
+            DaemonCompatibility::UnknownVersion
+        );
+        assert_eq!(
+            daemon_compatibility(&health("0.2.1+other", 6), "0.2.1", 6),
+            DaemonCompatibility::UnknownVersion
+        );
+    }
 }

@@ -58,16 +58,39 @@ async function fallbackInvoke(command: string, params?: unknown) {
   return mockInvoke(command, params);
 }
 
+export function normalizeIpcError(error: unknown, command: string): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return new Error(error);
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.trim()
+  ) {
+    return new Error(error.message);
+  }
+  return new Error(`スケジューラーコマンド ${command} に失敗しました。`);
+}
+
 async function call<T>(
   command: string,
   params: Record<string, unknown> | undefined,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
 ): Promise<T> {
-  const raw = isTauriRuntime()
-    ? await invoke<unknown>(command, params)
-    : await fallbackInvoke(command, params);
+  try {
+    const raw = isTauriRuntime()
+      ? await invoke<unknown>(command, params)
+      : await fallbackInvoke(command, params);
 
-  return schema.parse(raw);
+    return schema.parse(raw);
+  } catch (error) {
+    throw normalizeIpcError(error, command);
+  }
 }
 
 const optionalPathSchema = z
