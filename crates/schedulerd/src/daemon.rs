@@ -170,7 +170,6 @@ pub async fn start_daemon(
         tokio::spawn(async move { rpc_server_loop(rpc_state, listener).await }),
     ];
 
-    state.notify_tick.notify_one();
     Ok(DaemonHandle { state, joins })
 }
 
