@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   Activity,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 
+import { AppLink } from "@/components/app-link";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -246,12 +246,12 @@ function HeaderBreadcrumbs({
                 />
               ) : null}
               {crumb.href && !current ? (
-                <Link
+                <AppLink
                   href={crumb.href}
                   className="truncate text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                   {crumb.label}
-                </Link>
+                </AppLink>
               ) : (
                 <span
                   className={cn(
@@ -282,7 +282,7 @@ function ProjectLink({
 }) {
   const active = isActivePath(pathname, "/projects");
   const content = (
-    <Link
+    <AppLink
       href="/projects"
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -292,7 +292,7 @@ function ProjectLink({
     >
       <FolderGit2 className="size-4 shrink-0" aria-hidden="true" />
       <span className="truncate">プロジェクト</span>
-    </Link>
+    </AppLink>
   );
 
   return close ? <DialogClose asChild>{content}</DialogClose> : content;
@@ -315,7 +315,7 @@ function TaskLink({
     : task.nextRunAt;
   const displayTimeTitle = formatTaskTimeTitle(displayTime, running);
   const content = (
-    <Link
+    <AppLink
       href={`/tasks?task=${encodeURIComponent(task.id)}`}
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -345,7 +345,7 @@ function TaskLink({
         </time>
         <span className="mt-0.5 block truncate font-medium">{task.name}</span>
       </span>
-    </Link>
+    </AppLink>
   );
 
   return close ? <DialogClose asChild>{content}</DialogClose> : content;
@@ -353,7 +353,7 @@ function TaskLink({
 
 function ArchivedLink({ active, close }: { active: boolean; close?: boolean }) {
   const content = (
-    <Link
+    <AppLink
       href="/tasks?view=archived"
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -363,7 +363,7 @@ function ArchivedLink({ active, close }: { active: boolean; close?: boolean }) {
     >
       <Folder className="size-4 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">アーカイブ済み</span>
-    </Link>
+    </AppLink>
   );
 
   return close ? <DialogClose asChild>{content}</DialogClose> : content;
@@ -371,7 +371,7 @@ function ArchivedLink({ active, close }: { active: boolean; close?: boolean }) {
 
 function SettingsTool({ active, close }: { active: boolean; close?: boolean }) {
   const content = (
-    <Link
+    <AppLink
       href="/settings"
       aria-current={active ? "page" : undefined}
       aria-label="設定"
@@ -382,7 +382,7 @@ function SettingsTool({ active, close }: { active: boolean; close?: boolean }) {
       )}
     >
       <Settings className="size-4" aria-hidden="true" />
-    </Link>
+    </AppLink>
   );
 
   return close ? <DialogClose asChild>{content}</DialogClose> : content;
@@ -548,10 +548,10 @@ function AppShellContent({ children }: { children: ReactNode }) {
             <div className="ml-auto flex items-center gap-3">
               <HeaderRunningCount />
               <Button asChild size="sm">
-                <Link href="/tasks/new">
+                <AppLink href="/tasks/new">
                   <Plus className="size-4" aria-hidden="true" />
                   新規タスク
-                </Link>
+                </AppLink>
               </Button>
             </div>
           </header>

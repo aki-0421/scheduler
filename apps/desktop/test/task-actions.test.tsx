@@ -58,7 +58,7 @@ describe("TaskHeaderActions", () => {
     expect(screen.getByText("タスク管理")).toBeInTheDocument();
     expect(
       screen.getByRole("menuitem", { name: "Task Testを複製" }),
-    ).toHaveAttribute("href", "/tasks/new?duplicateFromTask=task_test");
+    ).toHaveAttribute("href", "/tasks/new/?duplicateFromTask=task_test");
     expect(
       screen.getByRole("menuitem", { name: "Task Testをロック" }),
     ).toBeInTheDocument();

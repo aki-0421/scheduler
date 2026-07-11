@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   ChevronDown,
   Copy,
@@ -15,6 +14,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { AppLink } from "@/components/app-link";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -206,13 +206,13 @@ export function TaskHeaderActions({
           <DropdownMenuLabel>タスク管理</DropdownMenuLabel>
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
-              <Link
+              <AppLink
                 href={`/tasks/new?duplicateFromTask=${encodeURIComponent(task.id)}`}
                 aria-label={`${task.name}を複製`}
               >
                 <Copy aria-hidden="true" />
                 複製
-              </Link>
+              </AppLink>
             </DropdownMenuItem>
             <DropdownMenuItem
               aria-label={

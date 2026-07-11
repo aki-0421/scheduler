@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
-import Link from "next/link";
 
+import { AppLink } from "@/components/app-link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +45,7 @@ export function EmptyState({
             onClick={action.onClick}
           >
             {action.href ? (
-              <Link href={action.href}>{action.label}</Link>
+              <AppLink href={action.href}>{action.label}</AppLink>
             ) : (
               action.label
             )}

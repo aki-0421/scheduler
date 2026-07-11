@@ -587,7 +587,7 @@ checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 
 [[package]]
 name = "codex-runner"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "fs2",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "codex-scheduler-desktop"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "hashbrown 0.15.2",
  "idna",
@@ -3352,7 +3352,7 @@ dependencies = [
 
 [[package]]
 name = "schedule-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3369,7 +3369,7 @@ dependencies = [
 
 [[package]]
 name = "scheduler-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -3389,7 +3389,7 @@ dependencies = [
 
 [[package]]
 name = "schedulerd"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",

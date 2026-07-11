@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -10,6 +9,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { AppLink } from "@/components/app-link";
 import { Field } from "@/components/field";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -907,7 +907,7 @@ export function TaskWizard({
                 </Button>
               ) : (
                 <Button variant="outline" asChild>
-                  <Link href={cancelHref}>キャンセル</Link>
+                  <AppLink href={cancelHref}>キャンセル</AppLink>
                 </Button>
               )
             ) : null}

@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-
+import { AppLink } from "@/components/app-link";
 import { RunStatusBadge } from "@/components/status-badge";
 import { TaskWizard } from "@/components/task-wizard";
 import {
@@ -44,7 +43,7 @@ export function TaskDetail({ task, runs }: TaskDetailProps) {
           {recentRuns.length ? (
             <div className="divide-y">
               {recentRuns.map((run) => (
-                <Link
+                <AppLink
                   key={run.id}
                   href={`/runs?run=${encodeURIComponent(run.id)}`}
                   className="grid gap-3 p-3 text-sm transition-colors duration-150 hover:bg-muted/50 md:grid-cols-[8rem_12rem_8rem_minmax(0,1fr)] md:items-center"
@@ -72,7 +71,7 @@ export function TaskDetail({ task, runs }: TaskDetailProps) {
                   <p className="min-w-0 truncate text-muted-foreground">
                     {run.resultSummary ?? run.statusReason ?? run.exitCode ?? "—"}
                   </p>
-                </Link>
+                </AppLink>
               ))}
             </div>
           ) : (
