@@ -25,9 +25,11 @@ repository は pnpm と Cargo の workspace である。
 
 desktop frontend は Tauri 内で提供される static Next.js app である。開発中は `127.0.0.1:4317` で動作し、default port の無関係な Next server に誤って接続することを避ける。frontend は `@tauri-apps/api/core` 経由で Tauri command を呼び出す。開発や test で Tauri 内で動いていない場合は mock IPC に fallback する。
 
+Tauri の初期 window は static export の `/projects/` を直接開く。root `/` も browser 用 fallback として `/projects/` へ client navigation する通常の static HTML を生成し、Next.js server redirect の `NEXT_REDIRECT` error payload を release bundle に含めてはならない。release QA は `out/index.html` が error document ではないことと、native app の初期 window がプロジェクト画面を描画することを確認する。
+
 Tauri backend は daemon sidecar を管理する。
 
-- override env var、bundled sidecar path、development build path、または `PATH` から `codex-schedulerd` を探す。
+- override env var、現在の app executable と同じ directory、Tauri の bundled resource / executable path、development build path、または `PATH` から `codex-schedulerd` を探す。release `.app` では `Contents/MacOS` にある app executable の隣を最優先する。
 - `--data-dir` と `--socket-path` を指定して daemon を起動する。
 - transport failure を daemon respawn と command retry 1 回の signal として扱う。
 - app shutdown 時に daemon process group を終了する。
@@ -64,7 +66,7 @@ Tauri config は 2 つの Rust sidecar を bundle する。
 - `codex-schedulerd`
 - `codex-schedule`
 
-`pnpm sidecars:prepare` はこれらの binary を build し、target-triple suffix 付き executable を Tauri の `binaries/` directory にコピーする。Tauri dev と build flow は、launch または packaging の前にこの準備 step を実行する。
+`pnpm sidecars:prepare` は Cargo `debug` profile、`pnpm sidecars:prepare:release` は Cargo `release` profile で binary を build し、target-triple suffix 付き executable を Tauri の `binaries/` directory にコピーする。Tauri dev は前者、Tauri build は後者を launch または packaging の前に実行する。repository root の同名 script は desktop package へ委譲する。
 
 ## 永続化
 

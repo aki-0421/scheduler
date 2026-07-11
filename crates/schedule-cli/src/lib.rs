@@ -934,9 +934,9 @@ async fn doctor(paths: &AppPaths) -> Result<CommandOutput, CliError> {
     let codex_path = configured_codex_path(paths).await;
     match &codex_path {
         Some(path) => checks.push(check_ok("codexPathConfigured", path.clone())),
-        None => checks.push(check_fail(
+        None => checks.push(check_ok(
             "codexPathConfigured",
-            "runner.codex_path is not set; using PATH lookup for version check",
+            "runner.codex_path is not set; PATH lookup is enabled",
         )),
     }
     let command = codex_path.unwrap_or_else(|| "codex".to_owned());

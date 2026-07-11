@@ -2,6 +2,9 @@ use std::process::{Command, Output};
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use chrono::{Duration as ChronoDuration, Utc};
 use scheduler_core::db::SchedulerDb;
 use scheduler_core::ipc::{JsonRpcErrorCode, METHOD_SETTINGS_SET};
@@ -176,6 +179,48 @@ fn task_help_hides_global_and_fixed_execution_fields() {
             assert!(!help.contains(fixed_flag), "unexpected flag: {fixed_flag}");
         }
     }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn doctor_accepts_path_lookup_without_a_custom_codex_path() {
+    let (temp_dir, handle) = start_test_daemon().await;
+    let bin_dir = temp_dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    let codex_path = bin_dir.join("codex");
+    std::fs::write(&codex_path, "#!/bin/sh\necho codex-cli test\n").expect("write codex fixture");
+    let mut permissions = std::fs::metadata(&codex_path)
+        .expect("codex fixture metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&codex_path, permissions).expect("make codex fixture executable");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-schedule"))
+        .args(["--json", "doctor"])
+        .env("CODEX_SCHEDULER_DATA_DIR", temp_dir.path())
+        .env("PATH", &bin_dir)
+        .output()
+        .expect("run doctor");
+
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = json_stdout(&output);
+    assert_eq!(value["healthy"], true, "doctor output: {value:#}");
+    let checks = value["checks"].as_array().expect("doctor checks");
+    let configured = checks
+        .iter()
+        .find(|check| check["name"] == "codexPathConfigured")
+        .expect("codex path check");
+    assert_eq!(configured["status"], "ok");
+    assert_eq!(
+        configured["message"],
+        "runner.codex_path is not set; PATH lookup is enabled"
+    );
+
+    handle.shutdown().await;
 }
 
 async fn seed_schedule_token(

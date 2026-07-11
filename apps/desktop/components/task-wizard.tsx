@@ -495,7 +495,7 @@ export function TaskWizard({
       const saved = task
         ? await updateTask.mutateAsync(dto)
         : await createTask.mutateAsync(dto);
-      toast.success(task ? "タスクを更新しました" : "タスクを作成しました");
+      toast.success(task ? "変更を保存しました" : "タスクを作成しました");
       onSaved?.(saved);
     } catch (error) {
       toast.error(
@@ -576,7 +576,7 @@ export function TaskWizard({
           <AlertTitle>確認が必要な項目があります</AlertTitle>
           <AlertDescription className="grid gap-2">
             <p>強調表示された項目を修正してから、もう一度保存してください。</p>
-            <ul className="list-disc space-y-1 pl-4">
+            <ul className="flex list-disc flex-col gap-1 pl-4">
               {errorSummary.map(({ key, label, message }) => (
                 <li key={key}>
                   <button

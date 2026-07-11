@@ -19,6 +19,14 @@ const binariesDir = join(tauriDir, "binaries");
 const sidecars = ["codex-schedulerd", "codex-schedule"];
 const placeholderMarker =
   "This placeholder is only for cargo check/test. Run pnpm --filter desktop sidecars:prepare before bundling.";
+const args = process.argv.slice(2);
+const unknownArgs = args.filter((arg) => arg !== "--release");
+
+if (unknownArgs.length > 0) {
+  throw new Error(`Unknown sidecar preparation argument: ${unknownArgs.join(", ")}`);
+}
+
+const profile = args.includes("--release") ? "release" : "debug";
 
 function hostTriple() {
   const output = execFileSync("rustc", ["-vV"], {
@@ -50,7 +58,7 @@ function targetDir() {
 function sidecarSourcePath(sidecar) {
   return join(
     targetDir(),
-    targetTriple === host ? "debug" : join(targetTriple, "debug"),
+    targetTriple === host ? profile : join(targetTriple, profile),
     `${sidecar}${exe}`,
   );
 }
@@ -71,7 +79,11 @@ function isPlaceholder(path) {
 }
 
 const host = hostTriple();
-const targetTriple = process.env.TAURI_TARGET_TRIPLE ?? process.env.TARGET_TRIPLE ?? host;
+const targetTriple =
+  process.env.TAURI_ENV_TARGET_TRIPLE ??
+  process.env.TAURI_TARGET_TRIPLE ??
+  process.env.TARGET_TRIPLE ??
+  host;
 const exe = targetTriple.includes("windows") ? ".exe" : "";
 const buildArgs = [
   "build",
@@ -82,6 +94,10 @@ const buildArgs = [
   "--bin",
   "codex-schedule",
 ];
+
+if (profile === "release") {
+  buildArgs.push("--release");
+}
 
 if (targetTriple !== host) {
   buildArgs.push("--target", targetTriple);
@@ -111,5 +127,5 @@ for (const sidecar of sidecars) {
   }
 
   copyFileSync(source, destination);
-  console.log(`Prepared Tauri sidecar: ${destination}`);
+  console.log(`Prepared ${profile} Tauri sidecar: ${destination}`);
 }

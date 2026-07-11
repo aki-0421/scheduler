@@ -16,14 +16,26 @@ jobs:
 
       - name: Install Rust
         run: |
-          rustup toolchain install 1.83.0 --profile minimal --no-self-update
-          rustup override set 1.83.0
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy --no-self-update
+          rustup override set 1.88.0
 
       - name: Cargo check
         run: cargo check --workspace
 
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: Cargo test
         run: cargo test --workspace -- --test-threads=1
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Cargo audit
+        run: cargo audit
 
   node:
     name: Node
@@ -48,6 +60,12 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Production dependency audit
+        run: pnpm audit --prod
 
       - name: Build desktop frontend
         run: pnpm --filter desktop build

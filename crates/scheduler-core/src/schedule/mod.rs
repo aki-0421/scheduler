@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use croner::parser::{CronParser, Seconds, Year};
 use croner::Cron;
@@ -376,7 +376,9 @@ fn next_cron_after(
                 expr: schedule.expr.clone(),
                 message: err.to_string(),
             })?
-            .with_timezone(&Utc);
+            .with_timezone(&Utc)
+            .with_nanosecond(0)
+            .ok_or(ScheduleError::OccurrenceSearchExhausted)?;
         let candidate_local_wall_clock = candidate.with_timezone(&timezone).naive_local();
 
         if candidate > after

@@ -47,7 +47,7 @@ desktop app には次の top-level page がある。
 - repository task は registered project を対象にする。
 - cloud execution、multi-user sharing、team permission、hosted scheduler は実装されていない。
 
-この branch には `codex-schedulerd` と `codex-schedule` の sidecar packaging と、macOS signing / notarization の release note も含まれる。
+この branch には `codex-schedulerd` と `codex-schedule` の release-profile sidecar packaging、GitHub Releases 向け ad-hoc 署名 ZIP / SHA-256 作成、Developer ID signing / notarization への移行手順も含まれる。
 
 ## 既知の gap と制約
 

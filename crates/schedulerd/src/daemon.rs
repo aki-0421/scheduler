@@ -2272,7 +2272,6 @@ async fn mark_run_setup_failure(
     run.ended_at = Some(now_rfc3339());
     run.updated_at = now_rfc3339();
     run.stderr_tail = Some(message.clone());
-    db.update_run(&run).await?;
     create_run_event(
         db,
         run_id,
@@ -2282,6 +2281,7 @@ async fn mark_run_setup_failure(
         Some(json!({ "failureKind": "permanent" })),
     )
     .await?;
+    db.update_run(&run).await?;
     Ok(())
 }
 

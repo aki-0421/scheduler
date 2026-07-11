@@ -11,10 +11,10 @@ import { useRun, useTask } from "@/lib/queries";
 
 function RunDetailSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 pb-12">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 pb-12">
       <Skeleton className="h-8 w-28" />
       <div className="flex items-end justify-between gap-4">
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <Skeleton className="h-7 w-64" />
           <Skeleton className="h-5 w-80 max-w-full" />
         </div>
@@ -23,7 +23,7 @@ function RunDetailSkeleton() {
       <div className="border-t pt-6">
         <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-4">
           <Skeleton className="size-9" />
-          <div className="space-y-3">
+          <div className="flex flex-col gap-3">
             <Skeleton className="h-5 w-36" />
             <Skeleton className="h-28 w-full" />
           </div>

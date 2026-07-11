@@ -370,7 +370,7 @@ fn locate_schedulerd(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    let mut search_dirs = Vec::new();
+    let mut search_dirs = current_executable_search_dirs();
     if let Ok(resource_dir) = app.path().resource_dir() {
         search_dirs.push(resource_dir.clone());
         search_dirs.push(resource_dir.join("binaries"));
@@ -393,6 +393,16 @@ fn locate_schedulerd(app: &AppHandle) -> Result<PathBuf, String> {
     }
 
     Err("could not locate codex-schedulerd sidecar".to_owned())
+}
+
+fn current_executable_search_dirs() -> Vec<PathBuf> {
+    let Ok(executable) = std::env::current_exe() else {
+        return Vec::new();
+    };
+    let Some(directory) = executable.parent() else {
+        return Vec::new();
+    };
+    vec![directory.to_owned(), directory.join("binaries")]
 }
 
 fn allow_development_daemon_lookup() -> bool {
@@ -1203,4 +1213,22 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::current_executable_search_dirs;
+
+    #[test]
+    fn bundled_sidecar_search_starts_next_to_current_executable() {
+        let executable = std::env::current_exe().expect("current executable");
+        let executable_dir = executable.parent().expect("executable directory");
+        let search_dirs = current_executable_search_dirs();
+
+        assert_eq!(
+            search_dirs.first().map(|path| path.as_path()),
+            Some(executable_dir)
+        );
+        assert_eq!(search_dirs.get(1), Some(&executable_dir.join("binaries")));
+    }
 }

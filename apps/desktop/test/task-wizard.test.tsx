@@ -1,5 +1,6 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskWizard } from "@/components/task-wizard";
@@ -27,7 +28,6 @@ describe("TaskWizard cron validation", () => {
   });
 
   it("shows a 6-field cron error inline", async () => {
-    const user = userEvent.setup();
     const draft = {
       ...defaultTaskDraft(),
       name: "Cron task",
@@ -44,9 +44,9 @@ describe("TaskWizard cron validation", () => {
     });
     expect(createButton).toBeEnabled();
 
-    await user.clear(cronInput);
+    fireEvent.change(cronInput, { target: { value: "" } });
     expect(createButton).toBeDisabled();
-    await user.type(cronInput, "0 0 1 1 * *");
+    fireEvent.change(cronInput, { target: { value: "0 0 1 1 * *" } });
 
     expect(
       await screen.findByText(
@@ -55,8 +55,7 @@ describe("TaskWizard cron validation", () => {
     ).toBeInTheDocument();
     expect(createButton).toBeDisabled();
 
-    await user.clear(cronInput);
-    await user.type(cronInput, "*/15 * * * *");
+    fireEvent.change(cronInput, { target: { value: "*/15 * * * *" } });
     expect(createButton).toBeEnabled();
   });
 
@@ -466,5 +465,27 @@ describe("TaskWizard cron validation", () => {
     await user.click(screen.getByRole("button", { name: "タスクを作成" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(createdTask));
+  });
+
+  it("shows success feedback after saving task settings", async () => {
+    const user = userEvent.setup();
+    const draft = {
+      ...defaultTaskDraft(),
+      id: "task_edit",
+      slug: "task-edit",
+      name: "Edit callback",
+      prompt: "Save this task and confirm the result.",
+    };
+    const existingTask = buildTaskDto(draft, false);
+    const updateSpy = vi
+      .spyOn(ipcClient, "taskUpdate")
+      .mockResolvedValue(existingTask);
+    const toastSpy = vi.spyOn(toast, "success");
+
+    renderWithClient(<TaskWizard task={existingTask} />);
+    await user.click(screen.getByRole("button", { name: "変更を保存" }));
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+    expect(toastSpy).toHaveBeenCalledWith("変更を保存しました");
   });
 });

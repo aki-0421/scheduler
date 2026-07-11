@@ -93,7 +93,7 @@ impl SingleInstanceLock {
     }
 
     pub fn cleanup(self) -> std::io::Result<()> {
-        self.file.unlock()?;
+        FileExt::unlock(&self.file)?;
         std::fs::remove_file(&self.path).or_else(|err| {
             if err.kind() == std::io::ErrorKind::NotFound {
                 Ok(())
