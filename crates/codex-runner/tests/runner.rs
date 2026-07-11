@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use codex_runner::{
     compose_prompt, redact_environment, CodexConfig, CodexRunner, RunRequest, RunTarget,
@@ -316,6 +317,42 @@ async fn timeout_terminates_process_group_and_marks_timed_out() {
         .unwrap();
 
     assert_eq!(outcome.status, RunStatus::TimedOut);
+}
+
+#[tokio::test]
+async fn jsonl_event_is_readable_before_process_finishes() {
+    let temp = TempDir::new().unwrap();
+    let mut request = base_request(fixture("dummy-codex-sleep.sh"), &temp);
+    request.codex.reasoning_effort = None;
+    request.codex.max_runtime_sec = 0;
+    let events_path = temp
+        .path()
+        .join("app-data")
+        .join("logs")
+        .join("run_01")
+        .join("events.jsonl");
+    let cancellation = CancellationToken::new();
+    let run_cancellation = cancellation.clone();
+    let handle = tokio::spawn(async move {
+        CodexRunner::new()
+            .run(request, run_cancellation, None)
+            .await
+    });
+
+    let mut found_early_event = false;
+    for _ in 0..200 {
+        if fs::read_to_string(&events_path).is_ok_and(|events| events.contains("\"early\"")) {
+            found_early_event = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    assert!(found_early_event, "early JSONL event was not flushed");
+    assert!(!handle.is_finished());
+    cancellation.cancel();
+    let outcome = handle.await.unwrap().unwrap();
+    assert_eq!(outcome.status, RunStatus::Canceled);
 }
 
 #[tokio::test]

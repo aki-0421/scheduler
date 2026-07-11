@@ -1327,6 +1327,52 @@ async fn graceful_shutdown_cancels_or_interrupts_running_run() {
 }
 
 #[tokio::test]
+async fn legacy_global_concurrency_setting_does_not_limit_parallel_runs() {
+    let (_temp, handle, executor) = start_test_daemon(MockBehavior::hold_until_cancel()).await;
+    handle
+        .db()
+        .set_setting("daemon.global_concurrency", &1_i64)
+        .await
+        .expect("store legacy global concurrency");
+
+    for index in 0..3 {
+        let created: TaskResult = rpc::call(
+            &handle.socket_path(),
+            METHOD_TASK_CREATE,
+            TaskCreateParams {
+                task: sample_task_dto(&format!("unlimited-{index}"), TaskKind::Manual),
+                actor: None,
+            },
+        )
+        .await
+        .expect("create task");
+        let _: RunResult = rpc::call(
+            &handle.socket_path(),
+            METHOD_TASK_RUN_NOW,
+            TaskIdParams {
+                id: created.task.id,
+                actor: None,
+            },
+        )
+        .await
+        .expect("run task");
+    }
+
+    assert!(executor.wait_for_calls(3, executor_call_timeout()).await);
+    let health: DaemonHealthResult = rpc::call(
+        &handle.socket_path(),
+        METHOD_DAEMON_HEALTH,
+        DaemonHealthParams {},
+    )
+    .await
+    .expect("health rpc");
+    assert_eq!(health.running_count, 3);
+    assert_eq!(health.queued_count, 0);
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn scheduler_disabled_keeps_manual_run_now_queued() {
     let (_temp, handle, executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;

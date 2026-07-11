@@ -1,7 +1,7 @@
 ---
 title: 画面仕様
 description: Codex Scheduler の desktop screen specification convention、stable screen ID registry、per-screen spec link を定義する。
-updated: 2026-07-10
+updated: 2026-07-11
 read_when:
   - desktop app page、dialog、task wizard behavior、screen copy、validation、loading state、empty state、navigation を変更するとき。
   - Codex Scheduler desktop screen に割り当てられた stable screen ID を探すとき。
@@ -47,6 +47,6 @@ read_when:
 | S000 | App Shell | global shell、`/` redirect | [S000 App Shell](screens/s000-app-shell.md) |
 | S001 | Tasks | `/tasks`, `/tasks?task=<taskId>`, `/tasks?view=archived` | [S001 Tasks](screens/s001-tasks.md) |
 | S002 | Task Wizard | `/tasks/new`, follow-up mode, edit dialog body | [S002 Task Wizard](screens/s002-task-wizard.md) |
-| S003 | Task Sessions | `/runs`, `/runs?run=<runId>` | [S003 Task Sessions](screens/s003-runs.md) |
+| S003 | Task Sessions | `/runs?run=<runId>` | [S003 Task Sessions](screens/s003-runs.md) |
 | S004 | Projects | `/projects` | [S004 Projects](screens/s004-projects.md) |
 | S005 | Settings | `/settings` | [S005 Settings](screens/s005-settings.md) |

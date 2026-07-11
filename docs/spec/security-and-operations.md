@@ -43,9 +43,9 @@ scheduled Codex session は project を add / update / remove できない。
 
 ## Task lock
 
-user は task を lock できる。lock は AI / scheduled-run actor が task を編集、削除、一時停止、再開することを防ぐための persisted safety control である。
+user は task を lock できる。lock は AI エージェントが使う CLI / scheduled-run actor が task を編集、削除、一時停止、再開することを防ぐための persisted safety control である。desktop UI からの user operation を制限する機能ではない。
 
-lock が有効な task に対して、daemon は scheduled-run actor または AI-originated CLI action からの `task.update`、`task.delete`、`task.pause`、`task.resume` を拒否する。user actor は UI から unlock してから変更できる。
+lock が有効な task に対して、daemon は scheduled-run actor または CLI actor からの `task.update`、`task.delete`、`task.pause`、`task.resume` を拒否する。desktop UI の user actor は unlock せずに同じ操作を実行できる。
 
 lock / unlock は audit event として記録する。lock は Codex の filesystem access を制限するものではなく、スケジュール自体の破壊的変更を止める control である。
 

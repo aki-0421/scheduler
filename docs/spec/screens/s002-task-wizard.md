@@ -8,18 +8,18 @@ read_when:
 
 # S002 Task Wizard
 
-ルートと surface: `/tasks/new`、`/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`、task detail 上の edit / duplicate dialog。
+ルートと surface: `/tasks/new`、`/tasks/new?prefillFromTask=<taskId>&sourceRun=<runId>`、task detail の `設定` tab にある inline edit form。
 
 目的: 明示的な prompt、target、schedule、Codex model / effort、lock control を持つ scheduled Codex work を作成、follow up、複製、または編集する。
 
-入口: `New task`、task session detail からの follow-up action、task detail の edit / duplicate action。
+入口: `New task`、task session detail からの follow-up action、task detail の `設定` tab、duplicate action。
 
 出口:
 
 - create または follow-up 成功時は `/tasks?task=<newTaskId>` に redirect する。
 - duplicate 成功時は複製された task の `/tasks?task=<newTaskId>` に redirect する。
-- edit 成功時は dialog を閉じ、task detail を refresh する。
-- create、follow-up、duplicate page には cancel button を置かず、sidebar、breadcrumb、browser navigation から離脱する。edit dialog の cancel は dialog を閉じる。
+- edit 成功時は task detail に留まり、task detail data を refresh する。
+- create、follow-up、duplicate page と task detail の inline edit form には cancel button を置かず、sidebar、breadcrumb、browser navigation または tab から離脱する。
 
 データ依存:
 
@@ -31,7 +31,7 @@ read_when:
 
 レイアウト領域:
 
-- page または dialog header。
+- create、follow-up、duplicate page header。task detail では既存の page header と tabs を使い、wizard 固有 header は置かない。
 - page header の文脈説明は title 右の `?` tooltip に置き、subtitle として常時表示しない。
 - create、follow-up、duplicate page の `一時停止で作成` と `タスクを作成` は page title と同じ header section の右側に置く。狭い width では title の下に折り返す。
 - validation failure 時の error summary alert。
@@ -41,7 +41,7 @@ read_when:
 - third section は desktop width でおよそ `3:1` の 2 column にする。左側は target と prompt、右側は compact な `オプション` group として lock / pause control を表示する。狭い width では 1 column に戻す。
 - prompt textarea は resize 可能なまま compact な初期高にする。実行タイミングの summary、next-five-runs、once preview、manual guidance、PC timezone の補助文は表示しない。
 - section は page canvas に直接配置する。task name / schedule と model / 思考レベルの間には separator を置かず、実行内容と options の前だけを separator で区切る。panel surface や固定 execution policy の summary は置かない。
-- edit dialog の footer には cancel と save action を置く。create、follow-up、duplicate page には footer action を置かない。
+- task detail の inline edit form は末尾に right-aligned save action だけを置く。create、follow-up、duplicate page には footer action を置かない。
 
 フィールドとコントロール:
 
@@ -53,7 +53,7 @@ read_when:
 - once date and time、preset time、weekly day、custom 5-field cron。実行タイミングの preview と PC timezone indicator は表示しない。
 - model select と、model が対応する `思考レベル` select。DTO field 名は `reasoningEffort` のままとする。Codex binary path は global setting のため表示しない。
 - options: task lock switch と start paused switch。third section の右 column に compact にまとめる。
-- lock switch は task を AI / scheduled-run actor からの edit / delete / pause / resume から保護する。create 時の default は unlocked、duplicate 時は unlocked に戻す。
+- lock switch は task を AI エージェントが使う CLI / scheduled-run actor からの edit / delete / pause / resume から保護する。desktop UI からの編集は制限しない。create 時の default は unlocked、duplicate 時は unlocked に戻す。
 
 既定値:
 
@@ -73,7 +73,6 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - once schedule には現在の PC timezone に対して valid な date and time が必要。
 - daily、weekdays、weekly schedule には valid な time が必要で、weekly schedule には day of week も必要。
 - custom cron は valid な 5-field expression である必要がある。seconds は rejected。
-- locked task の edit は unlock されるまで blocked される。
 - save handler が validation failure を検出した場合は clickable field link を含む destructive summary を表示し、同じ画面内の first error へ scroll して focus する。
 
 状態:
@@ -81,7 +80,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - follow-up prefill loading は skeleton content を表示する。
 - follow-up prefill は source run ID の文脈を prompt 冒頭に追加し、元 task の prompt を続ける。duplicate は元 task の prompt をそのまま複製する。
 - project selection state は registered project name を Select に表示する。local path や project registration action は表示しない。
-- locked task edit は lock badge と unlock guidance を表示する。
+- locked task edit も task detail 側の form controls と save action を利用できる。settings 内に lock warning や unlock guidance は表示せず、detail header の unlock action は lock state の変更手段として表示する。
 - schedule control は実行タイミングの preview、timezone selector、PC timezone の補助文を表示しない。現在の PC timezone は内部で自動使用する。
 
 アクセシビリティ:
@@ -89,7 +88,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - field error は field component または `aria-invalid` で関連付けられる。
 - error summary button は target field へ scroll and focus する。
 - switch と checkbox は label と description を含む。
-- lock switch は lock が AI / scheduled-run actor に対して何を防ぐかを説明する。
+- lock switch は lock が AI エージェントと CLI / scheduled-run actor に対して何を防ぎ、desktop UI の編集は制限しないことを説明する。
 
 検証:
 
@@ -100,7 +99,7 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 
 - project task は save 前に Git project scope と isolated worktree execution を surface する。
 - full access、approval request なし、timeout なし、自動 retry なし、重複時 skip、未実行分 skip、worktree 保持、Scheduler CLI の全 action と作成数無制限は app-wide invariant として UI に表示しない。
-- locked task は scheduled Codex session による edit / delete / pause / resume を拒否するため、lock / unlock は audit に記録する。
+- locked task は CLI / scheduled Codex session による edit / delete / pause / resume を拒否する。desktop UI の user actor は lock 中も編集でき、lock / unlock は audit に記録する。
 
 受け入れ条件:
 
@@ -109,16 +108,17 @@ model catalog を更新するときは、bundled version と同等の Codex CLI 
 - project target に registered Git project がない場合、save は blocked される。
 - task wizard では project の追加・設定ができず、Projects screen で登録済みの Git project を Select で選ぶだけにする。repository path、base ref input、PC timezone の補助文は表示しない。
 - 実行先は `チャット` / `プロジェクト` の keyboard-operable radio cards で選択でき、`プロジェクト` を保存した DTO は `repo-worktree` になる。
-- locked task を edit しようとした場合、unlock なしでは save できない。
+- locked task も desktop UI では unlock せずに edit と save ができる。
 - create、follow-up、duplicate、edit のいずれにも Codex binary path field は表示されず、保存 DTO に task 固有 path を含めない。
 - model を変更すると思考レベルはその model の default に切り替わり、その後 user が対応 level から変更できる。
 - valid schedule でも実行タイミングの preview は表示しない。custom cron の invalid state は field error として即時表示する。
 - create、follow-up、duplicate、edit では timezone selector を表示せず、保存時点の PC timezone を task DTO に設定する。
 - create が成功した場合、user は `/tasks?task=<newTaskId>` に遷移する。
 - duplicate が成功した場合、lock state は unlocked で作成される。
-- edit が成功した場合、edit dialog は閉じ、task detail data は refresh する。
-- create、follow-up、duplicate、edit のすべてで、基本設定、model 設定、実行内容と options が tab 切り替えなしの 1 画面に表示される。
+- edit が成功した場合、task detail に留まり、task detail data は refresh する。
+- create、follow-up、duplicate、edit のすべてで、基本設定、model 設定、実行内容と options が wizard 内の tab 切り替えなしで 1 画面に表示される。task detail 自体の `設定` tab 内でも同じ section order と controls を再利用する。
 - create、follow-up、duplicate page では cancel button が表示されず、`一時停止で作成` と `タスクを作成` が page title と同じ header section の右側に表示される。
+- task detail の inline edit form では cancel button が表示されず、`変更を保存` が form 末尾の右側に表示される。
 - desktop width では first section が task name / schedule の等分 2 column、second section が左寄せの model / 思考レベル、third section が target・prompt / options のおよそ `3:1` になる。
 - task name / schedule と model / 思考レベルは separator なしで連続して表示し、model / 思考レベルと実行内容の間だけに separator を表示する。
 - create、follow-up、duplicate、edit のいずれにも task description input は表示されず、保存 DTO に description field を含めない。

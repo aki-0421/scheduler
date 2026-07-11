@@ -1,8 +1,18 @@
 "use client";
 
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { LockKeyhole, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  ChevronDown,
+  Copy,
+  LockKeyhole,
+  LockOpen,
+  Pause,
+  Play,
+  RotateCcw,
+  Settings2,
+  Trash2,
+} from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -17,33 +27,41 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Separator } from "@/components/ui/separator";
+import {
   useDeleteTask,
   usePauseTask,
   useResumeTask,
   useRunTaskNow,
+  useUpdateTask,
 } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
-type TaskRowActionsProps = {
+type TaskHeaderActionsProps = {
   task: TaskDto;
-  onEdit?: (task: TaskDto) => void;
   onDeleted?: (task: TaskDto) => void;
-  className?: string;
 };
 
-export function TaskRowActions({ task, onEdit, onDeleted, className }: TaskRowActionsProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
+export function TaskHeaderActions({
+  task,
+  onDeleted,
+}: TaskHeaderActionsProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const runNow = useRunTaskNow();
   const pause = usePauseTask();
   const resume = useResumeTask();
   const deleteTask = useDeleteTask();
-  const canPause = task.status === "active" && !task.locked;
-  const canResume = (task.status === "paused" || task.status === "completed") && !task.locked;
+  const updateTask = useUpdateTask();
+  const canPause = task.status === "active";
+  const canResume = task.status === "paused" || task.status === "completed";
 
   function withToast<T>(
     promise: Promise<T>,
@@ -59,44 +77,22 @@ export function TaskRowActions({ task, onEdit, onDeleted, className }: TaskRowAc
       .catch((error) =>
         toast.error(failure, {
           description:
-            error instanceof Error ? error.message : "スケジューラーコマンドに失敗しました。",
+            error instanceof Error
+              ? error.message
+              : "スケジューラーコマンドに失敗しました。",
         }),
       );
   }
 
-  function updateMenuPosition() {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) {
-      return;
-    }
-
-    setMenuPosition({
-      top: rect.bottom + 8,
-      right: Math.max(8, window.innerWidth - rect.right),
-    });
-  }
-
-  useEffect(() => {
-    if (!menuOpen) {
-      return;
-    }
-
-    updateMenuPosition();
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-
-    return () => {
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
-    };
-  }, [menuOpen]);
-
-  function closeMenu() {
-    setMenuOpen(false);
+  function runTaskNow() {
+    withToast(
+      runNow.mutateAsync(task.id),
+      "実行をキューに追加しました",
+      "実行をキューに追加できませんでした",
+    );
   }
 
   function pauseTask() {
-    closeMenu();
     withToast(
       pause.mutateAsync(task.id),
       "タスクを一時停止しました",
@@ -105,7 +101,6 @@ export function TaskRowActions({ task, onEdit, onDeleted, className }: TaskRowAc
   }
 
   function resumeTask() {
-    closeMenu();
     withToast(
       resume.mutateAsync(task.id),
       "タスクを再開しました",
@@ -113,150 +108,144 @@ export function TaskRowActions({ task, onEdit, onDeleted, className }: TaskRowAc
     );
   }
 
-  function editTask() {
-    if (task.locked) {
-      toast.info("ロック済みタスクです", {
-        description: "編集するにはタスク詳細でロックを解除してください。",
-      });
-      return;
-    }
-    closeMenu();
-    onEdit?.(task);
+  function toggleLock() {
+    withToast(
+      updateTask.mutateAsync({ ...task, locked: !task.locked }),
+      task.locked
+        ? "タスクのロックを解除しました"
+        : "タスクをロックしました",
+      "ロック状態を更新できませんでした",
+    );
   }
 
-  function requestDelete() {
-    if (task.locked) {
-      toast.info("ロック済みタスクです", {
-        description: "削除するにはタスク詳細でロックを解除してください。",
-      });
-      return;
-    }
-    closeMenu();
-    setDeleteDialogOpen(true);
+  function deleteCurrentTask() {
+    withToast(
+      deleteTask.mutateAsync(task.id),
+      "タスクを削除しました",
+      "タスクを削除できませんでした",
+      () => onDeleted?.(task),
+    );
   }
+
+  const managementLabel = task.locked
+    ? `${task.name}の管理（ロック中）`
+    : `${task.name}の管理`;
 
   return (
-    <div className={cn("flex items-center justify-end gap-1.5", className)}>
-      <Button
-        variant="outline"
-        size="sm"
-        aria-label={`${task.name}を今すぐ実行`}
-        disabled={runNow.isPending || task.status === "deleted"}
-        onClick={() =>
-          withToast(
-            runNow.mutateAsync(task.id),
-            "実行をキューに追加しました",
-            "実行をキューに追加できませんでした",
-          )
-        }
+    <div
+      role="group"
+      aria-label={`${task.name}の操作`}
+      className="flex flex-wrap items-center justify-end gap-2"
+    >
+      <div
+        role="group"
+        aria-label={`${task.name}の実行操作`}
+        className="flex items-center gap-2"
       >
-        <Play className="size-4" aria-hidden="true" />
-        今すぐ実行
-      </Button>
-      <DialogPrimitive.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
-        <DialogPrimitive.Trigger asChild>
+        <Button
+          size="sm"
+          aria-label={`${task.name}を今すぐ実行`}
+          disabled={runNow.isPending || task.status === "deleted"}
+          onClick={runTaskNow}
+        >
+          <Play data-icon="inline-start" aria-hidden="true" />
+          今すぐ実行
+        </Button>
+
+        {canPause ? (
           <Button
-            ref={triggerRef}
             type="button"
-            variant="ghost"
-            size="icon"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            aria-label={`${task.name}のその他の操作`}
-            onClick={updateMenuPosition}
+            variant="outline"
+            size="sm"
+            aria-label={`${task.name}を一時停止`}
+            disabled={pause.isPending}
+            onClick={pauseTask}
           >
-            <MoreHorizontal className="size-4" aria-hidden="true" />
+            <Pause data-icon="inline-start" aria-hidden="true" />
+            一時停止
           </Button>
-        </DialogPrimitive.Trigger>
-        <DialogPrimitive.Portal>
-          <DialogPrimitive.Content
-            ref={menuRef}
-            role="menu"
-            aria-label={`${task.name}のその他の操作`}
-            className="fixed z-20 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-            style={{ top: menuPosition.top, right: menuPosition.right }}
-            onOpenAutoFocus={(event) => {
-              event.preventDefault();
-              window.requestAnimationFrame(() => {
-                menuRef.current
-                  ?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')
-                  ?.focus();
-              });
-            }}
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              triggerRef.current?.focus();
-            }}
+        ) : canResume ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label={`${task.name}を再開`}
+            disabled={resume.isPending}
+            onClick={resumeTask}
           >
-            <DialogPrimitive.Title className="sr-only">
-              {task.name}のその他の操作
-            </DialogPrimitive.Title>
-          {canPause ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start"
-              role="menuitem"
-              aria-label={`${task.name}を一時停止`}
-              disabled={pause.isPending}
-              onClick={pauseTask}
+            <RotateCcw data-icon="inline-start" aria-hidden="true" />
+            再開
+          </Button>
+        ) : null}
+      </div>
+
+      <Separator
+        role="separator"
+        aria-orientation="vertical"
+        className="hidden h-5 w-px sm:block"
+      />
+
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label={managementLabel}
           >
-              {task.locked ? (
-                <LockKeyhole className="size-4" aria-hidden="true" />
-              ) : (
-                <Pause className="size-4" aria-hidden="true" />
-              )}
-              {task.locked ? "ロック済み" : "一時停止"}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start"
-              role="menuitem"
-              aria-label={`${task.name}を再開`}
-              disabled={!canResume || resume.isPending}
-              onClick={resumeTask}
+            {task.locked ? (
+              <LockKeyhole data-icon="inline-start" aria-hidden="true" />
+            ) : (
+              <Settings2 data-icon="inline-start" aria-hidden="true" />
+            )}
+            管理
+            <ChevronDown data-icon="inline-end" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuLabel>タスク管理</DropdownMenuLabel>
+          <DropdownMenuGroup>
+            <DropdownMenuItem asChild>
+              <Link
+                href={`/tasks/new?duplicateFromTask=${encodeURIComponent(task.id)}`}
+                aria-label={`${task.name}を複製`}
+              >
+                <Copy aria-hidden="true" />
+                複製
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              aria-label={
+                task.locked
+                  ? `${task.name}のロックを解除`
+                  : `${task.name}をロック`
+              }
+              disabled={updateTask.isPending}
+              onSelect={toggleLock}
             >
               {task.locked ? (
-                <LockKeyhole className="size-4" aria-hidden="true" />
+                <LockOpen aria-hidden="true" />
               ) : (
-                <RotateCcw className="size-4" aria-hidden="true" />
+                <LockKeyhole aria-hidden="true" />
               )}
-              {task.locked ? "ロック済み" : "再開"}
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start"
-            role="menuitem"
-            aria-label={`${task.name}を編集`}
-            disabled={task.locked}
-            onClick={editTask}
-          >
-            <Pencil className="size-4" aria-hidden="true" />
-            編集
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-destructive hover:text-destructive"
-            role="menuitem"
-            aria-label={`${task.name}を削除`}
-            disabled={task.locked}
-            onClick={requestDelete}
-          >
-            <Trash2 className="size-4" aria-hidden="true" />
-            削除
-          </Button>
-          </DialogPrimitive.Content>
-        </DialogPrimitive.Portal>
-      </DialogPrimitive.Root>
+              {task.locked ? "ロックを解除" : "ロック"}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              variant="destructive"
+              aria-label={`${task.name}を削除`}
+              disabled={task.status === "deleted"}
+              onSelect={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 aria-hidden="true" />
+              削除
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -269,14 +258,7 @@ export function TaskRowActions({ task, onEdit, onDeleted, className }: TaskRowAc
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() =>
-                withToast(
-                  deleteTask.mutateAsync(task.id),
-                  "タスクを削除しました",
-                  "タスクを削除できませんでした",
-                  () => onDeleted?.(task),
-                )
-              }
+              onClick={deleteCurrentTask}
             >
               タスクを削除
             </AlertDialogAction>

@@ -61,6 +61,7 @@ type TaskWizardProps = {
   cancelHref?: string;
   onCancel?: () => void;
   onSaved?: (task: TaskDto) => void;
+  showCancelAction?: boolean;
   pageHeader?: {
     title: string;
     description?: string;
@@ -308,6 +309,7 @@ export function TaskWizard({
   cancelHref = "/tasks",
   onCancel,
   onSaved,
+  showCancelAction = true,
   pageHeader,
 }: TaskWizardProps) {
   const [draft, setDraft] = useState<TaskDraft>(() => ({
@@ -593,7 +595,7 @@ export function TaskWizard({
         </Alert>
       ) : null}
 
-      <div className="grid gap-5">
+      <fieldset className="m-0 grid min-w-0 gap-5 border-0 p-0">
         <section
           aria-label="基本設定"
           className="grid items-start gap-5 md:grid-cols-2"
@@ -877,7 +879,7 @@ export function TaskWizard({
                 id="task-locked"
                 checked={draft.locked}
                 label="タスクをロック"
-                description="スケジュール実行からの変更・停止・削除を防ぎます。"
+                description="AIエージェントやCLIからの変更・停止・削除を防ぎます。"
                 onChange={(checked) => update("locked", checked)}
               />
               <SwitchRow
@@ -892,22 +894,29 @@ export function TaskWizard({
         </section>
 
         {!pageHeader ? (
-          <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-            {onCancel ? (
-              <Button type="button" variant="outline" onClick={onCancel}>
-                キャンセル
-              </Button>
-            ) : (
-              <Button variant="outline" asChild>
-                <Link href={cancelHref}>キャンセル</Link>
-              </Button>
+          <div
+            className={cn(
+              "flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center",
+              showCancelAction ? "sm:justify-between" : "items-end sm:justify-end",
             )}
+          >
+            {showCancelAction ? (
+              onCancel ? (
+                <Button type="button" variant="outline" onClick={onCancel}>
+                  キャンセル
+                </Button>
+              ) : (
+                <Button variant="outline" asChild>
+                  <Link href={cancelHref}>キャンセル</Link>
+                </Button>
+              )
+            ) : null}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
               {renderSaveActions()}
             </div>
           </div>
         ) : null}
-      </div>
+      </fieldset>
     </div>
   );
 }

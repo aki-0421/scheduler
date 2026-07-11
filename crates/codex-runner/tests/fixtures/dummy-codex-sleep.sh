@@ -23,6 +23,7 @@ fi
 
 if [[ "${1:-}" == "exec" ]]; then
   cat >/dev/null
+  echo '{"type":"message","content":"early"}'
   sleep 10
   echo '{"type":"message","content":"late"}'
   exit 0

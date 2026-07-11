@@ -1,7 +1,7 @@
 ---
 title: S005 Settings
 description: Settings screen の global scheduler、notification、Codex default、diagnostics control を定義する。
-updated: 2026-07-10
+updated: 2026-07-11
 read_when:
   - Settings page、settings key、scheduler default、notification default、diagnostics export、schema display を変更するとき。
 ---
@@ -36,7 +36,6 @@ read_when:
 
 - Scheduler switch は `scheduler.enabled` を control する。
 - Notifications switch は `notifications.enabled` を control する。
-- Global concurrency number input は `daemon.global_concurrency` を control する。
 - `Codex バイナリパスをカスタマイズ` checkbox は global control として配置する。未選択時は `PATH` 上の `codex` を使い、選択時だけ `runner.codex_path` input を表示する。保存した custom path はすべての task に共通適用し、task 固有 override は持たない。
 - Default model select は `runner.default_model` を control し、Codex frontier model のみを選択肢として表示する。
 - read-only socket path と database path。
@@ -54,7 +53,6 @@ read_when:
 
 バリデーションとエラー:
 
-- global concurrency は input minimum `1` を持つ。
 - Codex binary path customization を選択した場合、空の path は保存できない。
 - save は既知の settings key をすべて送信し、すべての mutation 完了時に 1 つの success toast を表示する。
 - save failure は settings error toast を表示し、query rollback は previous settings data を使う。
@@ -68,7 +66,7 @@ read_when:
 
 セキュリティと安全性:
 
-- sandbox、approval policy、worktree cleanup、runtime、retry、overlap、missed-run、Scheduler CLI permission は固定規則であり、Settings に表示しない。
+- global concurrency、sandbox、approval policy、worktree cleanup、runtime、retry、overlap、missed-run、Scheduler CLI permission は app-wide の固定規則であり、Settings に表示しない。
 - diagnostic export は user-initiated であり、local file に書き込む。
 - socket path と database path は read-only display value である。
 
@@ -79,4 +77,5 @@ read_when:
 - diagnostics export が path を返した場合、その path は success toast に表示される。
 - diagnostics export が canceled の場合、user は cancellation info toast を見る。
 - settings section は page-level panel surface を持たず、separator と alignment でまとまりを判別できる。
+- Settings に全体同時実行数の入力が表示されず、全体の run 数は制限されない。
 - Codex binary path customization を選択すると path input が表示され、保存した global value がすべての task execution に使用される。未選択時は task execution ごとの `PATH` lookup を使う。

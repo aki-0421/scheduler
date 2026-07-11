@@ -1,33 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Download,
-  FolderOpen,
-  PlusCircle,
+  ArrowLeft,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  FilePenLine,
+  Globe2,
   RotateCcw,
   Square,
+  Terminal,
+  Wrench,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { MarkdownContent } from "@/components/markdown-content";
 import { RunStatusBadge } from "@/components/status-badge";
 import {
+  TaskInfoSheet,
+  TaskPromptDialog,
+} from "@/components/run-task-context";
+import {
   CopyButton,
-  describeTaskTarget,
   formatAbsoluteDateTime,
-  formatReadableEnum,
-  formatRelativeDateTime,
-  formatRunDuration,
   shortIdentifier,
 } from "@/components/task-run-display";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 import { isRunActive } from "@/lib/format";
 import { ipcClient } from "@/lib/ipc";
 import { useCancelRun, useRunTaskNow } from "@/lib/queries";
-import type { LogStream, RunDto, TaskDto } from "@/lib/types";
+import {
+  parseRunTranscript,
+  type RunTranscriptEntry,
+  type ToolCallStatus,
+} from "@/lib/run-transcript";
+import type { RunDto, TaskDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type RunDetailProps = {
@@ -35,201 +46,258 @@ type RunDetailProps = {
   task?: TaskDto;
 };
 
-type EventLine = {
-  id: string;
-  eventType: string;
-  message: string;
-  raw: string;
+type EventLogState = "loading" | "ready" | "unavailable";
+
+const EVENT_LOG_CHUNK_SIZE = 16_384;
+const ACTIVE_EVENT_LOG_POLL_INTERVAL_MS = 250;
+
+const toolIcons: Record<string, LucideIcon> = {
+  command_execution: Terminal,
+  web_search: Globe2,
+  file_change: FilePenLine,
+  mcp_tool_call: Wrench,
 };
 
-function parseEventLines(input: string): EventLine[] {
-  return input
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => {
-      try {
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        const eventType =
-          typeof parsed.event_type === "string"
-            ? parsed.event_type
-            : typeof parsed.eventType === "string"
-              ? parsed.eventType
-              : "event";
-        const message =
-          typeof parsed.message === "string"
-            ? parsed.message
-            : typeof parsed.msg === "string"
-              ? parsed.msg
-              : line;
-        return { id: `${index}-${eventType}`, eventType, message, raw: line };
-      } catch {
-        return {
-          id: `${index}-raw`,
-          eventType: "raw",
-          message: line,
-          raw: line,
-        };
-      }
-    });
-}
+const toolStatusPresentation: Record<
+  ToolCallStatus,
+  { label: string; icon?: LucideIcon; className: string }
+> = {
+  running: {
+    label: "実行中",
+    icon: Clock3,
+    className: "text-status-info-muted-foreground",
+  },
+  completed: {
+    label: "完了",
+    className: "text-muted-foreground",
+  },
+  failed: {
+    label: "失敗",
+    className: "text-status-error-muted-foreground",
+  },
+};
 
-function formatBytes(value: number | undefined) {
-  if (!value) {
-    return "—";
-  }
-  if (value < 1024) {
-    return `${value} B`;
-  }
-  if (value < 1024 * 1024) {
-    return `${(value / 1024).toFixed(1)} KB`;
-  }
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function DetailSection({
-  actions,
-  children,
+function ToolRow({
+  entry,
 }: {
-  actions?: ReactNode;
-  children: ReactNode;
+  entry: Extract<RunTranscriptEntry, { kind: "tool" }>;
 }) {
-  return (
-    <section className="grid gap-3">
-      {actions ? (
-        <div className="flex w-full flex-wrap justify-end gap-2">{actions}</div>
-      ) : null}
-      {children}
-    </section>
-  );
-}
-
-function MetadataItem({
-  label,
-  value,
-  detail,
-  className,
-}: {
-  label: string;
-  value: ReactNode;
-  detail?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cn("min-w-0 border-t pt-3", className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 min-w-0 text-sm font-medium">{value}</dd>
-      {detail ? (
-        <dd className="mt-1 text-xs text-muted-foreground">{detail}</dd>
-      ) : null}
+  const ToolIcon = toolIcons[entry.itemType] ?? Wrench;
+  const status = toolStatusPresentation[entry.status];
+  const StatusIcon = status.icon;
+  const summary = (
+    <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+      <span
+        role="img"
+        aria-label={entry.label}
+        title={entry.label}
+        className="flex size-5 shrink-0 items-center justify-center"
+      >
+        <ToolIcon className="size-4" aria-hidden="true" />
+      </span>
+      <span
+        className="min-w-0 w-fit max-w-full shrink truncate rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground"
+        title={entry.summary}
+      >
+        {entry.summary}
+      </span>
+      {entry.status !== "running" ? (
+        <span className="sr-only">ステータス: {status.label}</span>
+      ) : (
+        <span
+          className={cn(
+            "flex shrink-0 items-center gap-1.5 text-xs",
+            status.className,
+          )}
+        >
+          {StatusIcon ? (
+            <StatusIcon className="size-3.5" aria-hidden="true" />
+          ) : null}
+          {status.label}
+        </span>
+      )}
     </div>
   );
-}
 
-function PathValue({
-  value,
-  fallback = "未記録",
-}: {
-  value?: string;
-  fallback?: string;
-}) {
-  if (!value) {
-    return <span className="text-muted-foreground">{fallback}</span>;
-  }
+  const rowClassName = cn(
+    "flex min-h-9 w-fit max-w-full items-center gap-2 rounded-md px-1 py-1",
+    entry.status === "failed"
+      ? "bg-status-error-muted"
+      : "hover:bg-muted/40",
+  );
 
   return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span className="min-w-0 flex-1 truncate font-mono text-xs" title={value}>
-        {value}
-      </span>
-      <CopyButton
-        value={value}
-        label="コピー"
-        toastLabel="パス"
-        size="sm"
-        variant="ghost"
-        className="h-7 shrink-0 px-2 text-xs"
-      />
-    </span>
+    <li className="py-0.5">
+      {entry.details.length ? (
+        <details className="group">
+          <summary
+            className={cn(
+              rowClassName,
+              "cursor-pointer list-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden",
+            )}
+          >
+            {summary}
+            <ChevronRight
+              className="invisible size-4 shrink-0 text-muted-foreground group-hover:visible group-focus-within:visible group-open:rotate-90"
+              aria-hidden="true"
+            />
+          </summary>
+          <div className="ml-6 mt-1 rounded-md bg-muted/30 px-3 py-3">
+            <div className="grid gap-4">
+              {entry.details.map((detail) => (
+                <div key={detail.label} className="min-w-0">
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                    {detail.label}
+                  </p>
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-3 font-mono text-xs leading-5 text-foreground">
+                    {detail.value}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
+      ) : (
+        <div className={rowClassName}>
+          {summary}
+        </div>
+      )}
+    </li>
   );
 }
 
-function TextBlock({ children }: { children: string }) {
+function ErrorRow({
+  entry,
+}: {
+  entry: Extract<RunTranscriptEntry, { kind: "error" }>;
+}) {
   return (
-    <pre className="max-h-[28rem] overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs leading-5">
-      {children}
-    </pre>
+    <li className="py-2">
+      <details className="group rounded-md border border-status-error-border bg-status-error-muted">
+        <summary className="flex min-h-10 cursor-pointer list-none items-center gap-3 px-3 py-2 text-sm text-status-error-muted-foreground [&::-webkit-details-marker]:hidden">
+          <CircleAlert className="size-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 text-pretty">{entry.text}</span>
+          <ChevronRight
+            className="size-4 shrink-0 group-open:rotate-90"
+            aria-hidden="true"
+          />
+        </summary>
+        {entry.details.length ? (
+          <div className="border-t border-status-error-border px-3 py-3">
+            {entry.details.map((detail) => (
+              <pre
+                key={detail.label}
+                className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-3 font-mono text-xs leading-5 text-foreground"
+              >
+                {detail.value}
+              </pre>
+            ))}
+          </div>
+        ) : null}
+      </details>
+    </li>
   );
 }
 
 export function RunDetail({ run, task }: RunDetailProps) {
-  const [logs, setLogs] = useState<Record<LogStream, string>>({
-    stdout: "",
-    stderr: "",
-    events: "",
-  });
-  const [isExportingLogs, setIsExportingLogs] = useState(false);
+  const [eventLog, setEventLog] = useState("");
+  const [eventLogState, setEventLogState] =
+    useState<EventLogState>("loading");
   const cancelRun = useCancelRun();
   const runTaskNow = useRunTaskNow();
   const active = isRunActive(run.status);
-  const eventLines = useMemo(() => parseEventLines(logs.events), [logs.events]);
-  const workspaceToOpen = run.worktreePath ?? run.workspacePath;
-  const artifacts = run.artifacts ?? [];
+  const eventLogRunIdRef = useRef<string | undefined>(undefined);
+  const eventLogCursorRef = useRef(0);
+  const parsedEntries = useMemo(
+    () => parseRunTranscript(eventLog),
+    [eventLog],
+  );
+
+  const { transcriptEntries, finalOutput } = useMemo(() => {
+    if (active) {
+      return { transcriptEntries: parsedEntries, finalOutput: "" };
+    }
+
+    const lastAssistantIndex = parsedEntries.findLastIndex(
+      (entry) => entry.kind === "assistant",
+    );
+    const lastAssistant =
+      lastAssistantIndex >= 0 ? parsedEntries[lastAssistantIndex] : undefined;
+    const output =
+      (lastAssistant?.kind === "assistant" ? lastAssistant.text : "") ||
+      run.resultSummary?.trim() ||
+      "";
+
+    return {
+      transcriptEntries:
+        lastAssistantIndex >= 0
+          ? parsedEntries.filter((_, index) => index !== lastAssistantIndex)
+          : parsedEntries,
+      finalOutput: output,
+    };
+  }, [active, parsedEntries, run.resultSummary]);
+
+  const hasToolEntries = transcriptEntries.some(
+    (entry) => entry.kind === "tool",
+  );
+  const startedAt = run.startedAt ?? run.queuedAt ?? run.scheduledFor;
 
   useEffect(() => {
     let canceled = false;
-    const cursors: Record<LogStream, number> = {
-      stdout: 0,
-      stderr: 0,
-      events: 0,
-    };
-    setLogs({ stdout: "", stderr: "", events: "" });
+    let nextPoll: number | undefined;
+    if (eventLogRunIdRef.current !== run.id) {
+      eventLogRunIdRef.current = run.id;
+      eventLogCursorRef.current = 0;
+      setEventLog("");
+      setEventLogState("loading");
+    }
 
-    async function poll(stream: LogStream) {
+    async function poll() {
       try {
-        const result = await ipcClient.runTailLog({
-          runId: run.id,
-          stream,
-          cursor: cursors[stream],
-          limit: 16_384,
-        });
+        while (!canceled) {
+          const previousCursor = eventLogCursorRef.current;
+          const result = await ipcClient.runTailLog({
+            runId: run.id,
+            stream: "events",
+            cursor: previousCursor,
+            limit: EVENT_LOG_CHUNK_SIZE,
+          });
+          if (canceled) {
+            return;
+          }
+          eventLogCursorRef.current = result.nextCursor;
+          if (result.data) {
+            setEventLog((current) => `${current}${result.data}`);
+            setEventLogState("ready");
+          }
+          if (result.eof || result.nextCursor <= previousCursor) {
+            break;
+          }
+        }
         if (canceled) {
           return;
         }
-        cursors[stream] = result.nextCursor;
-        if (result.data) {
-          setLogs((current) => ({
-            ...current,
-            [stream]: `${current[stream]}${result.data}`,
-          }));
-        }
+        setEventLogState("ready");
       } catch {
-        if (!canceled) {
-          setLogs((current) => ({
-            ...current,
-            [stream]:
-              current[stream] ||
-              "ログ末尾はまだ利用できません。バックエンドがログファイルを作成していない可能性があります。",
-          }));
+        if (!canceled && !active) {
+          setEventLogState("unavailable");
+        }
+      } finally {
+        if (!canceled && active) {
+          nextPoll = window.setTimeout(
+            () => void poll(),
+            ACTIVE_EVENT_LOG_POLL_INTERVAL_MS,
+          );
         }
       }
     }
 
-    void poll("stdout");
-    void poll("stderr");
-    void poll("events");
-    const interval = active
-      ? window.setInterval(() => {
-          void poll("stdout");
-          void poll("stderr");
-          void poll("events");
-        }, 3_000)
-      : undefined;
+    void poll();
 
     return () => {
       canceled = true;
-      if (interval) {
-        window.clearInterval(interval);
+      if (nextPoll !== undefined) {
+        window.clearTimeout(nextPoll);
       }
     };
   }, [active, run.id]);
@@ -262,425 +330,135 @@ export function RunDetail({ run, task }: RunDetailProps) {
       );
   }
 
-  function openPath(path: string, label: string) {
-    ipcClient
-      .openPath(path)
-      .then(() => toast.success(`${label} を Finder で開きました`))
-      .catch((error) =>
-        toast.error(`${label} を開けませんでした`, {
-          description:
-            error instanceof Error
-              ? error.message
-              : "パスを開くコマンドに失敗しました。",
-        }),
-      );
-  }
-
-  async function exportLogs() {
-    setIsExportingLogs(true);
-    try {
-      const path = await ipcClient.exportRunLogs(run.id);
-      if (path) {
-        toast.success("ログをエクスポートしました", { description: path });
-      }
-    } catch (error) {
-      toast.error("ログをエクスポートできませんでした", {
-        description:
-          error instanceof Error
-            ? error.message
-            : "エクスポートコマンドに失敗しました。",
-      });
-    } finally {
-      setIsExportingLogs(false);
-    }
-  }
-
-  function renderLogActions(value: string, toastLabel: string) {
-    return (
-      <>
-        <CopyButton value={value} toastLabel={toastLabel} />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={isExportingLogs}
-          onClick={() => void exportLogs()}
-        >
-          <Download className="size-4" aria-hidden="true" />
-          ログをエクスポート
-        </Button>
-      </>
-    );
-  }
-
-  const stdoutText = logs.stdout || run.stdoutTail || "";
-  const stderrText = logs.stderr || run.stderrTail || "";
-  const eventsText = logs.events || "";
-  const outputText = run.resultSummary || "";
-  const promptText = task?.prompt.body || "";
-  const target = task
-    ? describeTaskTarget(task)
-    : {
-        label: formatReadableEnum(run.targetMode),
-        detail: run.workspacePath ?? run.worktreePath,
-      };
-  const startedAt = run.startedAt ?? run.queuedAt ?? run.scheduledFor;
-  const hasStatusReason = Boolean(run.statusReason);
-
   return (
-    <Tabs defaultValue="overview" className="grid min-w-0 gap-4">
-      <TabsList className="w-full justify-start">
-        <TabsTrigger value="overview">概要</TabsTrigger>
-        <TabsTrigger value="chat">チャット</TabsTrigger>
-        <TabsTrigger value="prompt">プロンプト</TabsTrigger>
-        <TabsTrigger value="output">出力</TabsTrigger>
-        <TabsTrigger value="logs">ログ</TabsTrigger>
-        <TabsTrigger value="artifacts">成果物</TabsTrigger>
-      </TabsList>
+    <section className="mx-auto w-full max-w-4xl pb-12">
+      <header className="pb-6">
+        <Button variant="ghost" size="sm" className="-ml-3 mb-4" asChild>
+          <Link href={`/tasks?task=${encodeURIComponent(run.taskId)}`}>
+            <ArrowLeft data-icon="inline-start" aria-hidden="true" />
+            タスクへ戻る
+          </Link>
+        </Button>
 
-      <TabsContent value="overview">
-        <section className="grid gap-4">
-          <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-base font-semibold text-balance">
-                  {task?.name ?? run.taskId}
-                </h2>
-                <RunStatusBadge status={run.status} />
-                <Badge variant="outline">
-                  {formatReadableEnum(run.triggerType)}
-                </Badge>
-              </div>
-              <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
-                {run.id}
-              </p>
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold text-balance">
+              {task?.name ?? run.taskId}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <RunStatusBadge status={run.status} />
+              <time dateTime={startedAt} className="tabular-nums">
+                {formatAbsoluteDateTime(startedAt, "未開始")}
+              </time>
+              <span className="font-mono" title={run.id}>
+                {shortIdentifier(run.id)}
+              </span>
             </div>
-            <div className="flex w-full min-w-0 flex-wrap gap-2 xl:w-auto xl:justify-end">
-              {workspaceToOpen ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => openPath(workspaceToOpen, "ワークスペース")}
-                >
-                  <FolderOpen className="size-4" aria-hidden="true" />
-                  ワークスペースを開く
-                </Button>
-              ) : null}
-              <Button variant="outline" asChild>
-                <Link
-                  href={`/tasks/new?prefillFromTask=${encodeURIComponent(run.taskId)}&sourceRun=${encodeURIComponent(run.id)}`}
-                >
-                  <PlusCircle className="size-4" aria-hidden="true" />
-                  フォローアップタスクを作成
-                </Link>
-              </Button>
-              {active ? (
-                <Button
-                  variant="outline"
-                  disabled={cancelRun.isPending}
-                  onClick={cancel}
-                >
-                  <Square className="size-4" aria-hidden="true" />
-                  キャンセル
-                </Button>
-              ) : null}
+          </div>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            <TaskInfoSheet task={task} />
+            <TaskPromptDialog task={task} />
+            {active ? (
               <Button
+                type="button"
                 variant="outline"
+                size="sm"
+                disabled={cancelRun.isPending}
+                onClick={cancel}
+              >
+                <Square data-icon="inline-start" aria-hidden="true" />
+                キャンセル
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
                 disabled={runTaskNow.isPending}
                 onClick={rerun}
               >
-                <RotateCcw className="size-4" aria-hidden="true" />
+                <RotateCcw data-icon="inline-start" aria-hidden="true" />
                 再実行
               </Button>
-            </div>
-          </div>
-
-          <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <MetadataItem
-              label="開始"
-              value={
-                <span className="tabular-nums">
-                  {formatRelativeDateTime(startedAt, "未開始")}
-                </span>
-              }
-              detail={formatAbsoluteDateTime(startedAt, "未開始")}
-            />
-            <MetadataItem
-              label="所要時間"
-              value={
-                <span className="tabular-nums">{formatRunDuration(run)}</span>
-              }
-              detail={
-                run.exitCode === undefined
-                  ? "終了コード未記録"
-                  : `終了コード ${run.exitCode}`
-              }
-            />
-            <MetadataItem
-              label="実行先"
-              value={target.label}
-              detail={
-                <span
-                  className="block truncate font-mono"
-                  title={target.detail}
-                >
-                  {target.detail ?? "未記録"}
-                </span>
-              }
-            />
-            <MetadataItem
-              label="ワークスペース"
-              value={<PathValue value={run.workspacePath} />}
-            />
-            <MetadataItem
-              label="ワークツリー"
-              value={<PathValue value={run.worktreePath} />}
-            />
-            <MetadataItem
-              label="ブランチ"
-              value={
-                <span
-                  className="block truncate font-mono text-xs"
-                  title={run.branchName}
-                >
-                  {run.branchName ?? "未記録"}
-                </span>
-              }
-              detail={`ベース ${run.baseRef ?? "既定"}`}
-            />
-            <MetadataItem
-              label="変更前コミット"
-              value={
-                <span className="font-mono text-xs">
-                  {shortIdentifier(run.commitBefore)}
-                </span>
-              }
-            />
-            <MetadataItem
-              label="変更後コミット"
-              value={
-                <span className="font-mono text-xs">
-                  {shortIdentifier(run.commitAfter)}
-                </span>
-              }
-            />
-            <MetadataItem
-              label="予定時刻"
-              value={
-                <span className="tabular-nums">
-                  {formatAbsoluteDateTime(run.scheduledFor)}
-                </span>
-              }
-            />
-          </dl>
-        </section>
-      </TabsContent>
-
-      <TabsContent value="chat">
-        <DetailSection>
-          <ol
-            className="grid gap-3"
-            role="log"
-            aria-label="タスクセッションのチャットログ"
-          >
-            <li className="flex justify-end">
-              <div className="max-w-[min(42rem,90%)] rounded-lg bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground">
-                <div className="mb-1 text-xs font-medium opacity-75">
-                  ユーザー指示
-                </div>
-                <div className="whitespace-pre-wrap break-words">
-                  {promptText || "この実行ではプロンプト本文を利用できません。"}
-                </div>
-              </div>
-            </li>
-            {eventLines.map((event) => (
-              <li key={event.id} className="flex justify-start">
-                <div className="max-w-[min(42rem,90%)] rounded-lg border bg-background px-4 py-3 text-sm leading-6">
-                  <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
-                    <Badge variant="outline">
-                      {formatReadableEnum(event.eventType)}
-                    </Badge>
-                    <span className="text-muted-foreground">tool / event</span>
-                  </div>
-                  <div className="whitespace-pre-wrap break-words">
-                    {event.message}
-                  </div>
-                  <details className="mt-2 text-xs">
-                    <summary className="cursor-pointer text-muted-foreground">
-                      生イベント
-                    </summary>
-                    <pre className="mt-2 whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono leading-5">
-                      {event.raw}
-                    </pre>
-                  </details>
-                </div>
-              </li>
-            ))}
-            <li className="flex justify-start">
-              <div className="max-w-[min(42rem,90%)] rounded-lg bg-muted px-4 py-3 text-sm leading-6">
-                <div className="mb-1 text-xs font-medium text-muted-foreground">
-                  アシスタント
-                </div>
-                <div className="whitespace-pre-wrap break-words">
-                  {outputText || "最終メッセージはまだ記録されていません。"}
-                </div>
-              </div>
-            </li>
-          </ol>
-        </DetailSection>
-      </TabsContent>
-
-      <TabsContent value="prompt">
-        <DetailSection
-          actions={<CopyButton value={promptText} toastLabel="プロンプト" />}
-        >
-          {promptText ? (
-            <TextBlock>{promptText}</TextBlock>
-          ) : (
-            <p className="py-3 text-sm text-muted-foreground">
-              この実行ではプロンプト本文を利用できません。
-            </p>
-          )}
-        </DetailSection>
-      </TabsContent>
-
-      <TabsContent value="output">
-        <DetailSection
-          actions={<CopyButton value={outputText} toastLabel="出力" />}
-        >
-          <div className="grid gap-3">
-            {outputText ? (
-              <div className="text-sm leading-6 text-pretty">
-                {outputText}
-              </div>
-            ) : (
-              <p className="py-3 text-sm text-muted-foreground">
-                最終メッセージはまだ記録されていません。
-              </p>
             )}
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">指摘 {run.findingsCount ?? 0}</Badge>
-              <Badge variant="outline">
-                作成スケジュール {run.createdScheduleCount ?? 0}
-              </Badge>
-              {run.codexSessionId ? (
-                <Badge variant="muted" className="font-mono">
-                  {run.codexSessionId}
-                </Badge>
-              ) : null}
-            </div>
-            {hasStatusReason ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                {run.statusReason}
-              </div>
+          </div>
+        </div>
+      </header>
+
+      <Separator />
+
+      <ol
+        role="log"
+        aria-label="実行セッション"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-busy={eventLogState === "loading"}
+        className="pt-4"
+      >
+        {transcriptEntries.map((entry) => {
+          if (entry.kind === "tool") {
+            return <ToolRow key={entry.id} entry={entry} />;
+          }
+          if (entry.kind === "error") {
+            return <ErrorRow key={entry.id} entry={entry} />;
+          }
+          return (
+            <li key={entry.id} aria-label="Codexの途中出力" className="py-4">
+              <MarkdownContent content={entry.text} className="max-w-3xl" />
+            </li>
+          );
+        })}
+
+        {eventLogState === "loading" ? (
+          <li className="py-4 text-sm text-muted-foreground">
+            {active
+              ? "実行ログに接続しています…"
+              : "実行ログを読み込んでいます…"}
+          </li>
+        ) : active && transcriptEntries.length === 0 ? (
+          <li className="py-4 text-sm text-muted-foreground">
+            新しい実行ログを待っています…
+          </li>
+        ) : !active && !hasToolEntries ? (
+          <li className="py-4 text-sm text-muted-foreground">
+            {eventLogState === "unavailable"
+              ? "ツール呼び出しの記録を読み込めませんでした。"
+              : "この実行にはツール呼び出しの記録がありません。"}
+          </li>
+        ) : null}
+
+        {run.statusReason &&
+        !transcriptEntries.some((entry) => entry.kind === "error") ? (
+          <li className="flex items-start gap-3 py-4 text-sm text-destructive">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <p className="text-pretty">{run.statusReason}</p>
+          </li>
+        ) : null}
+
+        <li
+          aria-label="最終出力"
+          className="mt-6 rounded-lg bg-muted px-4 py-4 sm:px-5"
+        >
+          <div className="flex items-start gap-4">
+            <MarkdownContent
+              content={
+                active
+                  ? "実行中です。最終出力を待っています。"
+                  : finalOutput || "最終出力は記録されていません。"
+              }
+              className="flex-1"
+            />
+            {finalOutput ? (
+              <CopyButton
+                value={finalOutput}
+                label="コピー"
+                toastLabel="最終出力"
+                variant="ghost"
+              />
             ) : null}
           </div>
-        </DetailSection>
-      </TabsContent>
-
-      <TabsContent value="logs">
-        <Tabs defaultValue="stdout" className="grid gap-3">
-          <TabsList className="w-full justify-start">
-            <TabsTrigger value="stdout">stdout</TabsTrigger>
-            <TabsTrigger value="stderr">stderr</TabsTrigger>
-            <TabsTrigger value="events">events</TabsTrigger>
-          </TabsList>
-          <TabsContent value="stdout" className="mt-0">
-            <DetailSection actions={renderLogActions(stdoutText, "stdout")}>
-              <TextBlock>{stdoutText || "stdout はまだありません。"}</TextBlock>
-            </DetailSection>
-          </TabsContent>
-          <TabsContent value="stderr" className="mt-0">
-            <DetailSection actions={renderLogActions(stderrText, "stderr")}>
-              <TextBlock>{stderrText || "stderr はまだありません。"}</TextBlock>
-            </DetailSection>
-          </TabsContent>
-          <TabsContent value="events" className="mt-0">
-            <DetailSection
-              actions={renderLogActions(eventsText, "イベントログ")}
-            >
-              <div className="min-h-64 rounded-md bg-muted p-3">
-                {eventLines.length ? (
-                  <div className="divide-y">
-                    {eventLines.map((event) => (
-                      <div
-                        key={event.id}
-                        className="py-3 first:pt-0 last:pb-0"
-                      >
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <Badge variant="outline">
-                            {formatReadableEnum(event.eventType)}
-                          </Badge>
-                          <span className="text-pretty">{event.message}</span>
-                        </div>
-                        <details className="mt-2 text-xs">
-                          <summary className="cursor-pointer text-muted-foreground">
-                            生イベント
-                          </summary>
-                          <pre className="mt-2 whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono leading-5">
-                            {event.raw}
-                          </pre>
-                        </details>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    イベントはまだありません。
-                  </p>
-                )}
-              </div>
-            </DetailSection>
-          </TabsContent>
-        </Tabs>
-      </TabsContent>
-
-      <TabsContent value="artifacts">
-        <DetailSection>
-          {artifacts.length ? (
-            <div className="divide-y">
-              {artifacts.map((artifact) => (
-                <div
-                  key={artifact.id}
-                  className="flex flex-col justify-between gap-3 py-3 first:pt-0 last:pb-0 xl:flex-row xl:items-center"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline">
-                        {formatReadableEnum(artifact.kind)}
-                      </Badge>
-                      <span className="font-medium">
-                        {artifact.title ?? artifact.path}
-                      </span>
-                    </div>
-                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                      {artifact.path}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatBytes(artifact.sizeBytes)} ·{" "}
-                      {formatAbsoluteDateTime(artifact.createdAt)}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full sm:w-auto xl:shrink-0"
-                    onClick={() => openPath(artifact.path, "成果物")}
-                  >
-                    <FolderOpen className="size-4" aria-hidden="true" />
-                    Finder で表示
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              この実行では成果物は記録されていません。
-            </p>
-          )}
-        </DetailSection>
-      </TabsContent>
-    </Tabs>
+        </li>
+      </ol>
+    </section>
   );
 }

@@ -526,18 +526,12 @@ async fn enqueue_scheduled_run(
 
 #[derive(Debug, Clone, Copy)]
 struct ConcurrencyLimits {
-    global: i64,
     per_project: i64,
     per_task: i64,
 }
 
 async fn load_concurrency_limits(db: &SchedulerDb) -> scheduler_core::Result<ConcurrencyLimits> {
     Ok(ConcurrencyLimits {
-        global: db
-            .get_setting::<i64>("daemon.global_concurrency")
-            .await?
-            .unwrap_or(2)
-            .max(1),
         per_project: db
             .get_setting::<i64>("daemon.per_project_concurrency")
             .await?
@@ -609,9 +603,6 @@ async fn start_available_runs(state: &Arc<DaemonState>) -> anyhow::Result<()> {
             continue;
         }
 
-        if count_running(&state.db).await? >= limits.global {
-            break;
-        }
         if count_running_for_task(&state.db, &task.id, Some(&run.id)).await? >= limits.per_task {
             continue;
         }

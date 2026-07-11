@@ -1,3 +1,4 @@
+import { longCodexEventLog } from "@/lib/mock-long-codex-log";
 import type {
   DaemonDiagnostics,
   HealthDto,
@@ -28,6 +29,10 @@ function minutesAgo(minutes: number) {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+function jsonLines(...events: JsonObject[]) {
+  return `${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
 }
 
 function id(prefix: string) {
@@ -174,6 +179,26 @@ let tasks: TaskDto[] = [
       body: "最新のマージ済み作業からリリースノートの下書きを作成してください。",
     },
   },
+  {
+    id: "task_weather_check",
+    slug: "tokyo-weather-check",
+    name: "東京の天気とフォローアップ",
+    status: "completed",
+    locked: false,
+    kind: "once",
+    cronExpr: undefined,
+    runAt: minutesAgo(120),
+    timezone: "Asia/Tokyo",
+    nextRunAt: undefined,
+    target: { mode: "chat", projectId: undefined, repoPath: undefined },
+    codex: {
+      model: "gpt-5.5",
+      reasoningEffort: "medium",
+    },
+    prompt: {
+      body: "東京の今日の天気を調べ、2時間後に再確認するタスクも登録してください。",
+    },
+  },
 ];
 
 function taskAuditEvents(taskId: string): TaskAuditEvent[] {
@@ -181,6 +206,43 @@ function taskAuditEvents(taskId: string): TaskAuditEvent[] {
 }
 
 let runs: RunDto[] = [
+  {
+    id: "run_demo_long",
+    taskId: "task_weather_check",
+    triggerType: "schedule",
+    scheduledFor: minutesAgo(120),
+    attempt: 1,
+    status: "succeeded",
+    statusReason: undefined,
+    queuedAt: minutesAgo(120),
+    startedAt: minutesAgo(119),
+    endedAt: minutesAgo(114),
+    durationMs: 300_000,
+    targetMode: "chat",
+    workspacePath: undefined,
+    worktreePath: undefined,
+    branchName: undefined,
+    baseRef: undefined,
+    commitBefore: undefined,
+    commitAfter: undefined,
+    exitCode: 0,
+    signal: undefined,
+    codexSessionId: "thread_demo_long",
+    stdoutLogPath:
+      "/Users/demo/Library/Application Support/Codex Scheduler/logs/run_demo_long/stdout.log",
+    stderrLogPath:
+      "/Users/demo/Library/Application Support/Codex Scheduler/logs/run_demo_long/stderr.log",
+    eventsJsonlPath:
+      "/Users/demo/Library/Application Support/Codex Scheduler/logs/run_demo_long/events.jsonl",
+    lastMessagePath:
+      "/Users/demo/Library/Application Support/Codex Scheduler/logs/run_demo_long/last-message.md",
+    stdoutTail: "東京の天気と再チェック時刻を確認しました。\n",
+    stderrTail: "",
+    resultSummary:
+      "東京は晴れ時々くもりで、2時間後の再チェックを設定しました。",
+    findingsCount: 0,
+    createdScheduleCount: 1,
+  },
   {
     id: "run_success",
     taskId: "task_daily_review",
@@ -302,13 +364,73 @@ let runs: RunDto[] = [
 
 const logs = new Map<string, Record<LogStream, string>>([
   [
+    "run_demo_long",
+    {
+      stdout: "東京の天気と再チェック時刻を確認しました。\n",
+      stderr: "",
+      events: longCodexEventLog,
+    },
+  ],
+  [
     "run_success",
     {
       stdout:
         "Codex Scheduler レビューを開始しています\n18 件の変更ファイルを読み込みました\nFinal: 重大な問題は見つかりませんでした\n",
       stderr: "",
-      events:
-        "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n{\"event_type\":\"run.completed\",\"message\":\"実行は正常に完了しました\"}\n",
+      events: jsonLines(
+        { type: "thread.started", thread_id: "sess_success" },
+        { type: "turn.started" },
+        {
+          type: "item.started",
+          item: {
+            id: "item_command_review",
+            type: "command_execution",
+            command: "git diff --stat origin/main...HEAD",
+            aggregated_output: "",
+            exit_code: null,
+            status: "in_progress",
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "item_command_review",
+            type: "command_execution",
+            command: "git diff --stat origin/main...HEAD",
+            aggregated_output:
+              "apps/desktop/components/run-detail.tsx | 128 +++++++++++++\n1 file changed, 96 insertions(+), 32 deletions(-)",
+            exit_code: 0,
+            status: "completed",
+          },
+        },
+        {
+          type: "item.started",
+          item: {
+            id: "item_search_release",
+            type: "web_search",
+            query: "Next.js 15 release notes",
+            action: { type: "search", query: "Next.js 15 release notes" },
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "item_search_release",
+            type: "web_search",
+            query: "Next.js 15 release notes",
+            action: { type: "search", query: "Next.js 15 release notes" },
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "item_final",
+            type: "agent_message",
+            text: "重大な問題は見つかりませんでした。フォローアップメモを2件記録しました。",
+          },
+        },
+        { type: "turn.completed", usage: { input_tokens: 8420, output_tokens: 614 } },
+      ),
     },
   ],
   [
@@ -316,8 +438,36 @@ const logs = new Map<string, Record<LogStream, string>>([
     {
       stdout: "依存関係スキャンを開始しています\nパッケージメタデータを解決しています\n",
       stderr: "registry lookup timed out\nretry budget exhausted\n",
-      events:
-        "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n{\"event_type\":\"run.failed\",\"message\":\"Codex はコード 1 で終了しました\"}\n",
+      events: jsonLines(
+        { type: "thread.started", thread_id: "sess_failed" },
+        { type: "turn.started" },
+        {
+          type: "item.started",
+          item: {
+            id: "item_command_dependencies",
+            type: "command_execution",
+            command: "pnpm outdated --json",
+            aggregated_output: "",
+            exit_code: null,
+            status: "in_progress",
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "item_command_dependencies",
+            type: "command_execution",
+            command: "pnpm outdated --json",
+            aggregated_output: "registry lookup timed out\nretry budget exhausted",
+            exit_code: 1,
+            status: "failed",
+          },
+        },
+        {
+          type: "turn.failed",
+          error: { message: "パッケージメタデータを取得できませんでした。" },
+        },
+      ),
     },
   ],
   [
@@ -326,7 +476,21 @@ const logs = new Map<string, Record<LogStream, string>>([
       stdout:
         "仕様を読んでいます...\n現在のワークスペースを確認しています...\nIPC モジュールを調査しています...\n",
       stderr: "",
-      events: "{\"event_type\":\"run.started\",\"message\":\"実行を開始しました\"}\n",
+      events: jsonLines(
+        { type: "thread.started", thread_id: "sess_running" },
+        { type: "turn.started" },
+        {
+          type: "item.started",
+          item: {
+            id: "item_command_running",
+            type: "command_execution",
+            command: "rg --files apps/desktop",
+            aggregated_output: "",
+            exit_code: null,
+            status: "in_progress",
+          },
+        },
+      ),
     },
   ],
 ]);

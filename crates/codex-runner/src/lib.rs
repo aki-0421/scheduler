@@ -1412,6 +1412,7 @@ async fn process_jsonl_line(
 
     events_file.write_all(trimmed).await?;
     events_file.write_all(b"\n").await?;
+    events_file.flush().await?;
     if session_id.is_none() {
         *session_id = extract_codex_session_id(&value);
     }

@@ -303,7 +303,6 @@ export type ProjectUntrustResult = z.infer<typeof projectUntrustResultSchema>;
 
 export type SchedulerSettings = {
   "scheduler.enabled": boolean;
-  "daemon.global_concurrency": number;
   "runner.codex_path": string;
   "runner.default_model": CodexModel;
   "notifications.enabled": boolean;
@@ -311,7 +310,6 @@ export type SchedulerSettings = {
 
 export const defaultSettings: SchedulerSettings = {
   "scheduler.enabled": true,
-  "daemon.global_concurrency": 2,
   "runner.codex_path": "codex",
   "runner.default_model": defaultCodexModel,
   "notifications.enabled": true,
