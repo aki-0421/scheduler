@@ -1,11 +1,11 @@
 ---
 title: 画面仕様
-description: Codex Scheduler の desktop screen specification convention、stable screen ID registry、per-screen spec link を定義する。
+description: Clockhand の desktop screen specification convention、stable screen ID registry、per-screen spec link を定義する。
 updated: 2026-07-11
 read_when:
   - desktop app page、dialog、task wizard behavior、screen copy、validation、loading state、empty state、navigation を変更するとき。
-  - Codex Scheduler desktop screen に割り当てられた stable screen ID を探すとき。
-  - Codex Scheduler の QA check、user-facing screen documentation、acceptance criteria、design handoff note を書くとき。
+  - Clockhand desktop screen に割り当てられた stable screen ID を探すとき。
+  - Clockhand の QA check、user-facing screen documentation、acceptance criteria、design handoff note を書くとき。
 ---
 
 # 画面仕様

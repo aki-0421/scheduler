@@ -1,6 +1,6 @@
 ---
 title: データモデル
-description: Codex Scheduler の現在の SQLite entity、DTO contract、enum、setting、retention record を定義する。
+description: Clockhand の現在の SQLite entity、DTO contract、enum、setting、retention record を定義する。
 updated: 2026-07-11
 read_when:
   - migration、scheduler-core model、IPC DTO、frontend schema、setting、retention behavior を変更するとき。

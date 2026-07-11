@@ -1,9 +1,9 @@
 ---
 title: リリース
-description: Codex Scheduler の macOS 署名、notarization、sidecar bundle、release build 検証手順を定義する。
-updated: 2026-07-08
+description: Clockhand の macOS 署名、notarization、sidecar bundle、release build 検証手順を定義する。
+updated: 2026-07-11
 read_when:
-  - Codex Scheduler の macOS release build、署名、notarization、配布を行うとき。
+  - Clockhand の macOS release build、署名、notarization、配布を行うとき。
   - Tauri sidecar binary の bundle や release artifact 検証を変更するとき。
 ---
 
@@ -11,7 +11,7 @@ read_when:
 
 ## macOS 署名と Notarization
 
-Codex Scheduler は、Tauri desktop app と 2 つの sidecar binary を同梱する。
+Clockhand は、Tauri desktop app と 2 つの sidecar binary を同梱する。
 
 - `codex-schedulerd`
 - `codex-schedule`
@@ -65,8 +65,8 @@ pnpm --filter desktop tauri build
 build 後に app と sidecar を検証する。
 
 ```bash
-codesign --verify --deep --strict --verbose=2 apps/desktop/src-tauri/target/release/bundle/macos/Codex\ Scheduler.app
-spctl --assess --type execute --verbose apps/desktop/src-tauri/target/release/bundle/macos/Codex\ Scheduler.app
+codesign --verify --deep --strict --verbose=2 apps/desktop/src-tauri/target/release/bundle/macos/Clockhand.app
+spctl --assess --type execute --verbose apps/desktop/src-tauri/target/release/bundle/macos/Clockhand.app
 ```
 
 設定済みの Tauri release flow で notarization が自動実行されない場合は、同じ Apple ID、password、team ID を使って built archive を `xcrun notarytool` に submit し、配布前に app または DMG へ staple する。

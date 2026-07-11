@@ -375,7 +375,7 @@ const logs = new Map<string, Record<LogStream, string>>([
     "run_success",
     {
       stdout:
-        "Codex Scheduler レビューを開始しています\n18 件の変更ファイルを読み込みました\nFinal: 重大な問題は見つかりませんでした\n",
+        "Clockhand レビューを開始しています\n18 件の変更ファイルを読み込みました\nFinal: 重大な問題は見つかりませんでした\n",
       stderr: "",
       events: jsonLines(
         { type: "thread.started", thread_id: "sess_success" },
@@ -666,9 +666,9 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
     case "daemon_tick_now":
       return { ok: true, triggered: true };
     case "diagnostics_export":
-      return "/tmp/codex-scheduler-diagnostics.json";
+      return "/tmp/clockhand-diagnostics.json";
     case "export_run_logs":
-      return `/tmp/codex-scheduler-${input.runId as string}-logs.txt`;
+      return `/tmp/clockhand-${input.runId as string}-logs.txt`;
     case "prompt_import_file":
       return "モックファイルからインポートしたプロンプトです。\n";
     case "task_list": {

@@ -288,7 +288,7 @@ export default function SettingsPage() {
         </SettingRow>
         <SettingRow
           label="データベースパス"
-          description="Codex Scheduler が使用するローカル SQLite データベースです。"
+          description="Clockhand が使用するローカル SQLite データベースです。"
           controlClassName="md:w-[28rem]"
         >
           <ReadOnlyCode value="~/Library/Application Support/Codex Scheduler/scheduler.sqlite3" />

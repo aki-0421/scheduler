@@ -1,7 +1,7 @@
 [package]
 name = "codex-scheduler-desktop"
 version = "0.1.0"
-description = "Codex Scheduler desktop shell"
+description = "Clockhand desktop shell"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

@@ -165,7 +165,7 @@ const longCodexLogSteps = [
     kind: "command",
     command: "/workspace/scheduler/target/debug/codex-schedule --help",
     output:
-      "Manage Codex Scheduler tasks\n\nCommands:\n  create\n  update\n  update-current\n  list\n  show\n  pause\n  resume\n  delete\n  run-now\n",
+      "Manage Clockhand tasks\n\nCommands:\n  create\n  update\n  update-current\n  list\n  show\n  pause\n  resume\n  delete\n  run-now\n",
     exitCode: 0,
   },
   {

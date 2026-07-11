@@ -10,7 +10,7 @@ use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "codex-schedulerd")]
-#[command(about = "Codex Scheduler daemon")]
+#[command(about = "Clockhand daemon")]
 pub struct CliArgs {
     #[arg(long, env = "CODEX_SCHEDULER_DATA_DIR")]
     pub data_dir: Option<PathBuf>,
