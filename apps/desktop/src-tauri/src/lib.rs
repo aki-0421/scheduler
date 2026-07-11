@@ -457,7 +457,7 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
 }
 
 fn canonicalize_existing(path: impl AsRef<Path>) -> Option<PathBuf> {
-    std::fs::canonicalize(path).ok()
+    scheduler_core::paths::canonicalize(path).ok()
 }
 
 fn now_unix_secs() -> u64 {
@@ -1135,7 +1135,7 @@ async fn project_pick_folder(app: AppHandle) -> CommandResult<Option<String>> {
 
 #[tauri::command]
 async fn open_path(app: AppHandle, state: State<'_, AppState>, path: String) -> CommandResult<()> {
-    let path = std::fs::canonicalize(&path)
+    let path = scheduler_core::paths::canonicalize(&path)
         .map_err(|err| format!("path does not exist or cannot be opened: {err}"))?;
     if !state.daemon.is_open_path_allowed(&app, &path).await? {
         return Err(

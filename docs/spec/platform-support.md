@@ -35,6 +35,8 @@ database、log、token、lock は OS の local application data directory 下の
 
 desktop app、daemon、CLI は同じ path resolver を使う。test と明示的な daemon argument では data directory を override できる。
 
+Windows の canonical path は、意味を保てる場合に `\\?\` prefix を外した互換形式で保存・表示し、Git などの外部 tool にも同じ形式で渡す。path の信頼判定では保存済み path も再 canonicalize し、表記差を権限差として扱わない。
+
 ## Local IPC
 
 JSON Lines の JSON-RPC 2.0 protocol は OS 間で共通とする。transport だけを切り替える。

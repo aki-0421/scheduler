@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 
 pub const DATA_DIR_NAME: &str = "Codex Scheduler";
 
@@ -6,6 +7,16 @@ pub fn default_data_dir() -> PathBuf {
     platform_data_root()
         .map(|root| root.join(DATA_DIR_NAME))
         .unwrap_or_else(|| PathBuf::from(".").join(DATA_DIR_NAME))
+}
+
+/// Canonicalizes a path while preferring the Windows form accepted by legacy tools.
+pub fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+    dunce::canonicalize(path)
+}
+
+/// Simplifies a Windows verbatim path when doing so preserves its meaning.
+pub fn simplify(path: &Path) -> &Path {
+    dunce::simplified(path)
 }
 
 pub fn find_executable_in_path(name: &str) -> Option<PathBuf> {
@@ -85,5 +96,15 @@ mod tests {
         } else {
             assert_eq!(names, vec!["codex"]);
         }
+    }
+
+    #[test]
+    fn canonical_paths_use_the_compatible_platform_form() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let canonical = canonicalize(temp.path()).expect("canonical path");
+        assert!(canonical.is_absolute());
+
+        #[cfg(windows)]
+        assert!(!canonical.to_string_lossy().starts_with(r"\\?\"));
     }
 }

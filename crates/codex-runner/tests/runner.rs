@@ -445,7 +445,7 @@ async fn legacy_repo_local_target_is_prepared_as_an_isolated_worktree() {
     assert_eq!(outcome.workspace.mode, RunTargetMode::RepoWorktree);
     assert_ne!(
         outcome.workspace.workspace_path,
-        repo.canonicalize().unwrap()
+        scheduler_core::paths::canonicalize(&repo).unwrap()
     );
     assert!(outcome.workspace.worktree_path.is_some());
 }

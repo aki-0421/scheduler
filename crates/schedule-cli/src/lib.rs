@@ -1206,7 +1206,7 @@ async fn apply_repo_path_trust_policy_sqlite(
     let Some(repo_path) = task.repo_path.clone() else {
         return Ok(());
     };
-    let canonical = std::fs::canonicalize(&repo_path).map_err(|err| {
+    let canonical = scheduler_core::paths::canonicalize(&repo_path).map_err(|err| {
         CliError::validation(format!(
             "unable to canonicalize repo_path `{repo_path}`: {err}"
         ))
@@ -1249,7 +1249,7 @@ async fn trusted_project_for_path(
         })
         .find(|project| {
             let root = project.git_root.as_deref().unwrap_or(&project.path);
-            path.starts_with(Path::new(root))
+            scheduler_core::paths::canonicalize(root).is_ok_and(|root| path.starts_with(root))
         }))
 }
 
@@ -1680,7 +1680,7 @@ fn normalize_repo_path(path: &Path) -> Result<String, CliError> {
             .map_err(|err| CliError::validation(err.to_string()))?
             .join(path)
     };
-    std::fs::canonicalize(&absolute)
+    scheduler_core::paths::canonicalize(&absolute)
         .map_err(|err| {
             CliError::validation_details(
                 format!("unable to canonicalize --repo path: {err}"),

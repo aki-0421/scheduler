@@ -283,8 +283,8 @@ fn remove_run_logs_dir(logs_root: &Path, run_id: &str) -> anyhow::Result<bool> {
         return Ok(false);
     }
 
-    let canonical_root = fs::canonicalize(logs_root)?;
-    let canonical_run_dir = fs::canonicalize(&run_dir)?;
+    let canonical_root = scheduler_core::paths::canonicalize(logs_root)?;
+    let canonical_run_dir = scheduler_core::paths::canonicalize(&run_dir)?;
     if canonical_run_dir == canonical_root || !canonical_run_dir.starts_with(&canonical_root) {
         anyhow::bail!(
             "refusing to remove logs dir outside logs root: {}",
@@ -1505,7 +1505,7 @@ async fn apply_repo_path_trust_policy(
     let Some(repo_path) = task.repo_path.clone() else {
         return Ok(TrustOutcome::NoRepoPath);
     };
-    let canonical = std::fs::canonicalize(&repo_path).map_err(|err| {
+    let canonical = scheduler_core::paths::canonicalize(&repo_path).map_err(|err| {
         JsonRpcError::new(
             JsonRpcErrorCode::ValidationFailed,
             format!("unable to canonicalize repo_path `{repo_path}`: {err}"),
@@ -1549,7 +1549,7 @@ async fn path_is_under_trusted_project(
         })
         .any(|project| {
             let root = project.git_root.as_deref().unwrap_or(&project.path);
-            path.starts_with(Path::new(root))
+            scheduler_core::paths::canonicalize(root).is_ok_and(|root| path.starts_with(root))
         }))
 }
 
@@ -1907,30 +1907,34 @@ async fn rpc_project_trust(
     metadata: RpcMetadata,
 ) -> Result<ProjectTrustResult, JsonRpcError> {
     let actor = reject_scheduled_control_write(params.actor, &metadata, "project.trust")?;
-    let canonical = std::fs::canonicalize(&params.path).map_err(|err| {
+    let canonical = scheduler_core::paths::canonicalize(&params.path).map_err(|err| {
         JsonRpcError::new(
             JsonRpcErrorCode::ValidationFailed,
             format!("unable to canonicalize project path: {err}"),
         )
     })?;
-    let git_root = detect_git_root(&canonical).ok_or_else(|| {
+    let git_root_path = detect_git_root(&canonical).ok_or_else(|| {
         JsonRpcError::new(
             JsonRpcErrorCode::ValidationFailed,
             "project path must be inside a Git repository",
         )
     })?;
-    let path = git_root.clone();
-    let detected_default_branch = detect_project_default_branch(Path::new(&git_root));
+    let path = path_to_string(&git_root_path);
+    let git_root = path.clone();
+    let detected_default_branch = detect_project_default_branch(&git_root_path);
     let now = now_rfc3339();
     let projects = state.db.list_projects().await.map_err(map_core_error)?;
     let exact_match = projects
         .iter()
-        .find(|project| project.path == path)
+        .find(|project| stored_path_matches(&project.path, &git_root_path))
         .cloned();
     let mut existing = exact_match.or_else(|| {
-        projects
-            .into_iter()
-            .find(|project| project.git_root.as_deref() == Some(path.as_str()))
+        projects.into_iter().find(|project| {
+            project
+                .git_root
+                .as_deref()
+                .is_some_and(|root| stored_path_matches(root, &git_root_path))
+        })
     });
 
     let project = if let Some(mut project) = existing.take() {
@@ -2544,7 +2548,7 @@ async fn tail_log_file(
     })
 }
 
-fn detect_git_root(path: &Path) -> Option<String> {
+fn detect_git_root(path: &Path) -> Option<PathBuf> {
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(path)
@@ -2559,8 +2563,12 @@ fn detect_git_root(path: &Path) -> Option<String> {
     if root.is_empty() {
         None
     } else {
-        Some(root)
+        scheduler_core::paths::canonicalize(root).ok()
     }
+}
+
+fn stored_path_matches(stored: &str, expected: &Path) -> bool {
+    scheduler_core::paths::canonicalize(stored).is_ok_and(|path| path == expected)
 }
 
 fn detect_project_default_branch(git_root: &Path) -> Option<String> {
@@ -2588,7 +2596,9 @@ fn git_ref_exists(git_root: &Path, reference: &str) -> bool {
 }
 
 fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    scheduler_core::paths::simplify(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn scheduler_db_size_bytes(db_path: &Path) -> u64 {

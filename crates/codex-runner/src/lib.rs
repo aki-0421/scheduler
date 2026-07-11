@@ -522,7 +522,7 @@ fn canonicalize_existing_file(path: &Path) -> Result<PathBuf> {
     if !path.exists() {
         return Err(RunnerError::CodexBinaryDoesNotExist(path.to_path_buf()));
     }
-    Ok(path.canonicalize()?)
+    Ok(scheduler_core::paths::canonicalize(path)?)
 }
 
 fn validate_safe_request_ids(request: &RunRequest) -> Result<()> {
@@ -722,7 +722,7 @@ async fn prepare_repo_worktree_workspace(
         .await
         {
             Ok(_) => {
-                let canonical_worktree = worktree_path.canonicalize()?;
+                let canonical_worktree = scheduler_core::paths::canonicalize(&worktree_path)?;
                 ensure_child_under(&canonical_worktree_root, &canonical_worktree)?;
                 let head = git_output(&canonical_worktree, ["rev-parse", "HEAD"]).await?;
                 return Ok(WorkspacePrepared {
@@ -766,7 +766,7 @@ fn validate_repo_path(request: &RunRequest) -> Result<PathBuf> {
     if !repo_path.exists() {
         return Err(RunnerError::TargetPathMissing(repo_path.clone()));
     }
-    let canonical_repo = repo_path.canonicalize()?;
+    let canonical_repo = scheduler_core::paths::canonicalize(repo_path)?;
     let trusted_roots = canonical_trusted_roots(request, &canonical_repo)?;
     if !trusted_roots
         .iter()
@@ -782,7 +782,9 @@ fn validate_repo_path(request: &RunRequest) -> Result<PathBuf> {
 
 async fn git_toplevel(path: &Path) -> Result<PathBuf> {
     let top_level = git_output(path, ["rev-parse", "--show-toplevel"]).await?;
-    Ok(PathBuf::from(top_level.trim()).canonicalize()?)
+    Ok(scheduler_core::paths::canonicalize(PathBuf::from(
+        top_level.trim(),
+    ))?)
 }
 
 fn ensure_trusted_git_root(request: &RunRequest, git_root: &Path) -> Result<()> {
@@ -807,7 +809,7 @@ fn canonical_trusted_roots(request: &RunRequest, path: &Path) -> Result<Vec<Path
         .target
         .trusted_roots
         .iter()
-        .map(|path| path.canonicalize().map_err(RunnerError::Io))
+        .map(|path| scheduler_core::paths::canonicalize(path).map_err(RunnerError::Io))
         .collect()
 }
 
@@ -819,14 +821,14 @@ where
     let canonical_parent = ensure_canonical_dir(parent).await?;
     let child_path = checked_child_path(&canonical_parent, segments)?;
     fs::create_dir_all(&child_path).await?;
-    let canonical_child = child_path.canonicalize()?;
+    let canonical_child = scheduler_core::paths::canonicalize(&child_path)?;
     ensure_child_under(&canonical_parent, &canonical_child)?;
     Ok(canonical_child)
 }
 
 async fn ensure_canonical_dir(path: &Path) -> Result<PathBuf> {
     fs::create_dir_all(path).await?;
-    Ok(path.canonicalize()?)
+    Ok(scheduler_core::paths::canonicalize(path)?)
 }
 
 async fn ensure_safe_child_dir(canonical_parent: &Path, segment: &str) -> Result<PathBuf> {
@@ -851,7 +853,7 @@ async fn ensure_safe_child_dir(canonical_parent: &Path, segment: &str) -> Result
         Err(err) => return Err(RunnerError::Io(err)),
     }
 
-    let canonical_child = child_dir.canonicalize()?;
+    let canonical_child = scheduler_core::paths::canonicalize(&child_dir)?;
     ensure_child_under(canonical_parent, &canonical_child)?;
     Ok(canonical_child)
 }
@@ -882,21 +884,10 @@ fn ensure_child_under(canonical_parent: &Path, child: &Path) -> Result<()> {
     }
 }
 
-#[cfg(windows)]
 fn git_path_argument(path: &Path) -> String {
-    let path = path.to_string_lossy();
-    if let Some(path) = path.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{path}")
-    } else if let Some(path) = path.strip_prefix(r"\\?\") {
-        path.to_owned()
-    } else {
-        path.into_owned()
-    }
-}
-
-#[cfg(not(windows))]
-fn git_path_argument(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    scheduler_core::paths::simplify(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 async fn resolve_base_ref(repo_path: &Path, base_ref: &str) -> Result<()> {

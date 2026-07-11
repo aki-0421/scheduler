@@ -514,10 +514,9 @@ async fn project_trust_reuses_a_legacy_project_registered_from_a_subdirectory() 
     let repo = init_repo_with_local_main(&temp);
     let subdirectory = repo.join("packages/app");
     std::fs::create_dir_all(&subdirectory).expect("create project subdirectory");
-    let canonical_repo = repo.canonicalize().expect("canonical repo");
-    let canonical_subdirectory = subdirectory
-        .canonicalize()
-        .expect("canonical project subdirectory");
+    let canonical_repo = scheduler_core::paths::canonicalize(&repo).expect("canonical repo");
+    let canonical_subdirectory =
+        scheduler_core::paths::canonicalize(&subdirectory).expect("canonical project subdirectory");
     let now = now_rfc3339();
     let legacy_project = Project {
         id: new_project_id(),
@@ -583,7 +582,8 @@ async fn project_trust_rejects_a_non_git_directory() {
 async fn project_list_fills_missing_default_branch_from_detected_main() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
-    let repo = std::fs::canonicalize(init_repo_with_origin_main(&temp)).expect("canonical repo");
+    let repo = scheduler_core::paths::canonicalize(init_repo_with_origin_main(&temp))
+        .expect("canonical repo");
 
     let now = now_rfc3339();
     let project = Project {
@@ -919,7 +919,7 @@ async fn retention_cleanup_keeps_worktrees_even_with_legacy_delete_policy() {
     std::fs::write(repo.join("README.md"), "hello\n").expect("write readme");
     run_git(&repo, &["add", "README.md"]);
     run_git(&repo, &["commit", "-m", "initial"]);
-    let repo = std::fs::canonicalize(&repo).expect("canonical repo");
+    let repo = scheduler_core::paths::canonicalize(&repo).expect("canonical repo");
 
     let project = Project {
         id: new_project_id(),
@@ -975,7 +975,7 @@ async fn retention_cleanup_keeps_worktrees_even_with_legacy_delete_policy() {
     clean_run.target_mode = RunTargetMode::RepoWorktree;
     clean_run.workspace_path = Some(clean_worktree.to_string_lossy().into_owned());
     clean_run.worktree_path = Some(
-        std::fs::canonicalize(&clean_worktree)
+        scheduler_core::paths::canonicalize(&clean_worktree)
             .expect("canonical clean")
             .to_string_lossy()
             .into_owned(),
@@ -984,7 +984,7 @@ async fn retention_cleanup_keeps_worktrees_even_with_legacy_delete_policy() {
     dirty_run.target_mode = RunTargetMode::RepoWorktree;
     dirty_run.workspace_path = Some(dirty_worktree.to_string_lossy().into_owned());
     dirty_run.worktree_path = Some(
-        std::fs::canonicalize(&dirty_worktree)
+        scheduler_core::paths::canonicalize(&dirty_worktree)
             .expect("canonical dirty")
             .to_string_lossy()
             .into_owned(),
