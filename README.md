@@ -11,6 +11,8 @@ Clockhand は、ローカル AI agent の実行をスケジュールする macOS
 
 ## 開発
 
+Rust toolchain は `rust-toolchain.toml` により 1.88.0 を使用します。
+
 JavaScript 依存関係をインストールします。
 
 ```bash
@@ -25,7 +27,7 @@ pnpm --filter desktop tauri dev
 
 デスクトップ frontend は開発時に `127.0.0.1:4317` を使います。これにより、Tauri が既定ポート上の無関係な Next.js server に接続することを避けます。
 
-Tauri config は `codex-schedulerd` と `codex-schedule` を sidecar として bundle します。`pnpm --filter desktop tauri dev` と Tauri build は先に `pnpm sidecars:prepare` を実行し、これらの Rust binary を build して Tauri の target-triple suffix 付きで `apps/desktop/src-tauri/binaries/` にコピーします。
+Tauri config は `codex-schedulerd` と `codex-schedule` を sidecar として bundle します。`tauri dev` は debug profile、`tauri build` は release profile で sidecar を build し、Tauri の target-triple suffix 付きで `apps/desktop/src-tauri/binaries/` にコピーします。
 
 Rust test を実行します。
 
@@ -45,3 +47,13 @@ static frontend を build します。
 ```bash
 pnpm --filter desktop build
 ```
+
+## GitHub Releases 向け build
+
+証明書不要の ad-hoc 署名を行った macOS ZIP と SHA-256 file を repository root の `dist/` に作成します。
+
+```bash
+pnpm release:github
+```
+
+ad-hoc 署名版は Apple Developer certificate なしで GitHub Releases へ upload できますが、利用者は初回起動時に macOS の `プライバシーとセキュリティ` から実行を明示的に許可する必要があります。artifact の検証、GitHub CLI upload、Developer ID 署名・公証への移行手順は `docs/RELEASE.md` を参照してください。

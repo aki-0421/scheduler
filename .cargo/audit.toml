@@ -1,0 +1,4 @@
+[advisories]
+# SQLx keeps its optional MySQL backend in Cargo.lock, but this workspace enables only SQLite.
+# `cargo tree --target all -i rsa@0.9.10` must remain empty when this exception is reviewed.
+ignore = ["RUSTSEC-2023-0071"]

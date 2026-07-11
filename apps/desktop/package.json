@@ -7,7 +7,9 @@
     "dev": "next dev --hostname 127.0.0.1 --port 4317",
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
+    "release:github": "pnpm tauri build && node scripts/package-github-release.mjs",
     "sidecars:prepare": "node scripts/prepare-sidecars.mjs",
+    "sidecars:prepare:release": "node scripts/prepare-sidecars.mjs --release",
     "test": "vitest run",
     "tauri": "tauri"
   },

@@ -28,6 +28,7 @@ desktop task wizard は timezone を選択させず、task の作成または更
 test 済み cron behavior:
 
 - `* * * * *` は 1 分粒度で schedule できる。
+- cron occurrence は必ず whole second に正規化し、計算開始時刻の subsecond 値を次回時刻へ引き継がない。
 - seconds をサポートしないため、6-field cron expression は rejected される。
 - invalid cron value と `@daily` のような macro-style expression は rejected される。
 - spring-forward による存在しない local time は次の valid instant に roll forward する。
@@ -86,6 +87,8 @@ runner は current task ID、current run ID、socket path、timezone、app versi
 redacted environment JSON は secret ではない scheduler identifier を保持し、token、API key、password、類似 secret を mask する。
 
 ## Log と result
+
+run setup が workspace / log directory 準備などで失敗した場合、daemon は `run.setup_failed` event を永続化してから run を `failed` / `setup_failure` に更新する。したがって terminal status を観測した caller は対応 event も同時に取得できる。
 
 各 run は次を記録する。
 

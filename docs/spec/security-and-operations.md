@@ -95,16 +95,18 @@ retention cleanup は expired capability token、古い terminal run history、e
 
 ## Release operation
 
-release artifact は sidecar binary を含む Tauri `.app` bundle である。release build は packaging 前に sidecar を準備し、sidecar を含む app bundle 全体を sign / notarize する必要がある。
+release artifact は release profile の sidecar binary を含む Tauri `.app` bundle である。repository root の `pnpm release:github` は `.app` を build し、証明書不要の ad-hoc identity `-` で app、sidecar、resource を seal した ZIP と SHA-256 file を `dist/` に生成する。packager は app main executable と両 sidecar が存在して実行可能であり、bundle 全体の `codesign --verify --deep --strict` が成功しなければ失敗する。
 
-release build 後の推奨 verification:
+ad-hoc 署名 ZIP は Apple Developer certificate なしで GitHub Releases へ upload できるが、developer identity の証明や notarization は行われない。download した user は macOS Gatekeeper の警告後に `プライバシーとセキュリティ` から `このまま開く` を選ぶ必要がある。release note はこの手順と checksum verification を明示する。
+
+Developer ID 署名・公証を行う build では、release build 後に repository root の artifact path を検証する。
 
 ```bash
-codesign --verify --deep --strict --verbose=2 apps/desktop/src-tauri/target/release/bundle/macos/Codex\ Scheduler.app
-spctl --assess --type execute --verbose apps/desktop/src-tauri/target/release/bundle/macos/Codex\ Scheduler.app
+codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/Clockhand.app
+spctl --assess --type execute --verbose target/release/bundle/macos/Clockhand.app
 ```
 
-macOS signing と notarization の full checklist は release document を使う。
+ad-hoc 署名 GitHub 配布と、Developer ID 署名・公証へ移行する場合の full checklist は release document を使う。
 
 ## Pull request operation
 
@@ -118,9 +120,13 @@ implementation change 後は次の check を使う。
 
 ```bash
 cargo test --workspace
+cargo audit
 pnpm lint
 pnpm test
 pnpm --filter desktop build
+pnpm audit --prod
 ```
+
+`cargo audit` は `.cargo/audit.toml` で `RUSTSEC-2023-0071` だけを除外する。該当する `rsa` は SQLx の optional MySQL backend が lockfile に保持する package であり、この workspace は SQLite feature だけを有効にしている。除外を維持する場合は `cargo tree --target all -i rsa@0.9.10` が dependency path を返さないことを確認する。release macOS binary に `rsa` を含めてはならない。
 
 UI behavior verification には `agent-browser` を使い、screenshot は `/tmp` または ignored local `tmp/` directory に保存する。

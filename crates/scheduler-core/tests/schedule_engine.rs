@@ -71,6 +71,12 @@ fn cron_next_every_minute_and_common_examples() {
             .expect("next"),
         dt("2026-07-07T12:01:00Z")
     );
+    assert_eq!(
+        every_minute
+            .next_after(utc, dt("2026-07-07T12:00:30.987654321Z"))
+            .expect("next without subsecond precision"),
+        dt("2026-07-07T12:01:00Z")
+    );
 
     let every_fifteen = validate_cron("*/15 * * * *").expect("valid cron");
     assert_eq!(

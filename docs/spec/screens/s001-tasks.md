@@ -41,6 +41,7 @@ read_when:
 
 フィールドとコントロール:
 
+- Archived membership: completed one-shot、paused / stopped task、active manual task、または active でも `nextRunAt` を持たない task。将来の `nextRunAt` を持つ active one-shot は sidebar の予定 task だけに表示し、archived table には含めない。
 - Archived sort: 実行の新しい順。実行がない archived task は updatedAt または createdAt の新しい順で末尾に置く。
 - Detail actions: detail header 内の run now、pause / resume、`管理` menu。menu は duplicate、lock / unlock、delete をこの順で持つ。設定変更は `設定` tab の `変更を保存` で確定する。
 - Lock: locked task は AI エージェントが使う CLI / scheduled-run actor からの edit、delete、pause、resume を拒否する。desktop UI の user actor は lock 中も edit、delete、pause、resume できる。
@@ -58,7 +59,7 @@ read_when:
 
 バリデーションとエラー:
 
-- mutation は success / failure の toast feedback を使う。
+- mutation は success / failure の toast feedback を使う。`変更を保存` が成功した場合は `変更を保存しました` を表示する。
 - delete は confirmation dialog で guard される。
 - desktop UI は lock state にかかわらず edit、delete、pause、resume を許可する。CLI / scheduled-run actor による mutation は backend が拒否する。
 
@@ -87,7 +88,7 @@ read_when:
 - task detail は `実行履歴` と `設定` の 2 tabs だけを持ち、`実行履歴` が初期表示される。
 - recurring task の session history には複数の run が newest-first で表示される。
 - session history row を押すと `/runs?run=<runId>` が開く。
-- archived table は completed one-shot と paused / stopped task を実行の新しい順に表示し、各 task を列見出しに対応する 1 row に収める。
+- archived table は completed one-shot と paused / stopped task を実行の新しい順に表示し、各 task を列見出しに対応する 1 row に収める。将来の実行予定を持つ active one-shot は表示しない。
 - `Run now` が成功した場合、app は scheduler data を invalidate し、`Run queued` toast を表示する。
 - locked task でも desktop UI の edit / delete / pause / resume action と設定保存を利用でき、`管理` trigger に lock state、menu 内に unlock action が表示される。
 - `設定` tab は新規 task 作成画面と同じ field、section order、responsive layout を再利用し、dialog を開かずに編集・保存できる。

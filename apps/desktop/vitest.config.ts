@@ -8,6 +8,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./test/setup.ts"],
     globals: true,
+    // Keep concurrent jsdom work below async mock timeouts on shared CI runners.
+    maxWorkers: 2,
   },
   resolve: {
     alias: {

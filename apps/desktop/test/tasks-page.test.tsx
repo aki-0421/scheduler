@@ -32,10 +32,13 @@ describe("TasksPage archived table", () => {
     ]);
 
     const rows = within(table).getAllByRole("row").slice(1);
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     expect(
       rows.every((row) => within(row).getAllByRole("cell").length === 6),
     ).toBe(true);
+    expect(
+      within(table).queryByRole("link", { name: "リリースノート下書き" }),
+    ).not.toBeInTheDocument();
 
     const dependencyScanRow = within(table).getByRole("row", {
       name: /依存関係スキャン/,

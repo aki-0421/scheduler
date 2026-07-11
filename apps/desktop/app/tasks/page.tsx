@@ -43,7 +43,6 @@ function isArchivedTask(task: TaskDto) {
   return (
     task.status !== "active" ||
     task.kind === "manual" ||
-    task.kind === "once" ||
     !task.nextRunAt
   );
 }
@@ -136,7 +135,7 @@ function TasksPageContent() {
     <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-5">
       <PageHeader
         title="アーカイブ済み"
-        description="停止中、完了済み、1回きりのタスクを確認します。"
+        description="停止中、完了済み、手動実行のタスクを確認します。"
       />
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
@@ -220,7 +219,7 @@ function TasksPageContent() {
           <EmptyState
             icon={Folder}
             title="アーカイブ済みタスクはありません"
-            description="停止中、完了済み、1回きりのタスクがここに表示されます。"
+            description="停止中、完了済み、手動実行のタスクがここに表示されます。"
             className="flex-1 border-0"
             action={{ label: "新規タスク", href: "/tasks/new" }}
           />
