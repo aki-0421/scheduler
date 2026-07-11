@@ -1155,6 +1155,8 @@ async fn missed_runs_are_skipped_even_if_legacy_policy_requests_catchup() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let config = DaemonConfig::for_data_dir(temp_dir.path())
         .with_tick_interval(Duration::from_secs(3600))
+        // A duplicate startup tick would treat the next minute as due.
+        .with_due_grace(Duration::from_secs(61))
         .with_shutdown_grace(Duration::from_millis(20));
     let db = scheduler_core::db::SchedulerDb::connect(&config.paths.db_path)
         .await
