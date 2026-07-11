@@ -31,7 +31,7 @@ shift
 shift
 goto parse
 :run
-more >nul
+more 1>&2
 echo prompt: Say done 1>&2
 echo prompt: Check project status. 1>&2
 echo {"type":"session","id":"sess_dummy_success"}
