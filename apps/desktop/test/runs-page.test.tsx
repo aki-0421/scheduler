@@ -10,9 +10,13 @@ const navigation = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: navigation.replace }),
   useSearchParams: () => new URLSearchParams(navigation.search),
 }));
+
+vi.mock("@/lib/navigation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/navigation")>();
+  return { ...actual, replaceWithScreen: navigation.replace };
+});
 
 describe("RunsPage", () => {
   beforeEach(() => {

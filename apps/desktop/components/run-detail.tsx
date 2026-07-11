@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -17,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { AppLink } from "@/components/app-link";
 import { MarkdownContent } from "@/components/markdown-content";
 import { RunStatusBadge } from "@/components/status-badge";
 import {
@@ -334,10 +334,10 @@ export function RunDetail({ run, task }: RunDetailProps) {
     <section className="mx-auto w-full max-w-4xl pb-12">
       <header className="pb-6">
         <Button variant="ghost" size="sm" className="-ml-3 mb-4" asChild>
-          <Link href={`/tasks?task=${encodeURIComponent(run.taskId)}`}>
+          <AppLink href={`/tasks?task=${encodeURIComponent(run.taskId)}`}>
             <ArrowLeft data-icon="inline-start" aria-hidden="true" />
             タスクへ戻る
-          </Link>
+          </AppLink>
         </Button>
 
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">

@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   CalendarClock,
   CircleSlash,
@@ -15,6 +14,7 @@ import {
 import { Suspense } from "react";
 
 import { EmptyState } from "@/components/empty-state";
+import { AppLink } from "@/components/app-link";
 import { PageHeader } from "@/components/page-header";
 import { RunStatusBadge, TaskStatusBadge } from "@/components/status-badge";
 import { TaskHeaderActions } from "@/components/task-actions";
@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/table";
 import { ValueBadge } from "@/components/value-badge";
 import { taskLastRun } from "@/lib/format";
+import { navigateToScreen } from "@/lib/navigation";
 import { useRuns, useTask, useTasks } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
 
@@ -72,7 +73,6 @@ function taskScheduleIcon(task: TaskDto) {
 }
 
 function TaskScreen({ taskId }: { taskId: string }) {
-  const router = useRouter();
   const task = useTask(taskId);
   const runs = useRuns({ taskId });
 
@@ -102,7 +102,7 @@ function TaskScreen({ taskId }: { taskId: string }) {
         actions={
           <TaskHeaderActions
             task={task.data}
-            onDeleted={() => router.push("/tasks?view=archived")}
+            onDeleted={() => navigateToScreen("/tasks?view=archived")}
           />
         }
       />
@@ -161,13 +161,13 @@ function TasksPageContent() {
                     <TableRow key={task.id}>
                       <TableCell className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2">
-                          <Link
+                          <AppLink
                             href={`/tasks?task=${encodeURIComponent(task.id)}`}
                             title={task.name}
                             className="min-w-0 truncate rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           >
                             {task.name}
-                          </Link>
+                          </AppLink>
                           <TaskStatusBadge status={task.status} />
                         </div>
                       </TableCell>

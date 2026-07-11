@@ -1,5 +1,4 @@
-import Link from "next/link";
-
+import { AppLink } from "@/components/app-link";
 import { Button } from "@/components/ui/button";
 
 export default function NotFound() {
@@ -13,7 +12,7 @@ export default function NotFound() {
         </p>
         <div className="mt-2 flex justify-center">
           <Button asChild>
-            <Link href="/projects">プロジェクトへ戻る</Link>
+            <AppLink href="/projects">プロジェクトへ戻る</AppLink>
           </Button>
         </div>
       </div>

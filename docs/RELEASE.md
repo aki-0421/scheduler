@@ -32,7 +32,7 @@ tag 駆動 release は次の 5 target、7 artifact、7 SHA-256 file を 1 つの
 - desktop package、Tauri config、4 Rust package、desktop Rust package の version が一致する。tag はその version に `v` を付けた値である。
 - tag の commit は `origin/main` に含まれる。
 - 各 target の app と sidecar は同じ commit、Rust target triple、Cargo `release` profile から build する。
-- frontend production build は全 static screen が Clockhand の HTML であり、`NEXT_REDIRECT` などの error payload でないことを bundle 作成前に検証する。
+- frontend production build は全 static screen が UTF-8 の Clockhand HTML であり、`NEXT_REDIRECT` などの error payload でないことに加え、runtime source の TypeScript AST と navigation helper 構造を検査する。Next router API、path を変更する History API、内部または解決不能な raw anchor を拒否して、内部遷移が独立 HTML への document navigation に統一されていること、pre-paint theme script と `color-scheme` が全画面の head / CSP に整合していることを bundle 作成前に検証する。
 - packager は app main binary と両 sidecar の architecture を検証する。macOS では executable bit、bundle seal、ZIP 展開後の seal も検証する。
 - 個々の artifact に `<artifact>.sha256` を付ける。
 - publish job は 5 つの target manifest と 7 artifact / checksum pair を再検証する。一部でも欠けた場合は GitHub Release を作成しない。

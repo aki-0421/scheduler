@@ -47,7 +47,7 @@ describe("TasksPage archived table", () => {
       within(dependencyScanRow).getByRole("link", {
         name: "依存関係スキャン",
       }),
-    ).toHaveAttribute("href", "/tasks?task=task_dependency_scan");
+    ).toHaveAttribute("href", "/tasks/?task=task_dependency_scan");
     expect(
       screen.queryByText(
         "/Users/aki-0421/conductor/workspaces/scheduler/davis-v2",

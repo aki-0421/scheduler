@@ -99,7 +99,7 @@ describe("AppShell", () => {
 
     expect(
       await screen.findByRole("link", { name: "毎日のリポジトリレビュー" }),
-    ).toHaveAttribute("href", "/tasks?task=task_daily_review");
+    ).toHaveAttribute("href", "/tasks/?task=task_daily_review");
     expect(
       screen.queryByRole("link", { name: "実行履歴" }),
     ).not.toBeInTheDocument();

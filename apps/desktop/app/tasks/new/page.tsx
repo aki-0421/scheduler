@@ -1,11 +1,12 @@
 "use client";
 
 import { Suspense, useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { PageHeader } from "@/components/page-header";
 import { TaskWizard } from "@/components/task-wizard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { navigateToScreen } from "@/lib/navigation";
 import { taskToDraft } from "@/lib/task-draft";
 import { useTask } from "@/lib/queries";
 import type { TaskDto } from "@/lib/types";
@@ -41,7 +42,6 @@ function NewTaskLoading({
 }
 
 function NewTaskPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const prefillFromTask = searchParams.get("prefillFromTask") ?? undefined;
   const duplicateFromTask = searchParams.get("duplicateFromTask") ?? undefined;
@@ -82,7 +82,7 @@ function NewTaskPageContent() {
   }, [duplicateFromTask, sourceRun, sourceTask.data]);
 
   function handleSaved(task: TaskDto) {
-    router.push(`/tasks?task=${encodeURIComponent(task.id)}`);
+    navigateToScreen(`/tasks?task=${encodeURIComponent(task.id)}`);
   }
 
   if ((prefillFromTask || duplicateFromTask) && sourceTask.isLoading) {

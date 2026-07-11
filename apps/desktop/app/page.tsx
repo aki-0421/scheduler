@@ -1,15 +1,14 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-export default function HomePage() {
-  const router = useRouter();
+import { AppLink } from "@/components/app-link";
+import { replaceWithScreen } from "@/lib/navigation";
 
+export default function HomePage() {
   useEffect(() => {
-    router.replace("/projects");
-  }, [router]);
+    replaceWithScreen("/projects");
+  }, []);
 
   return (
     <div className="grid min-h-[60vh] place-items-center px-6 text-center">
@@ -17,12 +16,12 @@ export default function HomePage() {
         <p role="status" className="text-sm text-muted-foreground">
           プロジェクトを開いています…
         </p>
-        <Link
+        <AppLink
           href="/projects"
           className="text-sm font-medium text-foreground underline underline-offset-4"
         >
           自動的に移動しない場合はこちら
-        </Link>
+        </AppLink>
       </div>
     </div>
   );

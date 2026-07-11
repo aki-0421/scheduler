@@ -1,12 +1,13 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { Suspense, useEffect } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { RunDetail } from "@/components/run-detail";
 import { Skeleton } from "@/components/ui/skeleton";
+import { replaceWithScreen } from "@/lib/navigation";
 import { useRun, useTask } from "@/lib/queries";
 
 function RunDetailSkeleton() {
@@ -56,15 +57,14 @@ function SelectedRunPage({ runId }: { runId: string }) {
 }
 
 function RunsPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const selectedRunId = searchParams.get("run");
 
   useEffect(() => {
     if (!selectedRunId) {
-      router.replace("/projects");
+      replaceWithScreen("/projects");
     }
-  }, [router, selectedRunId]);
+  }, [selectedRunId]);
 
   return selectedRunId ? <SelectedRunPage runId={selectedRunId} /> : null;
 }

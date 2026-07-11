@@ -6,19 +6,43 @@ import { Toaster } from "sonner";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+type ThemeRuntime = {
+  applyTheme: () => void;
+  media: MediaQueryList;
+};
+
+declare global {
+  interface Window {
+    __CLOCKHAND_THEME__?: ThemeRuntime;
+  }
+}
+
+function createThemeRuntime(): ThemeRuntime {
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  const applyTheme = () => {
+    let storedTheme = null;
+    try {
+      storedTheme = window.localStorage.getItem("codex-scheduler-theme");
+    } catch {
+      // Use the operating-system preference when storage is unavailable.
+    }
+
+    const dark =
+      storedTheme === "dark" || (storedTheme !== "light" && media.matches);
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  };
+
+  return { applyTheme, media };
+}
+
 function ThemeController() {
   useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const applyTheme = () => {
-      const stored = window.localStorage.getItem("codex-scheduler-theme");
-      const shouldUseDark =
-        stored === "dark" || (stored !== "light" && media.matches);
-      document.documentElement.classList.toggle("dark", shouldUseDark);
-    };
-
-    applyTheme();
-    media.addEventListener("change", applyTheme);
-    return () => media.removeEventListener("change", applyTheme);
+    const runtime = window.__CLOCKHAND_THEME__ ?? createThemeRuntime();
+    runtime.applyTheme();
+    runtime.media.addEventListener("change", runtime.applyTheme);
+    return () =>
+      runtime.media.removeEventListener("change", runtime.applyTheme);
   }, []);
 
   return null;
