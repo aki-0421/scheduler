@@ -1,9 +1,10 @@
 ---
 title: リリース
-description: Clockhand の GitHub Releases 向け ad-hoc 署名配布、Developer ID 署名、notarization、sidecar bundle、release build 検証手順を定義する。
+description: Clockhand のタグ駆動 GitHub Release、ad-hoc 署名配布、Developer ID 署名、notarization、sidecar bundle、release build 検証手順を定義する。
 updated: 2026-07-11
 read_when:
   - Clockhand の macOS release build、署名、notarization、配布を行うとき。
+  - GitHub Actions の release workflow、version tag、release asset を変更するとき。
   - Tauri sidecar binary の bundle や release artifact 検証を変更するとき。
 ---
 
@@ -26,6 +27,9 @@ release artifact は、次をすべて満たす必要がある。
 - `dist/` に architecture と `adhoc` を明示した ZIP と、その SHA-256 file が生成される。
 - ad-hoc 署名版の release note は Gatekeeper の手動許可手順と SHA-256 検証方法を案内する。
 - frontend / Rust の test、lint、production dependency audit、documentation lint が成功する。
+- `main` に含まれる commit へ `v<package-version>` tag を push すると `.github/workflows/release.yml` が起動し、macOS arm64 artifact を GitHub Release として公開する。
+- workflow は tag と `apps/desktop/package.json` の version が完全一致しない場合、または tag の commit が `origin/main` に含まれない場合に release を作成しない。
+- release job の `GITHUB_TOKEN` は repository contents の書き込みだけを許可し、それ以外の権限を付与しない。
 
 ## GitHub Releases 向け ad-hoc 署名配布
 
@@ -53,7 +57,36 @@ shasum -a 256 -c Clockhand-0.1.0-macos-arm64-adhoc.zip.sha256
 
 ad-hoc build に対する `spctl --assess` の `rejected` は developer identity と notarization がないことを示す期待結果であり、bundle seal の失敗とは区別する。bundle integrity は上記の `codesign --verify` で判定する。
 
-GitHub CLI で release を作成する場合は、version と architecture が一致する 2 file を添付する。
+## タグ駆動 GitHub Release
+
+通常の release は GitHub CLI から直接作成せず、`main` へ merge した release commit に version tag を付ける。version `0.1.0` の場合:
+
+```bash
+git switch main
+git pull --ff-only origin main
+git tag -a v0.1.0 -m "Clockhand 0.1.0"
+git push origin v0.1.0
+```
+
+tag push を契機に `.github/workflows/release.yml` が次を順番に行う。
+
+1. checkout した commit が `origin/main` に含まれることを確認する。
+2. tag が `v<apps/desktop/package.json version>` と完全一致することを確認する。
+3. arm64 macOS runner で依存関係を固定 lockfile から install する。
+4. `pnpm release:github` で ad-hoc 署名済み ZIP と SHA-256 file を作る。
+5. bundle seal、checksum、architecture、3 executable の存在と実行権限を検証する。
+6. Gatekeeper の手動許可案内と自動生成 changelog を含む GitHub Release を公開し、2 asset を添付する。
+
+tag は公開 identifier である。公開済み tag の付け替えや同名 release asset の上書きは行わず、修正時は application version を上げて新しい tag を発行する。進行状況と結果は次で確認できる。
+
+```bash
+gh run list --workflow release.yml --limit 5
+gh release view v0.1.0
+```
+
+### 手動 fallback
+
+workflow 障害を調査したうえで release を手動作成する場合に限り、version と architecture が一致する 2 file を添付する。
 
 ```bash
 gh release create v0.1.0 \
@@ -65,7 +98,7 @@ gh release create v0.1.0 \
   --notes "ad-hoc 署名版です。初回起動時は以下の Gatekeeper 手順と SHA-256 を確認してください。"
 ```
 
-この command は外部状態を変更するため、artifact のローカル検証が完了するまで実行しない。
+この command は外部状態を変更するため、artifact のローカル検証が完了し、自動 workflow を使えない理由が確認できるまで実行しない。
 
 ### 利用者向け Gatekeeper 手順
 

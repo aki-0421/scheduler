@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 4317",
-    "build": "next build",
+    "build": "next build && node scripts/verify-static-entry.mjs",
     "lint": "eslint . --max-warnings=0",
     "release:github": "pnpm tauri build && node scripts/package-github-release.mjs",
     "sidecars:prepare": "node scripts/prepare-sidecars.mjs",

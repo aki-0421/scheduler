@@ -56,4 +56,6 @@ pnpm --filter desktop build
 pnpm release:github
 ```
 
-ad-hoc 署名版は Apple Developer certificate なしで GitHub Releases へ upload できますが、利用者は初回起動時に macOS の `プライバシーとセキュリティ` から実行を明示的に許可する必要があります。artifact の検証、GitHub CLI upload、Developer ID 署名・公証への移行手順は `docs/RELEASE.md` を参照してください。
+通常は release commit を `main` へ merge した後、application version と一致する tag（例: `v0.1.0`）を push する。`.github/workflows/release.yml` が arm64 artifact の build、署名・checksum 検証、GitHub Release 公開を自動実行する。
+
+ad-hoc 署名版は Apple Developer certificate なしで GitHub Releases へ upload できますが、利用者は初回起動時に macOS の `プライバシーとセキュリティ` から実行を明示的に許可する必要があります。artifact の検証、tag 発行、自動 release、Developer ID 署名・公証への移行手順は `docs/RELEASE.md` を参照してください。

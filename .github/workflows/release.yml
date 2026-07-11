@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: macOS arm64
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          release_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          if ! git merge-base --is-ancestor "$release_commit" origin/main; then
+            echo "Release tag must point to a commit contained in origin/main." >&2
+            exit 1
+          fi
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.2
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust
+        shell: bash
+        run: rustup toolchain install 1.88.0 --profile minimal --no-self-update
+
+      - name: Verify tag, version, and architecture
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          expected_tag="v${version}"
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match application version ${version}." >&2
+            exit 1
+          fi
+          if [[ "$(uname -m)" != "arm64" || "$(node -p 'process.arch')" != "arm64" ]]; then
+            echo "Release workflow requires a native arm64 macOS runner." >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "artifact=dist/Clockhand-${version}-macos-arm64-adhoc.zip" >> "$GITHUB_OUTPUT"
+          echo "checksum=dist/Clockhand-${version}-macos-arm64-adhoc.zip.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build release artifact
+        run: pnpm release:github
+
+      - name: Verify release artifact
+        env:
+          ARTIFACT: ${{ steps.release.outputs.artifact }}
+          CHECKSUM: ${{ steps.release.outputs.checksum }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="target/release/bundle/macos/Clockhand.app"
+          test -f "$ARTIFACT"
+          test -f "$CHECKSUM"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          for executable in codex-scheduler-desktop codex-schedulerd codex-schedule; do
+            binary="$app/Contents/MacOS/$executable"
+            test -x "$binary"
+            if [[ "$(lipo -archs "$binary")" != "arm64" ]]; then
+              echo "$binary is not an arm64-only executable." >&2
+              exit 1
+            fi
+          done
+          (cd dist && shasum -a 256 -c "$(basename "$CHECKSUM")")
+          extract_dir="$(mktemp -d)"
+          trap 'rm -rf "$extract_dir"' EXIT
+          ditto -x -k "$ARTIFACT" "$extract_dir"
+          codesign --verify --deep --strict --verbose=2 "$extract_dir/Clockhand.app"
+
+      - name: Preserve workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clockhand-${{ steps.release.outputs.version }}-macos-arm64-adhoc
+          path: |
+            ${{ steps.release.outputs.artifact }}
+            ${{ steps.release.outputs.checksum }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          ARTIFACT: ${{ steps.release.outputs.artifact }}
+          CHECKSUM: ${{ steps.release.outputs.checksum }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_notes="$(cat <<'EOF'
+          ## macOS arm64版
+
+          このリリースはApple Developer ID証明書を使わないad-hoc署名版です。Apple Silicon Macが対象です。
+
+          ### ダウンロードの検証
+
+          ZIPと同じリリースにある`.sha256`ファイルを同じフォルダへ保存し、ターミナルで`shasum -a 256 -c <ファイル名>.sha256`を実行してください。
+
+          ### 初回起動
+
+          Finderで一度Clockhandを開いた後、macOSの「システム設定」→「プライバシーとセキュリティ」→「このまま開く」を選択してください。
+          EOF
+          )"
+          gh release create "$GITHUB_REF_NAME" \
+            "$ARTIFACT" \
+            "$CHECKSUM" \
+            --title "Clockhand ${VERSION}" \
+            --verify-tag \
+            --fail-on-no-commits \
+            --generate-notes \
+            --notes "$release_notes" \
+            --latest
