@@ -3,15 +3,17 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use scheduler_core::db::migrations::SCHEMA_VERSION;
 use scheduler_core::ipc::{
-    JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ProjectListResult, JSONRPC_VERSION,
-    METHOD_DAEMON_DIAGNOSTICS, METHOD_DAEMON_HEALTH, METHOD_DAEMON_TICK_NOW, METHOD_PROJECT_LIST,
-    METHOD_PROJECT_TRUST, METHOD_RUN_CANCEL, METHOD_RUN_GET, METHOD_RUN_LIST, METHOD_RUN_TAIL_LOG,
-    METHOD_SETTINGS_GET, METHOD_SETTINGS_SET, METHOD_TASK_AUDIT_LIST, METHOD_TASK_CREATE,
-    METHOD_TASK_DELETE, METHOD_TASK_GET, METHOD_TASK_LIST, METHOD_TASK_PAUSE, METHOD_TASK_RESUME,
-    METHOD_TASK_RUN_NOW, METHOD_TASK_UPDATE,
+    daemon_compatibility, DaemonCompatibility, DaemonHealthResult, JsonRpcError, JsonRpcId,
+    JsonRpcRequest, JsonRpcResponse, ProjectListResult, JSONRPC_VERSION, METHOD_DAEMON_DIAGNOSTICS,
+    METHOD_DAEMON_HEALTH, METHOD_DAEMON_TICK_NOW, METHOD_PROJECT_LIST, METHOD_PROJECT_TRUST,
+    METHOD_RUN_CANCEL, METHOD_RUN_GET, METHOD_RUN_LIST, METHOD_RUN_TAIL_LOG, METHOD_SETTINGS_GET,
+    METHOD_SETTINGS_SET, METHOD_TASK_AUDIT_LIST, METHOD_TASK_CREATE, METHOD_TASK_DELETE,
+    METHOD_TASK_GET, METHOD_TASK_LIST, METHOD_TASK_PAUSE, METHOD_TASK_RESUME, METHOD_TASK_RUN_NOW,
+    METHOD_TASK_UPDATE,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -25,6 +27,8 @@ use tokio::sync::Mutex;
 type CommandResult<T> = Result<T, String>;
 #[cfg(unix)]
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(35);
+const DAEMON_STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
+const DAEMON_HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DAEMON_LOG_TAIL_BYTES: u64 = 64 * 1024;
 const LOG_EXPORT_TAIL_BYTES: usize = 256 * 1024;
 const PROMPT_FILE_MAX_BYTES: u64 = 200 * 1024;
@@ -96,6 +100,7 @@ impl DaemonManager {
             Ok(value) => Ok(value),
             Err(BackendError::Transport(_)) => {
                 self.respawn(app).await?;
+                self.wait_for_compatible_daemon().await?;
                 self.call(method, params)
                     .await
                     .map_err(|err| err.to_string())
@@ -105,25 +110,17 @@ impl DaemonManager {
     }
 
     async fn ensure_daemon(&self, app: &AppHandle) -> Result<(), String> {
-        if self.health().await.is_ok() {
+        if !daemon_requires_start(self.health().await)? {
             return Ok(());
         }
 
         let _guard = self.lifecycle_lock.lock().await;
-        if self.health().await.is_ok() {
+        if !daemon_requires_start(self.health().await)? {
             return Ok(());
         }
 
         self.spawn_or_restart(app).await?;
-        for attempt in 0..6 {
-            if self.health().await.is_ok() {
-                return Ok(());
-            }
-            let delay = Duration::from_millis(100 + attempt * 150);
-            tokio::time::sleep(delay).await;
-        }
-
-        Err("codex-schedulerd did not become healthy after spawn".to_owned())
+        self.wait_for_compatible_daemon().await
     }
 
     async fn respawn(&self, app: &AppHandle) -> Result<(), String> {
@@ -193,8 +190,26 @@ impl DaemonManager {
         !self.shutdown_started.swap(true, Ordering::SeqCst)
     }
 
-    async fn health(&self) -> Result<Value, BackendError> {
-        self.call(METHOD_DAEMON_HEALTH, json!({})).await
+    async fn health(&self) -> Result<DaemonHealthResult, BackendError> {
+        let value = self.call(METHOD_DAEMON_HEALTH, json!({})).await?;
+        serde_json::from_value(value).map_err(|err| BackendError::Decode(err.to_string()))
+    }
+
+    async fn wait_for_compatible_daemon(&self) -> Result<(), String> {
+        let started = Instant::now();
+        loop {
+            if !daemon_requires_start(self.health().await)? {
+                return Ok(());
+            }
+            if started.elapsed() >= DAEMON_STARTUP_TIMEOUT {
+                return Err(format!(
+                    "codex-schedulerd {} (schema {}) did not become available after replacement",
+                    env!("CARGO_PKG_VERSION"),
+                    SCHEMA_VERSION
+                ));
+            }
+            tokio::time::sleep(DAEMON_HEALTH_POLL_INTERVAL).await;
+        }
     }
 
     async fn call(&self, method: &str, params: Value) -> Result<Value, BackendError> {
@@ -228,6 +243,26 @@ impl DaemonManager {
         }
 
         Ok(false)
+    }
+}
+
+fn daemon_requires_start(health: Result<DaemonHealthResult, BackendError>) -> Result<bool, String> {
+    let Ok(health) = health else {
+        return Ok(true);
+    };
+
+    match daemon_compatibility(&health, env!("CARGO_PKG_VERSION"), SCHEMA_VERSION) {
+        DaemonCompatibility::Compatible => Ok(false),
+        DaemonCompatibility::Older | DaemonCompatibility::Unhealthy => Ok(true),
+        DaemonCompatibility::Newer => Err(format!(
+            "a newer codex-schedulerd {} (schema {}) is already using this Clockhand data; update the desktop app before continuing",
+            health.version, health.db_schema_version
+        )),
+        DaemonCompatibility::UnknownVersion => Err(format!(
+            "cannot safely compare codex-schedulerd version {} with desktop version {}",
+            health.version,
+            env!("CARGO_PKG_VERSION")
+        )),
     }
 }
 

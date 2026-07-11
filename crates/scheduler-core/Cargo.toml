@@ -1,6 +1,6 @@
 [package]
 name = "scheduler-core"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -16,6 +16,7 @@ croner.workspace = true
 dunce.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+semver.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
 sqlx-macros.workspace = true

@@ -1,7 +1,7 @@
 ---
 title: インターフェース
 description: 実装済み desktop UI、Tauri command、daemon JSON-RPC、codex-schedule CLI interface を定義する。
-updated: 2026-07-11
+updated: 2026-07-12
 read_when:
   - UI page、IPC schema、Tauri command、daemon RPC method、codex-schedule behavior を変更するとき。
   - Clockhand と通信する automation を書くとき。
@@ -48,7 +48,7 @@ desktop backend は次の command を frontend に公開する。
 
 ## Daemon JSON-RPC
 
-daemon は macOS / Linux の Unix domain socket、または Windows local named pipe 上で newline-delimited JSON-RPC 2.0 を受け入れる。transport にかかわらず method、schema、error code は同一である。`daemon.diagnostics` は `dataDir`、`socketPath`（named pipe を含む互換 field name）、`dbPath` を実値で返す。
+daemon は macOS / Linux の Unix domain socket、または Windows local named pipe 上で newline-delimited JSON-RPC 2.0 を受け入れる。transport にかかわらず method、schema、error code は同一である。`daemon.health` の `version` と `dbSchemaVersion` は desktop が既存 daemon を再利用できるか判定する compatibility contract であり、いずれかが desktop の bundled value と異なる daemon へ user command を送ってはならない。`daemon.diagnostics` は `dataDir`、`socketPath`（named pipe を含む互換 field name）、`dbPath` を実値で返す。
 
 実装済み method name:
 

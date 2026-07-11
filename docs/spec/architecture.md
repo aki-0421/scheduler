@@ -1,7 +1,7 @@
 ---
 title: アーキテクチャ
 description: 実装済み Clockhand の process layout、crate、app shell、sidecar、storage、runtime path を説明する。
-updated: 2026-07-11
+updated: 2026-07-12
 read_when:
   - desktop shell、daemon process、sidecar packaging、Rust workspace、IPC、persistent runtime path を変更するとき。
   - UI、daemon、CLI、runner、SQLite database がどう接続されるか debug するとき。
@@ -31,9 +31,12 @@ Tauri backend は daemon sidecar を管理する。
 
 - override env var、現在の app executable と同じ directory、Tauri の bundled resource / executable path、development build path、または `PATH` から platform の executable suffix を付けた `codex-schedulerd` を探す。bundle 内では app executable の隣と `binaries` directory を優先する。
 - `--data-dir` と `--socket-path` を指定して daemon を起動する。
+- 既存 endpoint の `daemon.health` が成功しても、その daemon の app version と DB schema version が desktop に同梱された値の両方と一致する場合だけ再利用する。不一致の daemon は同じ data directory の private lock metadata で process を特定して終了を待ち、bundled daemon に入れ替えてから user command を送る。これにより migration 後の DB を旧 process が古い query で操作することを防ぐ。
 - transport failure を daemon respawn と command retry 1 回の signal として扱う。
 - app shutdown 時に macOS / Linux では daemon process group、Windows では daemon process tree を終了する。
 - 主に daemon JSON-RPC method へ proxy する Tauri command を公開する。
+
+daemon compatibility の順序判定は `scheduler-core::ipc::daemon_compatibility` を source of truth とし、desktop の接続判定と `schedulerd` の single-instance lock takeover の両方から使う。schema と semantic version がどちらも bundled daemon 以下で、少なくとも一方が古い process だけを置換できる。いずれかが新しい process や、両者の新旧が矛盾して順序を安全に決められない process は停止させない。`cargo test -p schedulerd replaces_a_healthy_older_daemon_lock_holder` は、旧 health response と private lock を持つ subprocess を起動し、新 daemon が endpoint と PID を検証して graceful replacement 後に lock を取得することを検証する。task command が migration 後に旧 column を参照する場合は、DB を削除せず、最初に `daemon.health` の `version` / `dbSchemaVersion` と daemon log を確認する。
 
 ## Daemon
 
