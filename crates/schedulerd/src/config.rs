@@ -1,4 +1,3 @@
-use std::env;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -52,20 +51,14 @@ pub struct AppPaths {
 
 impl AppPaths {
     pub fn default_data_dir() -> PathBuf {
-        if let Some(home) = env::var_os("HOME") {
-            return PathBuf::from(home)
-                .join("Library")
-                .join("Application Support")
-                .join("Codex Scheduler");
-        }
-        PathBuf::from(".").join("Codex Scheduler")
+        scheduler_core::paths::default_data_dir()
     }
 
     pub fn new(data_dir: impl Into<PathBuf>) -> Self {
         let data_dir = data_dir.into();
         Self {
             db_path: data_dir.join("scheduler.sqlite3"),
-            socket_path: data_dir.join("scheduler.sock"),
+            socket_path: scheduler_core::local_transport::default_endpoint(&data_dir),
             lock_path: data_dir.join("scheduler.lock"),
             logs_dir: data_dir.join("logs"),
             daemon_log_path: data_dir.join("logs").join("daemon.log"),
@@ -101,16 +94,27 @@ impl AppPaths {
             std::fs::create_dir_all(parent)?;
             maybe_set_private_dir_permissions(parent, &self.data_dir, "db parent")?;
         }
-        if let Some(parent) = self.socket_path.parent() {
-            std::fs::create_dir_all(parent)?;
-            maybe_set_private_dir_permissions(parent, &self.data_dir, "socket parent")?;
-        }
+        ensure_endpoint_parent(&self.socket_path, &self.data_dir)?;
         if let Some(parent) = self.lock_path.parent() {
             std::fs::create_dir_all(parent)?;
             maybe_set_private_dir_permissions(parent, &self.data_dir, "lock parent")?;
         }
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn ensure_endpoint_parent(endpoint: &Path, data_dir: &Path) -> std::io::Result<()> {
+    if let Some(parent) = endpoint.parent() {
+        std::fs::create_dir_all(parent)?;
+        maybe_set_private_dir_permissions(parent, data_dir, "socket parent")?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn ensure_endpoint_parent(_endpoint: &Path, _data_dir: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 #[derive(Debug, Clone)]

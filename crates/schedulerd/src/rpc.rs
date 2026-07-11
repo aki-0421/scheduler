@@ -8,7 +8,6 @@ use scheduler_core::ipc::{
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
 
 pub async fn health_check(socket_path: &Path) -> anyhow::Result<DaemonHealthResult> {
     call(socket_path, METHOD_DAEMON_HEALTH, serde_json::json!({})).await
@@ -45,9 +44,12 @@ where
     };
     let line = serde_json::to_string(&request)?;
 
-    let stream =
-        tokio::time::timeout(Duration::from_secs(2), UnixStream::connect(socket_path)).await??;
-    let (read, mut write) = stream.into_split();
+    let stream = tokio::time::timeout(
+        Duration::from_secs(2),
+        scheduler_core::local_transport::connect(socket_path),
+    )
+    .await??;
+    let (read, mut write) = tokio::io::split(stream);
     write.write_all(line.as_bytes()).await?;
     write.write_all(b"\n").await?;
     write.flush().await?;

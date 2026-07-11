@@ -82,7 +82,7 @@ project mode には registered Git project root が必要である。legacy `rep
 
 ## Run environment
 
-runner は current task ID、current run ID、socket path、timezone、app version、run token などの scheduler environment variable を追加する。利用可能な場合は app CLI directory を `PATH` の先頭に追加し、scheduled Codex session から `codex-schedule` を見つけられるようにする。
+runner は current task ID、current run ID、local endpoint（互換名 `CODEX_SCHEDULER_SOCKET`）、timezone、app version、run token などの scheduler environment variable を追加する。利用可能な場合は app CLI directory を `PATH` の先頭に追加し、scheduled Codex session から `codex-schedule` を見つけられるようにする。
 
 redacted environment JSON は secret ではない scheduler identifier を保持し、token、API key、password、類似 secret を mask する。
 
@@ -111,7 +111,7 @@ Codex stdout の complete な JSONL event は process 終了時まで buffer せ
 
 ## Cancellation と実行時間
 
-runner は Codex を process group 内で起動する。最大実行時間は設けず、user が明示的に cancel した場合だけ process group を terminate して `canceled` にする。legacy run history の `timed_out` status は読み取り互換のため残す。
+runner は macOS / Linux で Codex を process group 内で起動し、Windows では child process tree を追跡できる PID から起動する。最大実行時間は設けず、user が明示的に cancel した場合だけ Unix process group または Windows process tree を terminate して `canceled` にする。子プロセスの終了は必ず回収する。legacy run history の `timed_out` status は読み取り互換のため残す。
 
 ## Cleanup
 

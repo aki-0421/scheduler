@@ -1,11 +1,12 @@
 ---
 title: 画面仕様
-description: Clockhand の desktop screen specification convention、stable screen ID registry、per-screen spec link を定義する。
+description: Clockhand の desktop screen specification convention、stable screen ID registry、静的配布時の画面検証、per-screen spec link を定義する。
 updated: 2026-07-11
 read_when:
   - desktop app page、dialog、task wizard behavior、screen copy、validation、loading state、empty state、navigation を変更するとき。
   - Clockhand desktop screen に割り当てられた stable screen ID を探すとき。
   - Clockhand の QA check、user-facing screen documentation、acceptance criteria、design handoff note を書くとき。
+  - Next.js static export または Tauri bundle が各画面を HTML document として配布できることを検証するとき。
 ---
 
 # 画面仕様
@@ -39,6 +40,14 @@ read_when:
 - content の階層は page header、section heading、spacing、separator、table header、row divider で示す。外枠を外しても section と row の境界、hover / selected state、keyboard focus は判別できる状態を保つ。
 - tab list は選択中 content の直上に配置し、tab content 自体には外側の bordered panel を置かない。nested tabs も同じ規約を使う。
 - input、selectable radio card、code / log block、chat bubble、status / alert、popover、dialog など、操作または内容の識別に surface が必要な局所要素はこの規約の対象外とする。
+
+## 静的配布規約
+
+- `/`、`/projects`、`/tasks`、`/tasks/new`、`/runs`、`/settings` は、Next.js static export でそれぞれ独立した HTML document を生成する。
+- 各 HTML document は `<!DOCTYPE html>`、日本語の root document、Clockhand の title、route 固有の描画 marker を持つ。React Server Component の `.txt` payload、Next.js error document、`NEXT_REDIRECT` payload を画面 document として配布してはならない。
+- `/` は server redirect を static export せず、通常の HTML fallback から client navigation で `/projects` を開く。Tauri の main window は `/projects/` を直接開く。
+- desktop production build は、上記すべての route output が存在し、error marker を含まず、route 固有の marker を含むことを bundle 作成前に検証する。1画面でも違反した場合は build を失敗させる。
+- route query によって表示を切り替える `/tasks` と `/runs` も、基底 route の HTML document 自体は root layout と client-side loading / navigation fallback を描画できる状態にする。
 
 ## Screen ID registry
 

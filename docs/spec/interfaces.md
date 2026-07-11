@@ -48,7 +48,7 @@ desktop backend は次の command を frontend に公開する。
 
 ## Daemon JSON-RPC
 
-daemon は Unix domain socket 上で newline-delimited JSON-RPC 2.0 を受け入れる。
+daemon は macOS / Linux の Unix domain socket、または Windows local named pipe 上で newline-delimited JSON-RPC 2.0 を受け入れる。transport にかかわらず method、schema、error code は同一である。`daemon.diagnostics` は `dataDir`、`socketPath`（named pipe を含む互換 field name）、`dbPath` を実値で返す。
 
 実装済み method name:
 
@@ -100,7 +100,7 @@ RPC error code は standard JSON-RPC parse / request / method / params / interna
 - `validate-cron`
 - `doctor`
 
-global option には `--json`、`--data-dir`、`--db`、`--socket`、`--allow-direct-db` が含まれる。
+global option には `--json`、`--data-dir`、`--db`、`--socket`、`--allow-direct-db` が含まれる。`--socket` と `CODEX_SCHEDULER_SOCKET` は互換性のため名前を維持し、Windows では named pipe endpoint を受け取る。
 
 task field flag には次が含まれる。
 
@@ -129,6 +129,6 @@ scheduled Codex session は次を使う。
 - `CODEX_SCHEDULER_CURRENT_TASK_ID`
 - `CODEX_SCHEDULER_CURRENT_RUN_ID`
 - `CODEX_SCHEDULER_RUN_TOKEN`
-- `CODEX_SCHEDULER_SOCKET`
+- `CODEX_SCHEDULER_SOCKET`（macOS / Linux の socket path、または Windows named pipe）
 
 token-backed session は schedule create、current / any task update、current task pause、run-now、list action を利用でき、schedule 作成数は制限しない。project add / update / remove と settings write は scheduled session では denied される。

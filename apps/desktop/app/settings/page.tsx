@@ -19,7 +19,12 @@ import {
 import { codexModelOptions } from "@/lib/codex-options";
 import { Switch } from "@/components/ui/switch";
 import { ipcClient } from "@/lib/ipc";
-import { useHealth, useSetSetting, useSettings } from "@/lib/queries";
+import {
+  useDaemonDiagnostics,
+  useHealth,
+  useSetSetting,
+  useSettings,
+} from "@/lib/queries";
 import type { SchedulerSettings } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +59,7 @@ function SettingRow({
   controlClassName?: string;
 }) {
   return (
-    <div className="grid gap-3 border-b py-4 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(14rem,20rem)] md:items-center">
+    <div className="grid gap-3 border-b py-4 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(14rem,28rem)] md:items-center">
       <div className="min-w-0">
         <Label htmlFor={htmlFor} className="text-sm font-medium">
           {label}
@@ -88,6 +93,7 @@ function hasCustomCodexPath(value: string) {
 export default function SettingsPage() {
   const settings = useSettings();
   const health = useHealth();
+  const diagnostics = useDaemonDiagnostics();
   const setSetting = useSetSetting();
   const [form, setForm] = useState<SchedulerSettings>(settings.data);
   const [customizeCodexPath, setCustomizeCodexPath] = useState(() =>
@@ -231,7 +237,7 @@ export default function SettingsPage() {
                 <Input
                   id="codex-path"
                   value={form["runner.codex_path"]}
-                  placeholder="/opt/homebrew/bin/codex"
+                  placeholder="codex または実行ファイルの絶対パス"
                   autoComplete="off"
                   spellCheck={false}
                   aria-invalid={!form["runner.codex_path"].trim() || undefined}
@@ -280,18 +286,18 @@ export default function SettingsPage() {
 
       <SettingsSection title="診断">
         <SettingRow
-          label="ソケットパス"
-          description="デスクトップアプリがスケジューラーデーモンへ接続するための Unix ソケットです。"
+          label="ローカル IPC endpoint"
+          description="デスクトップアプリがスケジューラーデーモンへ接続する Unix socket または Windows named pipe です。"
           controlClassName="md:w-[28rem]"
         >
-          <ReadOnlyCode value="~/Library/Application Support/Codex Scheduler/scheduler.sock" />
+          <ReadOnlyCode value={diagnostics.data?.socketPath ?? "読み込み中…"} />
         </SettingRow>
         <SettingRow
           label="データベースパス"
           description="Clockhand が使用するローカル SQLite データベースです。"
           controlClassName="md:w-[28rem]"
         >
-          <ReadOnlyCode value="~/Library/Application Support/Codex Scheduler/scheduler.sqlite3" />
+          <ReadOnlyCode value={diagnostics.data?.dbPath ?? "読み込み中…"} />
         </SettingRow>
         <SettingRow
           label="スキーマバージョン"

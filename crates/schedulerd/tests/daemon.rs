@@ -67,6 +67,11 @@ fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
 }
 
 fn codex_fixture(name: &str) -> PathBuf {
+    let name = if cfg!(windows) {
+        format!("{}.cmd", name.trim_end_matches(".sh"))
+    } else {
+        name.to_owned()
+    };
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("codex-runner")
@@ -281,7 +286,7 @@ fn init_repo_with_local_main(temp: &TempDir) -> PathBuf {
 }
 
 #[tokio::test]
-async fn daemon_health_returns_shape_over_uds() {
+async fn daemon_health_returns_shape_over_local_transport() {
     let (_temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
 
@@ -303,7 +308,7 @@ async fn daemon_health_returns_shape_over_uds() {
 }
 
 #[tokio::test]
-async fn daemon_diagnostics_returns_runtime_state_over_uds() {
+async fn daemon_diagnostics_returns_runtime_state_over_local_transport() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
     handle.request_tick();
@@ -324,6 +329,13 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
     assert_eq!(
         diagnostics.socket_path,
         handle.socket_path().to_string_lossy()
+    );
+    assert_eq!(
+        diagnostics.db_path,
+        temp.path()
+            .join("scheduler.sqlite3")
+            .to_string_lossy()
+            .into_owned()
     );
     assert!(diagnostics.scheduler_enabled);
     assert_eq!(diagnostics.tick_interval_sec, 3600);
@@ -366,7 +378,7 @@ async fn task_create_generates_unique_slug_for_duplicate_names() {
 }
 
 #[tokio::test]
-async fn daemon_tick_now_triggers_scheduler_tick_over_uds() {
+async fn daemon_tick_now_triggers_scheduler_tick_over_local_transport() {
     let (_temp, handle, executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
 
@@ -411,7 +423,7 @@ async fn daemon_tick_now_triggers_scheduler_tick_over_uds() {
 }
 
 #[tokio::test]
-async fn task_audit_list_returns_task_audit_events_over_uds() {
+async fn task_audit_list_returns_task_audit_events_over_local_transport() {
     let (_temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
 
@@ -502,10 +514,9 @@ async fn project_trust_reuses_a_legacy_project_registered_from_a_subdirectory() 
     let repo = init_repo_with_local_main(&temp);
     let subdirectory = repo.join("packages/app");
     std::fs::create_dir_all(&subdirectory).expect("create project subdirectory");
-    let canonical_repo = repo.canonicalize().expect("canonical repo");
-    let canonical_subdirectory = subdirectory
-        .canonicalize()
-        .expect("canonical project subdirectory");
+    let canonical_repo = scheduler_core::paths::canonicalize(&repo).expect("canonical repo");
+    let canonical_subdirectory =
+        scheduler_core::paths::canonicalize(&subdirectory).expect("canonical project subdirectory");
     let now = now_rfc3339();
     let legacy_project = Project {
         id: new_project_id(),
@@ -571,7 +582,8 @@ async fn project_trust_rejects_a_non_git_directory() {
 async fn project_list_fills_missing_default_branch_from_detected_main() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
-    let repo = std::fs::canonicalize(init_repo_with_origin_main(&temp)).expect("canonical repo");
+    let repo = scheduler_core::paths::canonicalize(init_repo_with_origin_main(&temp))
+        .expect("canonical repo");
 
     let now = now_rfc3339();
     let project = Project {
@@ -907,7 +919,7 @@ async fn retention_cleanup_keeps_worktrees_even_with_legacy_delete_policy() {
     std::fs::write(repo.join("README.md"), "hello\n").expect("write readme");
     run_git(&repo, &["add", "README.md"]);
     run_git(&repo, &["commit", "-m", "initial"]);
-    let repo = std::fs::canonicalize(&repo).expect("canonical repo");
+    let repo = scheduler_core::paths::canonicalize(&repo).expect("canonical repo");
 
     let project = Project {
         id: new_project_id(),
@@ -963,7 +975,7 @@ async fn retention_cleanup_keeps_worktrees_even_with_legacy_delete_policy() {
     clean_run.target_mode = RunTargetMode::RepoWorktree;
     clean_run.workspace_path = Some(clean_worktree.to_string_lossy().into_owned());
     clean_run.worktree_path = Some(
-        std::fs::canonicalize(&clean_worktree)
+        scheduler_core::paths::canonicalize(&clean_worktree)
             .expect("canonical clean")
             .to_string_lossy()
             .into_owned(),
@@ -972,7 +984,7 @@ async fn retention_cleanup_keeps_worktrees_even_with_legacy_delete_policy() {
     dirty_run.target_mode = RunTargetMode::RepoWorktree;
     dirty_run.workspace_path = Some(dirty_worktree.to_string_lossy().into_owned());
     dirty_run.worktree_path = Some(
-        std::fs::canonicalize(&dirty_worktree)
+        scheduler_core::paths::canonicalize(&dirty_worktree)
             .expect("canonical dirty")
             .to_string_lossy()
             .into_owned(),
@@ -1857,8 +1869,11 @@ async fn global_codex_path_applies_to_every_task_end_to_end() {
     assert_eq!(run.status, RunStatus::Succeeded);
     assert_eq!(run.exit_code, Some(0));
     assert_eq!(run.codex_session_id.as_deref(), Some("sess_dummy_success"));
-    assert!(run.codex_command_json.contains("dummy-codex-success.sh"));
-    assert_eq!(run.result_summary.as_deref(), Some("done\n"));
+    assert!(run.codex_command_json.contains("dummy-codex-success"));
+    assert_eq!(
+        run.result_summary.as_deref().map(str::trim_end),
+        Some("done")
+    );
     assert!(run
         .stdout_tail
         .as_deref()
@@ -1869,10 +1884,9 @@ async fn global_codex_path_applies_to_every_task_end_to_end() {
         .as_deref()
         .unwrap_or_default()
         .contains("prompt: Check project status."));
-    assert!(run
-        .last_message_path
-        .as_deref()
-        .is_some_and(|path| std::fs::read_to_string(path).unwrap_or_default() == "done\n"));
+    assert!(run.last_message_path.as_deref().is_some_and(|path| {
+        std::fs::read_to_string(path).unwrap_or_default().trim_end() == "done"
+    }));
 
     let events = handle
         .db()

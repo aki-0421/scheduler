@@ -31,7 +31,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
 
 const PROMPT_MAX_BYTES: usize = 200 * 1024;
 const DEFAULT_TIMEZONE: &str = "UTC";
@@ -254,10 +253,13 @@ struct AppPaths {
 
 impl AppPaths {
     fn from_cli(cli: &Cli) -> Self {
-        let data_dir = cli.data_dir.clone().unwrap_or_else(default_data_dir);
+        let data_dir = cli
+            .data_dir
+            .clone()
+            .unwrap_or_else(scheduler_core::paths::default_data_dir);
         let mut paths = Self {
             db_path: data_dir.join("scheduler.sqlite3"),
-            socket_path: data_dir.join("scheduler.sock"),
+            socket_path: scheduler_core::local_transport::default_endpoint(&data_dir),
             data_dir,
             allow_direct_db: cli.allow_direct_db || direct_db_env_requested(),
         };
@@ -269,17 +271,6 @@ impl AppPaths {
         }
         paths
     }
-}
-
-fn default_data_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| {
-            home.join("Library")
-                .join("Application Support")
-                .join("Codex Scheduler")
-        })
-        .unwrap_or_else(|| PathBuf::from(".").join("Codex Scheduler"))
 }
 
 #[derive(Debug)]
@@ -489,11 +480,14 @@ impl RpcClient {
         };
         let line =
             serde_json::to_string(&request).map_err(|err| CliError::generic(err.to_string()))?;
-        let stream = tokio::time::timeout(RPC_TIMEOUT, UnixStream::connect(&self.socket_path))
-            .await
-            .map_err(|_| CliError::daemon_unavailable("timed out connecting to daemon"))?
-            .map_err(|err| CliError::daemon_unavailable(err.to_string()))?;
-        let (read, mut write) = stream.into_split();
+        let stream = tokio::time::timeout(
+            RPC_TIMEOUT,
+            scheduler_core::local_transport::connect(&self.socket_path),
+        )
+        .await
+        .map_err(|_| CliError::daemon_unavailable("timed out connecting to daemon"))?
+        .map_err(|err| CliError::daemon_unavailable(err.to_string()))?;
+        let (read, mut write) = tokio::io::split(stream);
         write
             .write_all(line.as_bytes())
             .await
@@ -1212,7 +1206,7 @@ async fn apply_repo_path_trust_policy_sqlite(
     let Some(repo_path) = task.repo_path.clone() else {
         return Ok(());
     };
-    let canonical = std::fs::canonicalize(&repo_path).map_err(|err| {
+    let canonical = scheduler_core::paths::canonicalize(&repo_path).map_err(|err| {
         CliError::validation(format!(
             "unable to canonicalize repo_path `{repo_path}`: {err}"
         ))
@@ -1255,7 +1249,7 @@ async fn trusted_project_for_path(
         })
         .find(|project| {
             let root = project.git_root.as_deref().unwrap_or(&project.path);
-            path.starts_with(Path::new(root))
+            scheduler_core::paths::canonicalize(root).is_ok_and(|root| path.starts_with(root))
         }))
 }
 
@@ -1686,7 +1680,7 @@ fn normalize_repo_path(path: &Path) -> Result<String, CliError> {
             .map_err(|err| CliError::validation(err.to_string()))?
             .join(path)
     };
-    std::fs::canonicalize(&absolute)
+    scheduler_core::paths::canonicalize(&absolute)
         .map_err(|err| {
             CliError::validation_details(
                 format!("unable to canonicalize --repo path: {err}"),

@@ -213,6 +213,7 @@ pub struct DaemonDiagnosticsResult {
     pub db_schema_version: i64,
     pub data_dir: String,
     pub socket_path: String,
+    pub db_path: String,
     pub db_size_bytes: u64,
     pub logs_size_bytes: u64,
     pub task_counts: BTreeMap<String, i64>,

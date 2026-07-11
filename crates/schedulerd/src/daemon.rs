@@ -1,12 +1,12 @@
 //! Scheduler daemon process and JSON-RPC server.
 //!
-//! Trust boundary: the daemon's Unix domain socket is a same-user local control
-//! interface. A process that can connect to that socket is treated as a human
+//! Trust boundary: the daemon's platform-local endpoint is a local control
+//! interface. A process that can connect to that endpoint is treated as a human
 //! terminal with local scheduler authority unless it explicitly presents
 //! scheduled-run metadata and a run-scoped capability token. True isolation for
 //! scheduled Codex executions is enforced by run-scoped scheduler capabilities
-//! and project worktree isolation, not by attempting to distinguish same-UID
-//! Unix processes at the JSON-RPC layer.
+//! and project worktree isolation, not by attempting to distinguish local
+//! processes at the JSON-RPC layer.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -19,6 +19,7 @@ use std::time::Duration;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use scheduler_core::db::{RunHistoryCleanupCounts, SchedulerDb};
 use scheduler_core::ipc::*;
+use scheduler_core::local_transport::LocalListener;
 use scheduler_core::model::*;
 use scheduler_core::schedule::{
     compute_next_run_at, select_missed_runs, MissedRunCursor, MissedRunOptions,
@@ -28,8 +29,9 @@ use scheduler_core::time::{format_utc_rfc3339, now_rfc3339, parse_utc_rfc3339};
 use scheduler_core::util::{sha256_hex, unique_slug};
 use serde::Serialize;
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::io::{
+    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufReader,
+};
 use tokio::sync::{broadcast, Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -130,7 +132,7 @@ impl DaemonHandle {
         for join in self.joins {
             let _ = join.await;
         }
-        let _ = std::fs::remove_file(&self.state.config.paths.socket_path);
+        cleanup_local_endpoint(&self.state.config.paths.socket_path);
     }
 }
 
@@ -142,11 +144,7 @@ pub async fn start_daemon(
     let db = SchedulerDb::connect(&config.paths.db_path).await?;
     recover_interrupted_runs(&db).await?;
 
-    if config.paths.socket_path.exists() {
-        let _ = std::fs::remove_file(&config.paths.socket_path);
-    }
-    let listener = UnixListener::bind(&config.paths.socket_path)?;
-    set_private_file_permissions(&config.paths.socket_path)?;
+    let listener = bind_local_endpoint(&config.paths.socket_path)?;
 
     let (events_tx, _) = broadcast::channel(256);
     let state = Arc::new(DaemonState {
@@ -285,8 +283,8 @@ fn remove_run_logs_dir(logs_root: &Path, run_id: &str) -> anyhow::Result<bool> {
         return Ok(false);
     }
 
-    let canonical_root = fs::canonicalize(logs_root)?;
-    let canonical_run_dir = fs::canonicalize(&run_dir)?;
+    let canonical_root = scheduler_core::paths::canonicalize(logs_root)?;
+    let canonical_run_dir = scheduler_core::paths::canonicalize(&run_dir)?;
     if canonical_run_dir == canonical_root || !canonical_run_dir.starts_with(&canonical_root) {
         anyhow::bail!(
             "refusing to remove logs dir outside logs root: {}",
@@ -957,13 +955,13 @@ async fn interrupt_statuses(
     Ok(())
 }
 
-async fn rpc_server_loop(state: Arc<DaemonState>, listener: UnixListener) {
+async fn rpc_server_loop(state: Arc<DaemonState>, mut listener: LocalListener) {
     loop {
         tokio::select! {
             () = state.shutdown.cancelled() => break,
             accepted = listener.accept() => {
                 match accepted {
-                    Ok((stream, _)) => {
+                    Ok(stream) => {
                         let state_for_conn = state.clone();
                         tokio::spawn(async move {
                             if let Err(err) = handle_connection(state_for_conn, stream).await {
@@ -982,8 +980,11 @@ async fn rpc_server_loop(state: Arc<DaemonState>, listener: UnixListener) {
     }
 }
 
-async fn handle_connection(state: Arc<DaemonState>, stream: UnixStream) -> anyhow::Result<()> {
-    let (read, mut write) = stream.into_split();
+async fn handle_connection<S>(state: Arc<DaemonState>, stream: S) -> anyhow::Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let (read, mut write) = tokio::io::split(stream);
     let mut lines = BufReader::new(read).lines();
 
     while let Some(line) = lines.next_line().await? {
@@ -1163,6 +1164,7 @@ async fn rpc_diagnostics(
         db_schema_version: scheduler_core::db::migrations::SCHEMA_VERSION,
         data_dir: path_to_string(&state.config.paths.data_dir),
         socket_path: path_to_string(&state.config.paths.socket_path),
+        db_path: path_to_string(&state.config.paths.db_path),
         db_size_bytes: scheduler_db_size_bytes(&state.config.paths.db_path),
         logs_size_bytes: path_size_bytes(&state.config.paths.logs_dir),
         task_counts: state
@@ -1503,7 +1505,7 @@ async fn apply_repo_path_trust_policy(
     let Some(repo_path) = task.repo_path.clone() else {
         return Ok(TrustOutcome::NoRepoPath);
     };
-    let canonical = std::fs::canonicalize(&repo_path).map_err(|err| {
+    let canonical = scheduler_core::paths::canonicalize(&repo_path).map_err(|err| {
         JsonRpcError::new(
             JsonRpcErrorCode::ValidationFailed,
             format!("unable to canonicalize repo_path `{repo_path}`: {err}"),
@@ -1547,7 +1549,7 @@ async fn path_is_under_trusted_project(
         })
         .any(|project| {
             let root = project.git_root.as_deref().unwrap_or(&project.path);
-            path.starts_with(Path::new(root))
+            scheduler_core::paths::canonicalize(root).is_ok_and(|root| path.starts_with(root))
         }))
 }
 
@@ -1905,30 +1907,34 @@ async fn rpc_project_trust(
     metadata: RpcMetadata,
 ) -> Result<ProjectTrustResult, JsonRpcError> {
     let actor = reject_scheduled_control_write(params.actor, &metadata, "project.trust")?;
-    let canonical = std::fs::canonicalize(&params.path).map_err(|err| {
+    let canonical = scheduler_core::paths::canonicalize(&params.path).map_err(|err| {
         JsonRpcError::new(
             JsonRpcErrorCode::ValidationFailed,
             format!("unable to canonicalize project path: {err}"),
         )
     })?;
-    let git_root = detect_git_root(&canonical).ok_or_else(|| {
+    let git_root_path = detect_git_root(&canonical).ok_or_else(|| {
         JsonRpcError::new(
             JsonRpcErrorCode::ValidationFailed,
             "project path must be inside a Git repository",
         )
     })?;
-    let path = git_root.clone();
-    let detected_default_branch = detect_project_default_branch(Path::new(&git_root));
+    let path = path_to_string(&git_root_path);
+    let git_root = path.clone();
+    let detected_default_branch = detect_project_default_branch(&git_root_path);
     let now = now_rfc3339();
     let projects = state.db.list_projects().await.map_err(map_core_error)?;
     let exact_match = projects
         .iter()
-        .find(|project| project.path == path)
+        .find(|project| stored_path_matches(&project.path, &git_root_path))
         .cloned();
     let mut existing = exact_match.or_else(|| {
-        projects
-            .into_iter()
-            .find(|project| project.git_root.as_deref() == Some(path.as_str()))
+        projects.into_iter().find(|project| {
+            project
+                .git_root
+                .as_deref()
+                .is_some_and(|root| stored_path_matches(root, &git_root_path))
+        })
     });
 
     let project = if let Some(mut project) = existing.take() {
@@ -2542,7 +2548,7 @@ async fn tail_log_file(
     })
 }
 
-fn detect_git_root(path: &Path) -> Option<String> {
+fn detect_git_root(path: &Path) -> Option<PathBuf> {
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(path)
@@ -2557,8 +2563,12 @@ fn detect_git_root(path: &Path) -> Option<String> {
     if root.is_empty() {
         None
     } else {
-        Some(root)
+        scheduler_core::paths::canonicalize(root).ok()
     }
+}
+
+fn stored_path_matches(stored: &str, expected: &Path) -> bool {
+    scheduler_core::paths::canonicalize(stored).is_ok_and(|path| path == expected)
 }
 
 fn detect_project_default_branch(git_root: &Path) -> Option<String> {
@@ -2586,7 +2596,9 @@ fn git_ref_exists(git_root: &Path, reference: &str) -> bool {
 }
 
 fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    scheduler_core::paths::simplify(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn scheduler_db_size_bytes(db_path: &Path) -> u64 {
@@ -2631,14 +2643,7 @@ fn command_or_path_exists(value: &str) -> bool {
     if path.is_absolute() || trimmed.contains(std::path::MAIN_SEPARATOR) {
         return path.exists();
     }
-    std::env::var_os("PATH")
-        .map(|paths| {
-            std::env::split_paths(&paths).any(|dir| {
-                let candidate = dir.join(trimmed);
-                candidate.is_file()
-            })
-        })
-        .unwrap_or(false)
+    scheduler_core::paths::find_executable_in_path(trimmed).is_some()
 }
 
 fn string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
@@ -2700,7 +2705,25 @@ fn set_private_file_permissions(path: &Path) -> std::io::Result<()> {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
 }
 
-#[cfg(not(unix))]
-fn set_private_file_permissions(_path: &Path) -> std::io::Result<()> {
-    Ok(())
+#[cfg(unix)]
+fn bind_local_endpoint(endpoint: &Path) -> std::io::Result<LocalListener> {
+    if endpoint.exists() {
+        let _ = std::fs::remove_file(endpoint);
+    }
+    let listener = LocalListener::bind(endpoint)?;
+    set_private_file_permissions(endpoint)?;
+    Ok(listener)
 }
+
+#[cfg(windows)]
+fn bind_local_endpoint(endpoint: &Path) -> std::io::Result<LocalListener> {
+    LocalListener::bind(endpoint)
+}
+
+#[cfg(unix)]
+fn cleanup_local_endpoint(endpoint: &Path) {
+    let _ = std::fs::remove_file(endpoint);
+}
+
+#[cfg(windows)]
+fn cleanup_local_endpoint(_endpoint: &Path) {}

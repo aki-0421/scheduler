@@ -43,7 +43,7 @@ palette は次を基準にする。
 
 glyph は 16 px でも clock、right-facing execution、active run marker を判別できる太さと negative space を保つ。wordmark や provider logo を App Icon 内に入れない。menu bar など monochrome surface へ展開する場合は、dial と chevron の silhouette だけで成立させる。
 
-desktop bundle が参照する raster asset は `apps/desktop/src-tauri/icons/` に置く。`icon-master.png` を生成元とし、Tauri config が参照する 32 px、128 px、256 px、512 px asset を同じ master から生成する。
+desktop bundle が参照する icon asset は `apps/desktop/src-tauri/icons/` に置く。`icon-master.png` を生成元とし、Tauri config が参照する PNG、macOS `icon.icns`、Windows `icon.ico` を同じ master から生成する。
 
 ## 表示名と内部互換名の境界
 
@@ -52,7 +52,7 @@ window title、desktop metadata、notification title、diagnostics heading、use
 次は今回 rename しない。
 
 - bundle identifier `com.local.codex-scheduler`。
-- Application Support directory `~/Library/Application Support/Codex Scheduler`。
+- OS 標準 data root 配下の application directory 名 `Codex Scheduler`。macOS の既存 path は `~/Library/Application Support/Codex Scheduler`。
 - sidecar binary `codex-schedulerd`。
 - session CLI `codex-schedule`。
 - Codex runner crate name と runner-specific type / setting name。

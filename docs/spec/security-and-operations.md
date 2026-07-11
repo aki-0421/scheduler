@@ -53,6 +53,12 @@ lock / unlock は audit event として記録する。lock は Codex の filesys
 
 desktop backend は `open_path` を scheduler-owned log、scheduler-owned worktree、scheduler-owned chat workspace、registered project root に制限する。これにより、UI-provided string から任意 path を開くことを防ぐ。
 
+## Local IPC
+
+daemon control endpoint は OS の local-user boundary の内側に置く。macOS / Linux は owner-only `0700` data directory 下の `0600` Unix socket を使う。Windows は remote client を拒否する named pipe を使い、security descriptor の protected DACL で daemon を作成した user SID にだけ full access を許可する。endpoint 名は data directory identity の stable hash から導出し、user path 自体を global pipe namespace に露出しない。
+
+local user の通常操作は run token を必須としない。scheduled Codex session の制限は transport で caller を推測せず、以下の run-scoped capability token で enforce する。
+
 ## Capability token
 
 scheduled run は常に run-scoped token を受け取る。database は raw token value ではなく token hash を保存する。
@@ -81,7 +87,7 @@ actor type は user、daemon、CLI、scheduled-run action を区別する。
 
 ## Diagnostics
 
-daemon は RPC 経由で health と diagnostics を公開する。diagnostics には app version、schema version、data directory、socket path、DB / log size、task / run count、scheduler enabled state、Codex path existence、tick interval、last tick time が含まれる。
+daemon は RPC 経由で health と diagnostics を公開する。diagnostics には app version、schema version、data directory、local endpoint、database path、DB / log size、task / run count、scheduler enabled state、Codex path existence、tick interval、last tick time が含まれる。
 
 desktop app は daemon health、daemon diagnostics、redacted daemon log tail、OS version、timestamp を含む diagnostics を export できる。log tail export は API key や run token などの sensitive pattern を redact する。
 
@@ -95,9 +101,11 @@ retention cleanup は expired capability token、古い terminal run history、e
 
 ## Release operation
 
-release artifact は release profile の sidecar binary を含む Tauri `.app` bundle である。repository root の `pnpm release:github` は `.app` を build し、証明書不要の ad-hoc identity `-` で app、sidecar、resource を seal した ZIP と SHA-256 file を `dist/` に生成する。packager は app main executable と両 sidecar が存在して実行可能であり、bundle 全体の `codesign --verify --deep --strict` が成功しなければ失敗する。
+release artifact は release profile の app main binary と 2 つの sidecar binary を含む Tauri bundle である。repository root の `pnpm release:github` は現在の OS / target に応じて macOS `.app.zip`、Windows NSIS `.exe`、Linux `.AppImage` / `.deb` を `dist/` に生成し、それぞれに `.sha256` と target-specific manifest を付ける。packager は 3 executable が期待 target architecture であることを検証する。macOS ではさらに executable bit、bundle 全体と ZIP 展開後の `codesign --verify --deep --strict` を検証する。
 
-ad-hoc 署名 ZIP は Apple Developer certificate なしで GitHub Releases へ upload できるが、developer identity の証明や notarization は行われない。download した user は macOS Gatekeeper の警告後に `プライバシーとセキュリティ` から `このまま開く` を選ぶ必要がある。release note はこの手順と checksum verification を明示する。
+tag workflow は macOS Apple Silicon / Intel、Windows x64、Linux x64 / arm64 を別々の job で build する。publish job は 5 target の manifest、7 artifact、7 checksum の完全性と各 checksum を再検証し、一部 target が欠けた状態で GitHub Release を作成しない。build job は `contents: read`、publish job だけが `contents: write` を使う。
+
+自動 release は secret なしで再現できる unsigned / ad-hoc build である。macOS ZIP は Apple Developer certificate なしの ad-hoc signature であり、developer identity の証明や notarization は行われない。Windows installer も Authenticode 署名済みと表示しない。release note は Gatekeeper / SmartScreen の警告と checksum verification を明示する。
 
 Developer ID 署名・公証を行う build では、release build 後に repository root の artifact path を検証する。
 
@@ -106,7 +114,7 @@ codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/Clockh
 spctl --assess --type execute --verbose target/release/bundle/macos/Clockhand.app
 ```
 
-ad-hoc 署名 GitHub 配布と、Developer ID 署名・公証へ移行する場合の full checklist は release document を使う。
+cross-platform GitHub 配布と、Developer ID / Authenticode 署名へ移行する場合の full checklist は release document を使う。
 
 ## Pull request operation
 
@@ -120,6 +128,7 @@ implementation change 後は次の check を使う。
 
 ```bash
 cargo test --workspace
+cargo check --workspace
 cargo audit
 pnpm lint
 pnpm test
@@ -127,6 +136,6 @@ pnpm --filter desktop build
 pnpm audit --prod
 ```
 
-`cargo audit` は `.cargo/audit.toml` で `RUSTSEC-2023-0071` だけを除外する。該当する `rsa` は SQLx の optional MySQL backend が lockfile に保持する package であり、この workspace は SQLite feature だけを有効にしている。除外を維持する場合は `cargo tree --target all -i rsa@0.9.10` が dependency path を返さないことを確認する。release macOS binary に `rsa` を含めてはならない。
+`cargo audit` は `.cargo/audit.toml` で `RUSTSEC-2023-0071` だけを除外する。該当する `rsa` は SQLx の optional MySQL backend が lockfile に保持する package であり、この workspace は SQLite feature だけを有効にしている。除外を維持する場合は `cargo tree --target all -i rsa@0.9.10` が dependency path を返さないことを確認する。release binary に `rsa` を含めてはならない。
 
 UI behavior verification には `agent-browser` を使い、screenshot は `/tmp` または ignored local `tmp/` directory に保存する。

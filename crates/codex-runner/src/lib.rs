@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::ffi::CString;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -516,21 +515,14 @@ fn find_codex_binary(configured_path: Option<&Path>) -> Result<PathBuf> {
         return Err(RunnerError::CodexBinaryDoesNotExist(path.to_path_buf()));
     }
 
-    let path_var = std::env::var_os("PATH").ok_or(RunnerError::CodexBinaryNotFound)?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = dir.join("codex");
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-    Err(RunnerError::CodexBinaryNotFound)
+    scheduler_core::paths::find_executable_in_path("codex").ok_or(RunnerError::CodexBinaryNotFound)
 }
 
 fn canonicalize_existing_file(path: &Path) -> Result<PathBuf> {
     if !path.exists() {
         return Err(RunnerError::CodexBinaryDoesNotExist(path.to_path_buf()));
     }
-    Ok(path.canonicalize()?)
+    Ok(scheduler_core::paths::canonicalize(path)?)
 }
 
 fn validate_safe_request_ids(request: &RunRequest) -> Result<()> {
@@ -723,14 +715,14 @@ async fn prepare_repo_worktree_workspace(
                 "add".to_owned(),
                 "-b".to_owned(),
                 branch_name.clone(),
-                worktree_path.to_string_lossy().to_string(),
+                git_path_argument(&worktree_path),
                 base_ref.clone(),
             ],
         )
         .await
         {
             Ok(_) => {
-                let canonical_worktree = worktree_path.canonicalize()?;
+                let canonical_worktree = scheduler_core::paths::canonicalize(&worktree_path)?;
                 ensure_child_under(&canonical_worktree_root, &canonical_worktree)?;
                 let head = git_output(&canonical_worktree, ["rev-parse", "HEAD"]).await?;
                 return Ok(WorkspacePrepared {
@@ -774,7 +766,7 @@ fn validate_repo_path(request: &RunRequest) -> Result<PathBuf> {
     if !repo_path.exists() {
         return Err(RunnerError::TargetPathMissing(repo_path.clone()));
     }
-    let canonical_repo = repo_path.canonicalize()?;
+    let canonical_repo = scheduler_core::paths::canonicalize(repo_path)?;
     let trusted_roots = canonical_trusted_roots(request, &canonical_repo)?;
     if !trusted_roots
         .iter()
@@ -790,7 +782,9 @@ fn validate_repo_path(request: &RunRequest) -> Result<PathBuf> {
 
 async fn git_toplevel(path: &Path) -> Result<PathBuf> {
     let top_level = git_output(path, ["rev-parse", "--show-toplevel"]).await?;
-    Ok(PathBuf::from(top_level.trim()).canonicalize()?)
+    Ok(scheduler_core::paths::canonicalize(PathBuf::from(
+        top_level.trim(),
+    ))?)
 }
 
 fn ensure_trusted_git_root(request: &RunRequest, git_root: &Path) -> Result<()> {
@@ -815,7 +809,7 @@ fn canonical_trusted_roots(request: &RunRequest, path: &Path) -> Result<Vec<Path
         .target
         .trusted_roots
         .iter()
-        .map(|path| path.canonicalize().map_err(RunnerError::Io))
+        .map(|path| scheduler_core::paths::canonicalize(path).map_err(RunnerError::Io))
         .collect()
 }
 
@@ -827,14 +821,14 @@ where
     let canonical_parent = ensure_canonical_dir(parent).await?;
     let child_path = checked_child_path(&canonical_parent, segments)?;
     fs::create_dir_all(&child_path).await?;
-    let canonical_child = child_path.canonicalize()?;
+    let canonical_child = scheduler_core::paths::canonicalize(&child_path)?;
     ensure_child_under(&canonical_parent, &canonical_child)?;
     Ok(canonical_child)
 }
 
 async fn ensure_canonical_dir(path: &Path) -> Result<PathBuf> {
     fs::create_dir_all(path).await?;
-    Ok(path.canonicalize()?)
+    Ok(scheduler_core::paths::canonicalize(path)?)
 }
 
 async fn ensure_safe_child_dir(canonical_parent: &Path, segment: &str) -> Result<PathBuf> {
@@ -859,7 +853,7 @@ async fn ensure_safe_child_dir(canonical_parent: &Path, segment: &str) -> Result
         Err(err) => return Err(RunnerError::Io(err)),
     }
 
-    let canonical_child = child_dir.canonicalize()?;
+    let canonical_child = scheduler_core::paths::canonicalize(&child_dir)?;
     ensure_child_under(canonical_parent, &canonical_child)?;
     Ok(canonical_child)
 }
@@ -888,6 +882,12 @@ fn ensure_child_under(canonical_parent: &Path, child: &Path) -> Result<()> {
             trusted_roots: vec![canonical_parent.to_path_buf()],
         })
     }
+}
+
+fn git_path_argument(path: &Path) -> String {
+    scheduler_core::paths::simplify(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 async fn resolve_base_ref(repo_path: &Path, base_ref: &str) -> Result<()> {
@@ -929,30 +929,8 @@ fn existing_ancestor(path: &Path) -> PathBuf {
     current.to_path_buf()
 }
 
-#[cfg(unix)]
 fn available_space_bytes(path: &Path) -> io::Result<u64> {
-    use std::mem::MaybeUninit;
-    use std::os::unix::ffi::OsStrExt;
-
-    let path = CString::new(path.as_os_str().as_bytes())
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "path contains NUL byte"))?;
-    let mut stats = MaybeUninit::<libc::statvfs>::zeroed();
-    let rc = unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) };
-    if rc != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let stats = unsafe { stats.assume_init() };
-    let block_size = if stats.f_frsize == 0 {
-        stats.f_bsize
-    } else {
-        stats.f_frsize
-    };
-    Ok(u64::from(stats.f_bavail).saturating_mul(block_size))
-}
-
-#[cfg(not(unix))]
-fn available_space_bytes(_path: &Path) -> io::Result<u64> {
-    Ok(MIN_FREE_SPACE_BYTES)
+    fs2::available_space(path)
 }
 
 fn build_command_record(
@@ -1230,7 +1208,12 @@ async fn execute_codex(
 
     if exit_status.is_none() {
         if let Some(pid) = pid {
-            terminate_process_group(pid, libc::SIGTERM);
+            #[cfg(unix)]
+            terminate_process_tree(pid, false);
+            #[cfg(windows)]
+            if !terminate_process_tree(pid, false) {
+                child.start_kill()?;
+            }
         }
         let graceful = timeout(Duration::from_secs(30), child.wait()).await;
         match graceful {
@@ -1239,7 +1222,12 @@ async fn execute_codex(
             }
             Err(_) => {
                 if let Some(pid) = pid {
-                    terminate_process_group(pid, libc::SIGKILL);
+                    #[cfg(unix)]
+                    terminate_process_tree(pid, true);
+                    #[cfg(windows)]
+                    if !terminate_process_tree(pid, true) {
+                        child.start_kill()?;
+                    }
                 }
                 exit_status = Some(child.wait().await?);
             }
@@ -1286,15 +1274,20 @@ async fn execute_codex(
     })
 }
 
-fn terminate_process_group(pid: u32, signal: i32) {
-    #[cfg(unix)]
-    {
-        let _ = unsafe { libc::killpg(pid as libc::pid_t, signal) };
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (pid, signal);
-    }
+#[cfg(unix)]
+fn terminate_process_tree(pid: u32, force: bool) {
+    let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
+    let _ = unsafe { libc::killpg(pid as libc::pid_t, signal) };
+}
+
+#[cfg(windows)]
+fn terminate_process_tree(pid: u32, _force: bool) -> bool {
+    // Windows has no portable SIGTERM equivalent for an arbitrary detached
+    // console tree, so terminate the complete tree in one bounded operation.
+    std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn classify_exit_status(status: Option<ExitStatus>) -> (RunStatus, Option<String>) {
@@ -1556,7 +1549,7 @@ async fn cleanup_worktree(
         vec![
             "worktree".to_owned(),
             "remove".to_owned(),
-            worktree_path.to_string_lossy().to_string(),
+            git_path_argument(worktree_path),
         ],
     )
     .await?;
@@ -1689,7 +1682,7 @@ fn render_scheduler_instructions(request: &RunRequest) -> String {
     let can_repo = request.target.mode != RunTargetMode::Chat;
 
     let mut text = format!(
-        "あなたは Clockhand によって起動されたローカル macOS 上の Codex CLI セッションです。\n\n\
+        "あなたは Clockhand によって起動されたローカル環境上の Codex CLI セッションです。\n\n\
 このセッションでは、PATH 上の `codex-schedule` CLI を使って、次回以降のスケジュールを作成または更新できます。日時は RFC3339、繰り返しは 5-field cron を優先してください。確認には `--json` を使ってください。\n\n\
 現在の scheduler context:\n\
 - current_task_id: {}\n\

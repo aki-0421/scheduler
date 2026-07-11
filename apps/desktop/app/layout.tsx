@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Clockhand",
-  description: "ローカル AI agent の実行を管理する macOS スケジューラー。",
+  description: "ローカル AI agent の実行を管理するデスクトップスケジューラー。",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
