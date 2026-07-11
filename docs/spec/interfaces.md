@@ -17,12 +17,13 @@ frontend は daemon data を受け入れる前に typed IPC helper と Zod schem
 
 実装済み navigation:
 
-- `Projects`
+- sidebar local date / time
 - sidebar scheduled task list
 - `Archived`
+- `Projects`
 - bottom toolbox `Settings`
 
-`/` は dashboard を表示せず `/projects` に redirect する。sidebar は project entry、next-run order の task entry、archived task entry、bottom toolbox を持つ。header は scheduler badge と scheduler toggle を表示せず、running count だけを icon + number で表示する。
+`/` は dashboard を表示せず `/projects` に redirect する。sidebar は local date / time、起動予定時刻付きの next-run order task entry、archived task entry、その直下の project entry、bottom toolbox を持つ。header は scheduler badge と scheduler toggle を表示せず、running count だけを icon + number で表示する。
 
 task creation、editing、duplication は wizard で扱う。実行先は radio card の `チャット` と `プロジェクト` から選ぶ。`プロジェクト` は登録済み Git project を必須とし、実行ごとに isolated worktree を作る。field は prompt、name、schedule、project selection、base ref、model、思考レベル、lock state、開始状態を含む。task description field と task 固有 Codex binary path は持たず、内容は name と prompt で表す。cron calculation は validation と next-run data にだけ使い、実行タイミングの preview は表示しない。
 

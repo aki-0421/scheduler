@@ -31,7 +31,7 @@ app は、汎用 admin dashboard ではなく、AI work の local automation con
 
 desktop app には次の top-level page がある。
 
-- App shell: project entry、next-run order の task sidebar、archived task entry、bottom toolbox settings、icon + number の running count。
+- App shell: local date / time、起動予定時刻付きの next-run order task sidebar、archived task entry、その直下の project entry、bottom toolbox settings、icon + number の running count。
 - `Projects`: file browser からの project 追加、GitHub `user(org)/repo` display、non-GitHub project name editing、active task count、project removal confirmation。
 - `Tasks`: archived list、task detail、初期表示の session history table、creation form と共通の inline settings、task-name header actions、lock / unlock。実行履歴の一覧は task detail だけで提供する。
 - Task session detail: task history から開く chat UI、tool usage、prompt/output/log/artifact inspection、cancel support。global run history page は提供しない。

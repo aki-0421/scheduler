@@ -13,7 +13,7 @@ import {
   Settings,
   Timer,
 } from "lucide-react";
-import { Suspense, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -26,13 +26,44 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { isRunActive } from "@/lib/format";
 import { useHealth, useRuns, useTasks } from "@/lib/queries";
-import type { TaskDto } from "@/lib/types";
+import type { RunDto, TaskDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type BreadcrumbItem = {
   label: string;
   href?: string;
 };
+
+const sidebarDateFormatter = new Intl.DateTimeFormat("ja-JP", {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  weekday: "short",
+});
+
+const sidebarTimeFormatter = new Intl.DateTimeFormat("ja-JP", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const taskScheduleFormatter = new Intl.DateTimeFormat("ja-JP", {
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const taskScheduleTitleFormatter = new Intl.DateTimeFormat("ja-JP", {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  weekday: "long",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") {
@@ -55,20 +86,75 @@ function isTaskRoute(
   return pathname === "/tasks" && selectedTaskId === taskId;
 }
 
-function formatTaskTime(task: TaskDto, running: boolean) {
-  if (running) {
-    return "実行中";
-  }
-  if (!task.nextRunAt) {
-    return "未定";
+function getRunScheduleTime(run: RunDto) {
+  return run.scheduledFor ?? run.startedAt ?? run.queuedAt;
+}
+
+function formatTaskTime(value: string | undefined) {
+  return value ? taskScheduleFormatter.format(new Date(value)) : "—";
+}
+
+function formatTaskTimeTitle(value: string | undefined, running: boolean) {
+  const label = running ? "実行対象時刻" : "起動予定時刻";
+  if (!value) {
+    return `${label}は未記録`;
   }
 
-  return new Intl.DateTimeFormat("ja-JP", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(task.nextRunAt));
+  return `${label} ${taskScheduleTitleFormatter.format(new Date(value))}`;
+}
+
+function SidebarClock({
+  reserveCloseSpace = false,
+}: {
+  reserveCloseSpace?: boolean;
+}) {
+  const [now, setNow] = useState<Date>();
+
+  useEffect(() => {
+    let intervalId: number | undefined;
+    const update = () => setNow(new Date());
+    update();
+
+    const timeoutId = window.setTimeout(() => {
+      update();
+      intervalId = window.setInterval(update, 60_000);
+    }, 60_000 - (Date.now() % 60_000));
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId !== undefined) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, []);
+
+  const date = now ? sidebarDateFormatter.format(now) : "—年—月—日";
+  const time = now ? sidebarTimeFormatter.format(now) : "--:--";
+  const label = now
+    ? `現在日時 ${date} ${time}`
+    : "現在日時を読み込んでいます";
+
+  return (
+    <div
+      className={cn(
+        "flex h-16 shrink-0 items-center px-4",
+        reserveCloseSpace && "pr-14",
+      )}
+    >
+      <time
+        dateTime={now?.toISOString()}
+        aria-label={label}
+        className="flex w-full items-baseline justify-between gap-3"
+      >
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {date}
+        </span>
+        <span className="shrink-0 text-base font-semibold tabular-nums text-foreground">
+          {time}
+        </span>
+      </time>
+    </div>
+  );
 }
 
 function HeaderRunningCount() {
@@ -214,15 +300,20 @@ function ProjectLink({
 
 function TaskLink({
   task,
-  running,
+  activeRun,
   active,
   close,
 }: {
   task: TaskDto;
-  running: boolean;
+  activeRun?: RunDto;
   active: boolean;
   close?: boolean;
 }) {
+  const running = Boolean(activeRun);
+  const displayTime = activeRun
+    ? getRunScheduleTime(activeRun)
+    : task.nextRunAt;
+  const displayTimeTitle = formatTaskTimeTitle(displayTime, running);
   const content = (
     <Link
       href={`/tasks?task=${encodeURIComponent(task.id)}`}
@@ -232,7 +323,11 @@ function TaskLink({
         active && "bg-accent text-accent-foreground",
       )}
     >
-      <span className="pt-0.5">
+      <span
+        className="pt-0.5"
+        role="img"
+        aria-label={running ? "実行中" : "起動予定"}
+      >
         {running ? (
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
         ) : (
@@ -240,10 +335,15 @@ function TaskLink({
         )}
       </span>
       <span className="min-w-0">
-        <span className="block truncate font-medium">{task.name}</span>
-        <span className="mt-0.5 block truncate text-xs opacity-75">
-          {formatTaskTime(task, running)}
-        </span>
+        <time
+          dateTime={displayTime}
+          className="block truncate text-xs tabular-nums opacity-75"
+          aria-label={displayTimeTitle}
+          title={displayTimeTitle}
+        >
+          {formatTaskTime(displayTime)}
+        </time>
+        <span className="mt-0.5 block truncate font-medium">{task.name}</span>
       </span>
     </Link>
   );
@@ -299,21 +399,32 @@ function SidebarContent({
 }) {
   const tasks = useTasks();
   const runs = useRuns();
-  const runningTaskIds = new Set(
-    (runs.data ?? [])
-      .filter((run) => isRunActive(run.status))
-      .map((run) => run.taskId),
-  );
+  const activeRunByTaskId = new Map<string, RunDto>();
+  for (const run of runs.data ?? []) {
+    if (!isRunActive(run.status)) {
+      continue;
+    }
+
+    const current = activeRunByTaskId.get(run.taskId);
+    if (
+      !current ||
+      (getRunScheduleTime(run) ?? "").localeCompare(
+        getRunScheduleTime(current) ?? "",
+      ) > 0
+    ) {
+      activeRunByTaskId.set(run.taskId, run);
+    }
+  }
   const taskList = tasks.data ?? [];
   const scheduledTasks = taskList
     .filter(
       (task) =>
-        (task.status === "active" && task.kind === "cron" && task.nextRunAt) ||
-        runningTaskIds.has(task.id),
+        (task.status === "active" && task.nextRunAt) ||
+        activeRunByTaskId.has(task.id),
     )
     .sort((left, right) => {
-      const leftRunning = runningTaskIds.has(left.id);
-      const rightRunning = runningTaskIds.has(right.id);
+      const leftRunning = activeRunByTaskId.has(left.id);
+      const rightRunning = activeRunByTaskId.has(right.id);
       if (leftRunning !== rightRunning) {
         return leftRunning ? -1 : 1;
       }
@@ -323,9 +434,7 @@ function SidebarContent({
 
   return (
     <div className="flex h-full min-h-0 flex-col select-none">
-      <div className="p-3">
-        <ProjectLink pathname={pathname} close={close} />
-      </div>
+      <SidebarClock reserveCloseSpace={close} />
       <Separator />
       <nav
         className="min-h-0 flex-1 overflow-y-auto p-3"
@@ -342,7 +451,7 @@ function SidebarContent({
               <TaskLink
                 key={task.id}
                 task={task}
-                running={runningTaskIds.has(task.id)}
+                activeRun={activeRunByTaskId.get(task.id)}
                 active={isTaskRoute(pathname, selectedTaskId, task.id)}
                 close={close}
               />
@@ -355,9 +464,10 @@ function SidebarContent({
         </div>
       </nav>
       <Separator />
-      <div className="p-3">
+      <nav className="grid gap-1 p-3" aria-label="その他">
         <ArchivedLink active={archiveActive} close={close} />
-      </div>
+        <ProjectLink pathname={pathname} close={close} />
+      </nav>
       <Separator />
       <div className="flex h-14 shrink-0 items-center justify-end px-3">
         <SettingsTool

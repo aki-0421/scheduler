@@ -1,7 +1,7 @@
 ---
 title: S004 Projects
 description: Projects screen の file-browser-based project registration、read-only project table、project settings dialog を定義する。
-updated: 2026-07-10
+updated: 2026-07-11
 read_when:
   - Projects page、project registration、folder picker、project naming、repository display、project task impact messaging を変更するとき。
 ---
@@ -14,7 +14,7 @@ read_when:
 
 責務: project の追加と設定は Projects screen だけで行う。task wizard は登録済み project を読み取り専用の Select から選択し、追加・設定 action を持たない。
 
-入口: sidebar 先頭の `プロジェクト` item、task wizard の project selector、root route redirect。
+入口: sidebar の `アーカイブ済み` 直下にある `プロジェクト` item、task wizard の project selector、root route redirect。
 
 出口: project list、project settings dialog、task wizard、project removal confirmation。
 
