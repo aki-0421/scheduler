@@ -1,4 +1,4 @@
-pub const APP_NAME: &str = "Codex Scheduler";
+pub const APP_NAME: &str = "Clockhand";
 
 pub mod db;
 pub mod error;

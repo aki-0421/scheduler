@@ -1,6 +1,6 @@
 ---
 title: S000 App Shell
-description: Codex Scheduler の global shell、sidebar、header、root navigation behavior を定義する。
+description: Clockhand の global shell、sidebar、header、root navigation behavior を定義する。
 updated: 2026-07-11
 read_when:
   - desktop app shell、sidebar、header、global navigation、root redirect、task sidebar behavior を変更するとき。
@@ -94,7 +94,7 @@ read_when:
 
 受け入れ条件:
 
-- desktop sidebar に `Codex Scheduler` title section が表示されない。
+- desktop sidebar に `Clockhand` title section が表示されない。
 - sidebar 先頭に現在の日付と24時間表記の時刻が表示され、時刻は分境界で更新される。
 - `プロジェクト` は `アーカイブ済み` の直下に表示され、押すと `/projects` が開く。
 - active recurring task が sidebar に複数重複表示されない。

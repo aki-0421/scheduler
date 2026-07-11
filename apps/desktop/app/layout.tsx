@@ -6,8 +6,8 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Codex Scheduler",
-  description: "Codex CLI の自動実行を管理するローカル macOS スケジューラー。",
+  title: "Clockhand",
+  description: "ローカル AI agent の実行を管理する macOS スケジューラー。",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

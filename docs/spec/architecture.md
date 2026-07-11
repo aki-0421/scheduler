@@ -1,7 +1,7 @@
 ---
 title: アーキテクチャ
-description: 実装済み Codex Scheduler の process layout、crate、app shell、sidecar、storage、runtime path を説明する。
-updated: 2026-07-10
+description: 実装済み Clockhand の process layout、crate、app shell、sidecar、storage、runtime path を説明する。
+updated: 2026-07-11
 read_when:
   - desktop shell、daemon process、sidecar packaging、Rust workspace、IPC、persistent runtime path を変更するとき。
   - UI、daemon、CLI、runner、SQLite database がどう接続されるか debug するとき。
@@ -9,7 +9,7 @@ read_when:
 
 # アーキテクチャ
 
-Codex Scheduler は、Next.js static frontend と Rust sidecar を持つ Tauri v2 desktop app である。app process は window を所有し、user action を proxy する。daemon は scheduling、persistence、run execution を所有する。session CLI は daemon と通信する独立 binary であり、scheduled Codex run のために `PATH` に置くことができる。
+Clockhand は、Next.js static frontend と Rust sidecar を持つ Tauri v2 desktop app である。app process は window を所有し、user action を proxy する。daemon は scheduling、persistence、run execution を所有する。session CLI は daemon と通信する独立 binary であり、scheduled Codex run のために `PATH` に置くことができる。
 
 ## ワークスペース構成
 
@@ -41,7 +41,7 @@ daemon socket は local control surface である。same-UID caller は、schedu
 
 ## 実行時パス
 
-default app data directory は次である。
+default app data directory は compatibility のため legacy product name を維持し、次を使う。
 
 ```text
 ~/Library/Application Support/Codex Scheduler

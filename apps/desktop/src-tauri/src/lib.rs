@@ -657,7 +657,7 @@ async fn notify_run_status_changes(
         let _ = app
             .notification()
             .builder()
-            .title("Codex Scheduler run failed")
+            .title("Clockhand run failed")
             .body(body)
             .show();
     }
@@ -737,7 +737,7 @@ async fn diagnostics_export(
         .dialog()
         .file()
         .set_title("Export diagnostics")
-        .set_file_name("codex-scheduler-diagnostics.json")
+        .set_file_name("clockhand-diagnostics.json")
         .add_filter("JSON", &["json"])
         .blocking_save_file();
     let Some(path) = picked
@@ -810,7 +810,7 @@ async fn export_run_logs(
         .dialog()
         .file()
         .set_title("Export run logs")
-        .set_file_name(format!("codex-scheduler-{run_id}-logs.txt"))
+        .set_file_name(format!("clockhand-{run_id}-logs.txt"))
         .add_filter("Text", &["txt", "log"])
         .blocking_save_file();
     let Some(path) = picked
@@ -827,7 +827,7 @@ async fn export_run_logs(
     let stderr = read_run_log_tail(&app, &state, &run_id, "stderr").await?;
     let events = read_run_log_tail(&app, &state, &run_id, "events").await?;
     let contents = format!(
-        "Codex Scheduler run log export\nrunId: {run_id}\n\n== stdout tail ==\n{stdout}\n\n== stderr tail ==\n{stderr}\n\n== events JSONL tail ==\n{events}\n"
+        "Clockhand run log export\nrunId: {run_id}\n\n== stdout tail ==\n{stdout}\n\n== stderr tail ==\n{stderr}\n\n== events JSONL tail ==\n{events}\n"
     );
     std::fs::write(&path, contents)
         .map_err(|err| format!("failed to write run log export: {err}"))?;
@@ -1120,7 +1120,7 @@ async fn open_path(app: AppHandle, state: State<'_, AppState>, path: String) -> 
         .map_err(|err| format!("path does not exist or cannot be opened: {err}"))?;
     if !state.daemon.is_open_path_allowed(&app, &path).await? {
         return Err(
-            "path is outside Codex Scheduler data directories and trusted project roots".to_owned(),
+            "path is outside Clockhand data directories and trusted project roots".to_owned(),
         );
     }
     app.opener()
@@ -1176,7 +1176,7 @@ pub fn run() {
             open_path
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Codex Scheduler");
+        .expect("error while building Clockhand");
 
     app.run(|app_handle, event| match event {
         RunEvent::ExitRequested { api, code, .. } => {

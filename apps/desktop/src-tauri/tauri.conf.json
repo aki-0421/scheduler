@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Codex Scheduler",
+  "productName": "Clockhand",
   "version": "0.1.0",
   "identifier": "com.local.codex-scheduler",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Codex Scheduler",
+        "title": "Clockhand",
         "label": "main",
         "width": 1200,
         "height": 800,

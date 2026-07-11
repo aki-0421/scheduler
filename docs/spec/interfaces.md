@@ -4,12 +4,12 @@ description: 実装済み desktop UI、Tauri command、daemon JSON-RPC、codex-s
 updated: 2026-07-11
 read_when:
   - UI page、IPC schema、Tauri command、daemon RPC method、codex-schedule behavior を変更するとき。
-  - Codex Scheduler と通信する automation を書くとき。
+  - Clockhand と通信する automation を書くとき。
 ---
 
 # インターフェース
 
-Codex Scheduler には 3 つの public interface layer がある。desktop UI、local daemon JSON-RPC API、`codex-schedule` CLI である。Tauri command layer は UI を daemon RPC に接続する。
+Clockhand には 3 つの public interface layer がある。desktop UI、local daemon JSON-RPC API、`codex-schedule` CLI である。Tauri command layer は UI を daemon RPC に接続する。
 
 ## Desktop UI
 

@@ -47,7 +47,7 @@ pub fn is_scaffold() -> bool {
 
 #[derive(Debug, Parser)]
 #[command(name = "codex-schedule")]
-#[command(about = "Manage Codex Scheduler tasks")]
+#[command(about = "Manage Clockhand tasks")]
 pub struct Cli {
     #[arg(long, global = true)]
     json: bool,

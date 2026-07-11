@@ -1,6 +1,6 @@
-# Codex Scheduler
+# Clockhand
 
-Codex Scheduler は、ローカル Codex CLI 実行をスケジュールする macOS ファーストのデスクトップ scaffold です。このプロジェクトは `docs/spec/` の仕様に沿っており、Tauri v2 shell、Next.js static frontend、scheduler daemon、session CLI、共有 core、Codex runner の各 Rust crate で構成されています。
+Clockhand は、ローカル AI agent の実行をスケジュールする macOS ファーストのデスクトップアプリです。現在の runner は Codex CLI です。このプロジェクトは `docs/spec/` の仕様に沿っており、Tauri v2 shell、Next.js static frontend、scheduler daemon、session CLI、共有 core、Codex runner の各 Rust crate で構成されています。
 
 ## 仕様
 

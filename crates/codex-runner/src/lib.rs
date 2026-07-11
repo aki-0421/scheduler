@@ -1689,7 +1689,7 @@ fn render_scheduler_instructions(request: &RunRequest) -> String {
     let can_repo = request.target.mode != RunTargetMode::Chat;
 
     let mut text = format!(
-        "あなたは Codex Scheduler によって起動されたローカル macOS 上の Codex CLI セッションです。\n\n\
+        "あなたは Clockhand によって起動されたローカル macOS 上の Codex CLI セッションです。\n\n\
 このセッションでは、PATH 上の `codex-schedule` CLI を使って、次回以降のスケジュールを作成または更新できます。日時は RFC3339、繰り返しは 5-field cron を優先してください。確認には `--json` を使ってください。\n\n\
 現在の scheduler context:\n\
 - current_task_id: {}\n\

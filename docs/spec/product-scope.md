@@ -1,6 +1,6 @@
 ---
 title: プロダクトスコープ
-description: Codex Scheduler の実装済み product purpose、user、MVP boundary、既知の implementation gap を定義する。
+description: Clockhand の実装済み product purpose、user、MVP boundary、既知の implementation gap を定義する。
 updated: 2026-07-11
 read_when:
   - product behavior、navigation、task creation、run history、scheduler default を変更するとき。
@@ -9,7 +9,7 @@ read_when:
 
 # プロダクトスコープ
 
-Codex Scheduler は、ローカル Codex CLI 作業をスケジュールする macOS ファーストの desktop app である。すでにローカル Git project から Codex を実行しているユーザーが、visible state、local log、一貫した execution profile を持つ recurring または delayed work を実行したい場合を想定している。
+Clockhand は、ローカル AI agent の作業をスケジュールする macOS ファーストの desktop app である。現在の実装が起動できる runner は Codex CLI のみである。すでにローカル Git project から Codex を実行しているユーザーが、visible state、local log、一貫した execution profile を持つ recurring または delayed work を実行したい場合を想定している。
 
 app は、汎用 admin dashboard ではなく、AI work の local automation console のように感じられる必要がある。実装済み UI は、project、upcoming work、failed run、execution session、execution setting のために、compact で task-first な surface を使う。
 

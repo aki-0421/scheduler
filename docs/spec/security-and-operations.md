@@ -1,7 +1,7 @@
 ---
 title: セキュリティと運用
 description: local trust boundary、project scope、task lock、capability token、固定 execution profile、diagnostics、cleanup、release operations を定義する。
-updated: 2026-07-10
+updated: 2026-07-11
 read_when:
   - project scope、task lock、path opening、scheduler token、execution profile、diagnostics export、cleanup、signing、sidecar release flow を変更するとき。
   - scheduled Codex run の local execution risk を review するとき。
@@ -9,7 +9,7 @@ read_when:
 
 # セキュリティと運用
 
-Codex Scheduler は local file に対して local AI work を実行する。実装は scheduling、project scope、task lock、run-scoped capability token、audit log を product-visible safety control として扱う。Codex execution は full access と approval request なしの固定 profile を使う。
+Clockhand は local file に対して local AI work を実行する。実装は scheduling、project scope、task lock、run-scoped capability token、audit log を product-visible safety control として扱う。Codex execution は full access と approval request なしの固定 profile を使う。
 
 ## 信頼境界
 
