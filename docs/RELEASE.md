@@ -23,6 +23,7 @@ release artifact は、次をすべて満たす必要がある。
 
 - repository root の `pnpm release:github` だけで release build と配布用 ZIP 作成が完了する。
 - sidecar は Cargo の `release` profile で同じ commit から build され、`.app/Contents/MacOS/` に実行可能 file として含まれる。
+- `/`、Projects、Tasks、Task Wizard、Task Session、Settings の static output が Clockhand の HTML document であり、`NEXT_REDIRECT` などの Next.js error payload ではないことを production frontend build が検証する。
 - `Clockhand.app` を起動すると bundled `codex-schedulerd` を発見でき、初期 window が表示される。
 - `dist/` に architecture と `adhoc` を明示した ZIP と、その SHA-256 file が生成される。
 - ad-hoc 署名版の release note は Gatekeeper の手動許可手順と SHA-256 検証方法を案内する。
@@ -41,6 +42,8 @@ pnpm release:github
 ```
 
 `pnpm release:github` は Tauri release build を行い、`target/release/bundle/macos/Clockhand.app` を macOS の bundle metadata を保つ ZIP に格納する。Apple Silicon Mac で version `0.1.0` を build した場合の出力例:
+
+frontend build 中に `apps/desktop/scripts/verify-static-entry.mjs` が全 static screen route の HTML 構造、route 固有 marker、Next.js error marker 非含有、Tauri の初期 route を検証する。1画面でも違反した場合、bundle 作成前に build は失敗する。
 
 ```text
 dist/Clockhand-0.1.0-macos-arm64-adhoc.zip

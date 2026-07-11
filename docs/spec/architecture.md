@@ -25,7 +25,7 @@ repository は pnpm と Cargo の workspace である。
 
 desktop frontend は Tauri 内で提供される static Next.js app である。開発中は `127.0.0.1:4317` で動作し、default port の無関係な Next server に誤って接続することを避ける。frontend は `@tauri-apps/api/core` 経由で Tauri command を呼び出す。開発や test で Tauri 内で動いていない場合は mock IPC に fallback する。
 
-Tauri の初期 window は static export の `/projects/` を直接開く。root `/` も browser 用 fallback として `/projects/` へ client navigation する通常の static HTML を生成し、Next.js server redirect の `NEXT_REDIRECT` error payload を release bundle に含めてはならない。release QA は `out/index.html` が error document ではないことと、native app の初期 window がプロジェクト画面を描画することを確認する。
+Tauri の初期 window は static export の `/projects/` を直接開く。root `/` も browser 用 fallback として `/projects/` へ client navigation する通常の static HTML を生成し、Next.js server redirect の `NEXT_REDIRECT` error payload を release bundle に含めてはならない。production build は `/`、`/projects`、`/tasks`、`/tasks/new`、`/runs`、`/settings` の各出力が Clockhand の HTML document であり、route 固有の描画 marker を持ち、Next.js error marker を含まないことを検証する。release QA は native app の初期 window がプロジェクト画面を描画することも確認する。
 
 Tauri backend は daemon sidecar を管理する。
 
