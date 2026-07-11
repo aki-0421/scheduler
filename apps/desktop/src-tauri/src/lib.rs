@@ -23,6 +23,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 
 type CommandResult<T> = Result<T, String>;
+#[cfg(unix)]
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(35);
 const DAEMON_LOG_TAIL_BYTES: u64 = 64 * 1024;
 const LOG_EXPORT_TAIL_BYTES: usize = 256 * 1024;

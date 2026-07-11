@@ -2695,11 +2695,6 @@ fn set_private_file_permissions(path: &Path) -> std::io::Result<()> {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
 }
 
-#[cfg(not(unix))]
-fn set_private_file_permissions(_path: &Path) -> std::io::Result<()> {
-    Ok(())
-}
-
 #[cfg(unix)]
 fn bind_local_endpoint(endpoint: &Path) -> std::io::Result<LocalListener> {
     if endpoint.exists() {

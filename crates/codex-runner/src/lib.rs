@@ -715,7 +715,7 @@ async fn prepare_repo_worktree_workspace(
                 "add".to_owned(),
                 "-b".to_owned(),
                 branch_name.clone(),
-                worktree_path.to_string_lossy().to_string(),
+                git_path_argument(&worktree_path),
                 base_ref.clone(),
             ],
         )
@@ -880,6 +880,23 @@ fn ensure_child_under(canonical_parent: &Path, child: &Path) -> Result<()> {
             trusted_roots: vec![canonical_parent.to_path_buf()],
         })
     }
+}
+
+#[cfg(windows)]
+fn git_path_argument(path: &Path) -> String {
+    let path = path.to_string_lossy();
+    if let Some(path) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{path}")
+    } else if let Some(path) = path.strip_prefix(r"\\?\") {
+        path.to_owned()
+    } else {
+        path.into_owned()
+    }
+}
+
+#[cfg(not(windows))]
+fn git_path_argument(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 async fn resolve_base_ref(repo_path: &Path, base_ref: &str) -> Result<()> {
@@ -1541,7 +1558,7 @@ async fn cleanup_worktree(
         vec![
             "worktree".to_owned(),
             "remove".to_owned(),
-            worktree_path.to_string_lossy().to_string(),
+            git_path_argument(worktree_path),
         ],
     )
     .await?;
@@ -1674,7 +1691,7 @@ fn render_scheduler_instructions(request: &RunRequest) -> String {
     let can_repo = request.target.mode != RunTargetMode::Chat;
 
     let mut text = format!(
-        "あなたは Clockhand によって起動されたローカル macOS 上の Codex CLI セッションです。\n\n\
+        "あなたは Clockhand によって起動されたローカル環境上の Codex CLI セッションです。\n\n\
 このセッションでは、PATH 上の `codex-schedule` CLI を使って、次回以降のスケジュールを作成または更新できます。日時は RFC3339、繰り返しは 5-field cron を優先してください。確認には `--json` を使ってください。\n\n\
 現在の scheduler context:\n\
 - current_task_id: {}\n\

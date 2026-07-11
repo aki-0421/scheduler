@@ -1870,7 +1870,10 @@ async fn global_codex_path_applies_to_every_task_end_to_end() {
     assert_eq!(run.exit_code, Some(0));
     assert_eq!(run.codex_session_id.as_deref(), Some("sess_dummy_success"));
     assert!(run.codex_command_json.contains("dummy-codex-success"));
-    assert_eq!(run.result_summary.as_deref(), Some("done\n"));
+    assert_eq!(
+        run.result_summary.as_deref().map(str::trim_end),
+        Some("done")
+    );
     assert!(run
         .stdout_tail
         .as_deref()
@@ -1881,10 +1884,9 @@ async fn global_codex_path_applies_to_every_task_end_to_end() {
         .as_deref()
         .unwrap_or_default()
         .contains("prompt: Check project status."));
-    assert!(run
-        .last_message_path
-        .as_deref()
-        .is_some_and(|path| std::fs::read_to_string(path).unwrap_or_default() == "done\n"));
+    assert!(run.last_message_path.as_deref().is_some_and(|path| {
+        std::fs::read_to_string(path).unwrap_or_default().trim_end() == "done"
+    }));
 
     let events = handle
         .db()

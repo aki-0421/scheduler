@@ -91,7 +91,7 @@ async fn success_run_captures_logs_last_message_and_exit_code() {
         outcome.codex_session_id.as_deref(),
         Some("sess_dummy_success")
     );
-    assert_eq!(outcome.summary.as_deref(), Some("done\n"));
+    assert_eq!(outcome.summary.as_deref().map(str::trim_end), Some("done"));
     assert!(outcome.stdout_tail.contains("\"done\""));
     assert!(outcome.stderr_tail.contains("prompt: Say done"));
     assert!(fs::read_to_string(outcome.log_paths.stdout_log)
@@ -101,8 +101,10 @@ async fn success_run_captures_logs_last_message_and_exit_code() {
         .unwrap()
         .contains("Scheduler metadata"));
     assert_eq!(
-        fs::read_to_string(outcome.log_paths.last_message).unwrap(),
-        "done\n"
+        fs::read_to_string(outcome.log_paths.last_message)
+            .unwrap()
+            .trim_end(),
+        "done"
     );
     assert!(fs::read_to_string(outcome.log_paths.events_jsonl)
         .unwrap()
@@ -305,7 +307,10 @@ async fn non_zero_exit_is_failed() {
     assert_eq!(outcome.status, RunStatus::Failed);
     assert_eq!(outcome.exit_code, Some(42));
     assert!(outcome.stderr_tail.contains("dummy failure"));
-    assert_eq!(outcome.summary.as_deref(), Some("failed\n"));
+    assert_eq!(
+        outcome.summary.as_deref().map(str::trim_end),
+        Some("failed")
+    );
 }
 
 #[tokio::test]
