@@ -1,38 +1,45 @@
 ---
 title: リリース
-description: Clockhand のタグ駆動 GitHub Release、ad-hoc 署名配布、Developer ID 署名、notarization、sidecar bundle、release build 検証手順を定義する。
+description: Clockhand のクロスプラットフォーム build、tag 駆動 GitHub Release、artifact 検証、platform 署名への移行手順を定義する。
 updated: 2026-07-11
 read_when:
-  - Clockhand の macOS release build、署名、notarization、配布を行うとき。
+  - Clockhand の macOS、Windows、Linux release build または配布を行うとき。
   - GitHub Actions の release workflow、version tag、release asset を変更するとき。
-  - Tauri sidecar binary の bundle や release artifact 検証を変更するとき。
+  - Tauri sidecar binary、checksum、Developer ID、Authenticode、notarization を変更するとき。
 ---
 
 # リリース
 
-Clockhand は Tauri desktop app と、次の 2 つの sidecar binary を 1 つの `.app` に同梱する。
+Clockhand は Tauri desktop app に次の sidecar binary を同梱する。
 
 - `codex-schedulerd`
 - `codex-schedule`
 
-GitHub Releases への upload 自体に Apple Developer ID 署名は必須ではない。ただし Apple Silicon では browser から download した app に code signature が必要なため、証明書を使わない Tauri の ad-hoc identity `-` で bundle 全体を署名する。ad-hoc signature は developer identity の証明や notarization ではなく、利用者は Gatekeeper で明示的に実行を許可する必要がある。この repository では、まず ad-hoc 署名の GitHub 配布をサポートし、警告なしで開ける配布が必要になった時点で Developer ID 署名・公証へ移行する。
+tag 駆動 release は次の 5 target、7 artifact、7 SHA-256 file を 1 つの GitHub Release で公開する。
+
+| Target | Artifact |
+| --- | --- |
+| macOS Apple Silicon | `Clockhand-<version>-macos-arm64-adhoc.zip` |
+| macOS Intel | `Clockhand-<version>-macos-x64-adhoc.zip` |
+| Windows x64 | `Clockhand-<version>-windows-x64-setup.exe` |
+| Linux x64 | `Clockhand-<version>-linux-x64.AppImage` / `.deb` |
+| Linux arm64 | `Clockhand-<version>-linux-arm64.AppImage` / `.deb` |
+
+対応範囲の契約は [プラットフォーム対応](spec/platform-support.md) を使う。Windows arm64 と RPM は現在の公開対象ではない。
 
 ## リリース受入条件
 
-release artifact は、次をすべて満たす必要がある。
+- desktop package、Tauri config、4 Rust package、desktop Rust package の version が一致する。tag はその version に `v` を付けた値である。
+- tag の commit は `origin/main` に含まれる。
+- 各 target の app と sidecar は同じ commit、Rust target triple、Cargo `release` profile から build する。
+- frontend production build は全 static screen が Clockhand の HTML であり、`NEXT_REDIRECT` などの error payload でないことを bundle 作成前に検証する。
+- packager は app main binary と両 sidecar の architecture を検証する。macOS では executable bit、bundle seal、ZIP 展開後の seal も検証する。
+- 個々の artifact に `<artifact>.sha256` を付ける。
+- publish job は 5 つの target manifest と 7 artifact / checksum pair を再検証する。一部でも欠けた場合は GitHub Release を作成しない。
+- build job は `contents: read`、publish job だけが `contents: write` を使う。
+- frontend / Rust の test、lint、audit、managed document lint が成功する。
 
-- repository root の `pnpm release:github` だけで release build と配布用 ZIP 作成が完了する。
-- sidecar は Cargo の `release` profile で同じ commit から build され、`.app/Contents/MacOS/` に実行可能 file として含まれる。
-- `/`、Projects、Tasks、Task Wizard、Task Session、Settings の static output が Clockhand の HTML document であり、`NEXT_REDIRECT` などの Next.js error payload ではないことを production frontend build が検証する。
-- `Clockhand.app` を起動すると bundled `codex-schedulerd` を発見でき、初期 window が表示される。
-- `dist/` に architecture と `adhoc` を明示した ZIP と、その SHA-256 file が生成される。
-- ad-hoc 署名版の release note は Gatekeeper の手動許可手順と SHA-256 検証方法を案内する。
-- frontend / Rust の test、lint、production dependency audit、documentation lint が成功する。
-- `main` に含まれる commit へ `v<package-version>` tag を push すると `.github/workflows/release.yml` が起動し、macOS arm64 artifact を GitHub Release として公開する。
-- workflow は tag と `apps/desktop/package.json` の version が完全一致しない場合、または tag の commit が `origin/main` に含まれない場合に release を作成しない。
-- release job の `GITHUB_TOKEN` は repository contents の書き込みだけを許可し、それ以外の権限を付与しない。
-
-## GitHub Releases 向け ad-hoc 署名配布
+## ローカル release build
 
 repository root で実行する。
 
@@ -41,28 +48,29 @@ pnpm install --frozen-lockfile
 pnpm release:github
 ```
 
-`pnpm release:github` は Tauri release build を行い、`target/release/bundle/macos/Clockhand.app` を macOS の bundle metadata を保つ ZIP に格納する。Apple Silicon Mac で version `0.1.0` を build した場合の出力例:
-
-frontend build 中に `apps/desktop/scripts/verify-static-entry.mjs` が全 static screen route の HTML 構造、route 固有 marker、Next.js error marker 非含有、Tauri の初期 route を検証する。1画面でも違反した場合、bundle 作成前に build は失敗する。
-
-```text
-dist/Clockhand-0.1.0-macos-arm64-adhoc.zip
-dist/Clockhand-0.1.0-macos-arm64-adhoc.zip.sha256
-```
-
-upload 前に bundle seal と checksum を検証する。
+script は `rustc -vV` の host triple を使う。同じ OS の別 architecture を build する場合は Rust target と native build 環境を準備し、次のように指定できる。cross-OS build は行わず、release workflow で native OS runner を使う。
 
 ```bash
-codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/Clockhand.app
-cd dist
-shasum -a 256 -c Clockhand-0.1.0-macos-arm64-adhoc.zip.sha256
+TARGET_TRIPLE=x86_64-apple-darwin pnpm release:github
 ```
 
-ad-hoc build に対する `spctl --assess` の `rejected` は developer identity と notarization がないことを示す期待結果であり、bundle seal の失敗とは区別する。bundle integrity は上記の `codesign --verify` で判定する。
+`pnpm release:github` は次を行う。
+
+1. target に合わせた Cargo release sidecar を `apps/desktop/src-tauri/binaries/<name>-<target>[.exe]` へ準備する。
+2. frontend production build と static screen verification を実行する。
+3. macOS は Tauri app、Windows は NSIS、Linux は AppImage / deb を build する。
+4. binary / bundle を検証し、normalized filename で `dist/` へ配置する。
+5. artifact ごとの SHA-256 と `release-manifest-<target>.json` を生成する。
+
+version の一致は単独でも検証できる。
+
+```bash
+node apps/desktop/scripts/verify-release-version.mjs v0.1.0
+```
 
 ## タグ駆動 GitHub Release
 
-通常の release は GitHub CLI から直接作成せず、`main` へ merge した release commit に version tag を付ける。version `0.1.0` の場合:
+通常の release は GitHub CLI から直接作成せず、`main` に含まれる release commit に version tag を付ける。version `0.1.0` の例:
 
 ```bash
 git switch main
@@ -71,94 +79,73 @@ git tag -a v0.1.0 -m "Clockhand 0.1.0"
 git push origin v0.1.0
 ```
 
-tag push を契機に `.github/workflows/release.yml` が次を順番に行う。
+`.github/workflows/release.yml` は次の順で進む。
 
-1. checkout した commit が `origin/main` に含まれることを確認する。
-2. tag が `v<apps/desktop/package.json version>` と完全一致することを確認する。
-3. arm64 macOS runner で依存関係を固定 lockfile から install する。
-4. `pnpm release:github` で ad-hoc 署名済み ZIP と SHA-256 file を作る。
-5. bundle seal、checksum、architecture、3 executable の存在と実行権限を検証する。
-6. Gatekeeper の手動許可案内と自動生成 changelog を含む GitHub Release を公開し、2 asset を添付する。
+1. tag commit が `origin/main` に含まれ、tag と全 package version が一致することを検証する。
+2. `macos-latest` で Apple Silicon / Intel、`windows-2022` で x64、`ubuntu-22.04` で x64、公開 repository 向け `ubuntu-22.04-arm` で arm64 を build する。
+3. target ごとの artifact、checksum、manifest を workflow artifact として保存する。
+4. publish job がすべてを 1 directory に収集し、`verify-release-assets.mjs` で完全性と checksum を再検証する。
+5. unsigned / ad-hoc の説明と platform 別の警告を含む 1 つの GitHub Release を作成する。
 
-tag は公開 identifier である。公開済み tag の付け替えや同名 release asset の上書きは行わず、修正時は application version を上げて新しい tag を発行する。進行状況と結果は次で確認できる。
+進行状況と結果:
 
 ```bash
 gh run list --workflow release.yml --limit 5
 gh release view v0.1.0
 ```
 
+公開済み tag の付け替えや同名 asset の上書きは行わない。修正時は application version を上げ、新しい tag を発行する。
+
 ### 手動 fallback
 
-workflow 障害を調査したうえで release を手動作成する場合に限り、version と architecture が一致する 2 file を添付する。
+workflow 障害の原因を確認し、各 native runner から集めた `release-assets/` に 5 manifest と完全な artifact set がある場合に限り手動公開する。
 
 ```bash
-gh release create v0.1.0 \
-  dist/Clockhand-0.1.0-macos-arm64-adhoc.zip \
-  dist/Clockhand-0.1.0-macos-arm64-adhoc.zip.sha256 \
+node apps/desktop/scripts/verify-release-assets.mjs release-assets 0.1.0
+gh release create v0.1.0 release-assets/Clockhand-* \
   --title "Clockhand 0.1.0" \
   --verify-tag \
-  --generate-notes \
-  --notes "ad-hoc 署名版です。初回起動時は以下の Gatekeeper 手順と SHA-256 を確認してください。"
+  --generate-notes
 ```
 
-この command は外部状態を変更するため、artifact のローカル検証が完了し、自動 workflow を使えない理由が確認できるまで実行しない。
+この command は外部状態を変更する。自動 workflow を使えない理由と完全な artifact verification が確認できるまで実行しない。
 
-### 利用者向け Gatekeeper 手順
-
-ad-hoc 署名版を初めて開く場合は、ZIP と同じ release にある SHA-256 を照合したうえで次の手順を案内する。
-
-1. Finder で `Clockhand.app` を開き、macOS の警告を確認する。
-2. `システム設定` → `プライバシーとセキュリティ` を開く。
-3. Security section の `このまま開く` を選び、もう一度 `開く` を選ぶ。
-
-Apple は、未公証または未確認 developer の app を開く手動 override には risk があると案内している。release note では `xattr` による quarantine の一括削除を標準手順にせず、macOS の確認 UI を使う。
-
-## Sidecar build
+## Sidecar build contract
 
 Tauri config の `bundle.externalBin` は `apps/desktop/src-tauri/binaries/` の target-triple suffix 付き binary を bundle する。
 
-- `tauri dev` は `pnpm sidecars:prepare` を使い、Cargo `debug` profile の sidecar を準備する。
-- `tauri build` は `pnpm sidecars:prepare:release` を使い、Cargo `release` profile の sidecar を準備する。
+- `tauri dev`: `pnpm sidecars:prepare`、Cargo `debug` profile。
+- `tauri build`: `pnpm sidecars:prepare:release`、Cargo `release` profile。
+- Windows binary: Tauri suffix の後ろに `.exe` を付ける。
 
-sidecar だけを repository root から準備する場合:
+sidecar だけを準備する場合:
 
 ```bash
 pnpm sidecars:prepare
 pnpm sidecars:prepare:release
 ```
 
-## Developer ID 署名と Notarization
+## 署名と利用者への案内
 
-Gatekeeper の手動許可なしで配布する場合は、Apple Developer Program の Developer ID Application certificate と notarization を使う。
+自動 workflow は secret を必要としない unsigned / ad-hoc build を作る。公開文で「署名済み」「公証済み」と表示しない。
 
-1. certificate を login keychain に install し、identity を確認する。
+### macOS
 
-```bash
-security find-identity -v -p codesigning
-```
+Tauri の ad-hoc identity `-` で app、sidecar、resource を seal する。これは developer identity の証明や notarization ではない。利用者には checksum 検証後、Finder で一度開き、`システム設定` → `プライバシーとセキュリティ` → `このまま開く` を使うよう案内する。`xattr` による quarantine 一括削除は標準手順にしない。
 
-2. `apps/desktop/src-tauri/tauri.conf.json` の `bundle.macOS` に signing identity と team ID を設定する。ad-hoc build では `signingIdentity` を `-`、`providerShortName` を `null` にする。
-
-```json
-"macOS": {
-  "signingIdentity": "Developer ID Application: Your Company (TEAMID)",
-  "providerShortName": "TEAMID"
-}
-```
-
-3. release shell または CI secret store に notarization 用 credential を設定する。
-
-```bash
-export APPLE_ID="release@example.com"
-export APPLE_PASSWORD="app-specific-password"
-export APPLE_TEAM_ID="TEAMID"
-```
-
-`APPLE_PASSWORD` には Apple ID account password ではなく app-specific password を使う。build 後は repository root の artifact path を検証する。
+Gatekeeper の手動許可をなくす場合は Developer ID Application certificate と notarization credential を secret store から導入する。build 後は次を検証する。
 
 ```bash
 codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/Clockhand.app
 spctl --assess --type execute --verbose target/release/bundle/macos/Clockhand.app
 ```
 
-Tauri release flow で notarization が自動実行されない場合は、built ZIP、PKG、または DMG を `xcrun notarytool` に submit し、配布前に app または disk image へ ticket を staple する。
+Tauri の自動 notarization を使わない場合は `xcrun notarytool` で submit し、配布前に ticket を staple する。
+
+### Windows
+
+NSIS installer は現在 Authenticode 未署名であり、SmartScreen の警告が表示される場合がある。警告をなくす場合は code-signing certificate を secret store から Windows build job に導入し、installer と必要な executable を timestamp 付きで署名し、公開前に signature verification を追加する。
+
+### Linux
+
+AppImage と Debian package は現在 repository signature を持たない。利用者は同梱 `.sha256` で file integrity を検証する。APT repository を提供する場合は package upload、repository metadata、signing key の lifecycle を別仕様で定義する。

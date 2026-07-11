@@ -20,7 +20,6 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 
 type CommandResult<T> = Result<T, String>;
@@ -68,7 +67,7 @@ impl std::fmt::Display for BackendError {
 
 impl DaemonManager {
     fn new(data_dir: PathBuf) -> Self {
-        let socket_path = data_dir.join("scheduler.sock");
+        let socket_path = scheduler_core::local_transport::default_endpoint(&data_dir);
         Self {
             data_dir,
             socket_path,
@@ -262,7 +261,19 @@ fn terminate_process(child: &mut Child) {
     wait_for_process_exit(child, DAEMON_SHUTDOWN_TIMEOUT);
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn terminate_process(child: &mut Child) {
+    let terminated_tree = Command::new("taskkill")
+        .args(["/PID", &child.id().to_string(), "/T", "/F"])
+        .status()
+        .is_ok_and(|status| status.success());
+    if !terminated_tree {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+}
+
+#[cfg(not(any(unix, windows)))]
 fn terminate_process(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
@@ -304,11 +315,14 @@ async fn rpc_call(
     let line =
         serde_json::to_string(&request).map_err(|err| BackendError::Decode(err.to_string()))?;
 
-    let stream = tokio::time::timeout(Duration::from_secs(2), UnixStream::connect(socket_path))
-        .await
-        .map_err(|_| BackendError::Transport("daemon socket connection timed out".to_owned()))?
-        .map_err(|err| BackendError::Transport(err.to_string()))?;
-    let (read, mut write) = stream.into_split();
+    let stream = tokio::time::timeout(
+        Duration::from_secs(2),
+        scheduler_core::local_transport::connect(socket_path),
+    )
+    .await
+    .map_err(|_| BackendError::Transport("daemon connection timed out".to_owned()))?
+    .map_err(|err| BackendError::Transport(err.to_string()))?;
+    let (read, mut write) = tokio::io::split(stream);
     write
         .write_all(line.as_bytes())
         .await
@@ -342,13 +356,7 @@ fn scheduler_data_dir() -> PathBuf {
     if let Some(path) = std::env::var_os("CODEX_SCHEDULER_DATA_DIR") {
         return PathBuf::from(path);
     }
-    if let Some(home) = std::env::var_os("HOME") {
-        return PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("Codex Scheduler");
-    }
-    PathBuf::from(".").join("Codex Scheduler")
+    scheduler_core::paths::default_data_dir()
 }
 
 fn locate_schedulerd(app: &AppHandle) -> Result<PathBuf, String> {

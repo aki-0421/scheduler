@@ -130,6 +130,7 @@ fn read_lock_metadata(path: &Path) -> std::io::Result<Option<LockMetadata>> {
     }))
 }
 
+#[cfg(unix)]
 fn pid_exists(pid: i32) -> bool {
     if pid <= 0 {
         return false;
@@ -138,6 +139,13 @@ fn pid_exists(pid: i32) -> bool {
         libc::kill(pid, 0) == 0
             || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
     }
+}
+
+#[cfg(not(unix))]
+fn pid_exists(pid: i32) -> bool {
+    // Reaching this branch means the OS-level exclusive lock is still held.
+    // Treat its positive metadata PID as live instead of stealing the lock.
+    pid > 0
 }
 
 #[cfg(unix)]

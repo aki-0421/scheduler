@@ -1,12 +1,13 @@
 # Clockhand
 
-Clockhand は、ローカル AI agent の実行をスケジュールする macOS ファーストのデスクトップアプリです。現在の runner は Codex CLI です。このプロジェクトは `docs/spec/` の仕様に沿っており、Tauri v2 shell、Next.js static frontend、scheduler daemon、session CLI、共有 core、Codex runner の各 Rust crate で構成されています。
+Clockhand は、ローカル AI agent の実行をスケジュールする macOS、Windows、Linux 向けのデスクトップアプリです。現在の runner は Codex CLI です。このプロジェクトは `docs/spec/` の仕様に沿っており、Tauri v2 shell、Next.js static frontend、scheduler daemon、session CLI、共有 core、Codex runner の各 Rust crate で構成されています。
 
 ## 仕様
 
 - `docs/spec/index.md` - 現在の実装ベース仕様セットの入口。
 - `docs/spec/product-scope.md` - プロダクトの目的、ユーザー価値、MVP 境界。
 - `docs/spec/architecture.md` - Tauri、Next.js、daemon、CLI、IPC、永続化のアーキテクチャ。
+- `docs/spec/platform-support.md` - 対応 OS / architecture、local IPC、build、release artifact。
 - `docs/spec/scheduling-and-execution.md` - スケジュール計算、daemon tick、runner 挙動、ログ、retry、cleanup。
 
 ## 開発
@@ -50,12 +51,12 @@ pnpm --filter desktop build
 
 ## GitHub Releases 向け build
 
-証明書不要の ad-hoc 署名を行った macOS ZIP と SHA-256 file を repository root の `dist/` に作成します。
+現在の OS / architecture 向け Tauri bundle、SHA-256 file、release manifest を repository root の `dist/` に作成します。macOS では ad-hoc 署名 `.app.zip`、Windows では NSIS installer、Linux では AppImage と Debian package を作ります。
 
 ```bash
 pnpm release:github
 ```
 
-通常は release commit を `main` へ merge した後、application version と一致する tag（例: `v0.1.0`）を push する。`.github/workflows/release.yml` が arm64 artifact の build、署名・checksum 検証、GitHub Release 公開を自動実行する。
+通常は release commit を `main` へ merge した後、application version と一致する tag（例: `v0.1.0`）を push します。`.github/workflows/release.yml` は macOS Apple Silicon / Intel、Windows x64、Linux x64 / arm64 を build し、全 artifact と checksum が揃ったときだけ 1 つの GitHub Release を公開します。
 
-ad-hoc 署名版は Apple Developer certificate なしで GitHub Releases へ upload できますが、利用者は初回起動時に macOS の `プライバシーとセキュリティ` から実行を明示的に許可する必要があります。artifact の検証、tag 発行、自動 release、Developer ID 署名・公証への移行手順は `docs/RELEASE.md` を参照してください。
+自動 release は secret 不要の unsigned / ad-hoc build です。macOS では初回起動時の Gatekeeper 許可、Windows では SmartScreen 警告が必要になる場合があります。artifact の検証、tag 発行、自動 release、platform 署名への移行手順は `docs/RELEASE.md` を参照してください。

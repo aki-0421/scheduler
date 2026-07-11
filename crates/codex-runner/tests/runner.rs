@@ -15,6 +15,11 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 fn fixture(name: &str) -> PathBuf {
+    let name = if cfg!(windows) {
+        format!("{}.cmd", name.trim_end_matches(".sh"))
+    } else {
+        name.to_owned()
+    };
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")

@@ -20,6 +20,7 @@ read_when:
 
 - settings form には frontend default 付きの `useSettings()` を使う。
 - schema version には `useHealth()` を使う。
+- local IPC endpoint と database path には `useDaemonDiagnostics()` の実値を使う。
 - 各 setting の保存には `useSetSetting()` を使う。
 - support bundle export には `ipcClient.diagnosticsExport()` を使う。
 
@@ -38,7 +39,7 @@ read_when:
 - Notifications switch は `notifications.enabled` を control する。
 - `Codex バイナリパスをカスタマイズ` checkbox は global control として配置する。未選択時は `PATH` 上の `codex` を使い、選択時だけ `runner.codex_path` input を表示する。保存した custom path はすべての task に共通適用し、task 固有 override は持たない。
 - Default model select は `runner.default_model` を control し、Codex frontier model のみを選択肢として表示する。
-- read-only socket path と database path。
+- read-only local IPC endpoint と database path。endpoint は macOS / Linux の Unix socket または Windows named pipe である。
 - schema version display。
 - export diagnostics button。
 - save settings button。
@@ -68,7 +69,7 @@ read_when:
 
 - global concurrency、sandbox、approval policy、worktree cleanup、runtime、retry、overlap、missed-run、Scheduler CLI permission は app-wide の固定規則であり、Settings に表示しない。
 - diagnostic export は user-initiated であり、local file に書き込む。
-- socket path と database path は read-only display value である。
+- local IPC endpoint と database path は daemon diagnostics が返す read-only display value である。
 
 受け入れ条件:
 

@@ -649,6 +649,7 @@ export async function mockInvoke(command: string, params?: unknown): Promise<unk
         dbSchemaVersion: 6,
         dataDir: "/tmp/codex-scheduler",
         socketPath: "/tmp/codex-scheduler/scheduler.sock",
+        dbPath: "/tmp/codex-scheduler/scheduler.sqlite3",
         dbSizeBytes: 4096,
         logsSizeBytes: 8192,
         taskCounts: { active: tasks.filter((task) => task.status === "active").length },

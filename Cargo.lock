@@ -590,6 +590,7 @@ name = "codex-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "fs2",
  "libc",
  "scheduler-core",
  "serde",
@@ -3382,6 +3383,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

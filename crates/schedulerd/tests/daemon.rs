@@ -67,6 +67,11 @@ fn sample_task_dto(slug: &str, kind: TaskKind) -> TaskDto {
 }
 
 fn codex_fixture(name: &str) -> PathBuf {
+    let name = if cfg!(windows) {
+        format!("{}.cmd", name.trim_end_matches(".sh"))
+    } else {
+        name.to_owned()
+    };
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("codex-runner")
@@ -281,7 +286,7 @@ fn init_repo_with_local_main(temp: &TempDir) -> PathBuf {
 }
 
 #[tokio::test]
-async fn daemon_health_returns_shape_over_uds() {
+async fn daemon_health_returns_shape_over_local_transport() {
     let (_temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
 
@@ -303,7 +308,7 @@ async fn daemon_health_returns_shape_over_uds() {
 }
 
 #[tokio::test]
-async fn daemon_diagnostics_returns_runtime_state_over_uds() {
+async fn daemon_diagnostics_returns_runtime_state_over_local_transport() {
     let (temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
     handle.request_tick();
@@ -324,6 +329,13 @@ async fn daemon_diagnostics_returns_runtime_state_over_uds() {
     assert_eq!(
         diagnostics.socket_path,
         handle.socket_path().to_string_lossy()
+    );
+    assert_eq!(
+        diagnostics.db_path,
+        temp.path()
+            .join("scheduler.sqlite3")
+            .to_string_lossy()
+            .into_owned()
     );
     assert!(diagnostics.scheduler_enabled);
     assert_eq!(diagnostics.tick_interval_sec, 3600);
@@ -366,7 +378,7 @@ async fn task_create_generates_unique_slug_for_duplicate_names() {
 }
 
 #[tokio::test]
-async fn daemon_tick_now_triggers_scheduler_tick_over_uds() {
+async fn daemon_tick_now_triggers_scheduler_tick_over_local_transport() {
     let (_temp, handle, executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
 
@@ -411,7 +423,7 @@ async fn daemon_tick_now_triggers_scheduler_tick_over_uds() {
 }
 
 #[tokio::test]
-async fn task_audit_list_returns_task_audit_events_over_uds() {
+async fn task_audit_list_returns_task_audit_events_over_local_transport() {
     let (_temp, handle, _executor) =
         start_test_daemon(MockBehavior::succeed_after(Duration::from_millis(10))).await;
 
@@ -1857,7 +1869,7 @@ async fn global_codex_path_applies_to_every_task_end_to_end() {
     assert_eq!(run.status, RunStatus::Succeeded);
     assert_eq!(run.exit_code, Some(0));
     assert_eq!(run.codex_session_id.as_deref(), Some("sess_dummy_success"));
-    assert!(run.codex_command_json.contains("dummy-codex-success.sh"));
+    assert!(run.codex_command_json.contains("dummy-codex-success"));
     assert_eq!(run.result_summary.as_deref(), Some("done\n"));
     assert!(run
         .stdout_tail

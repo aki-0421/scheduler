@@ -9,7 +9,7 @@ read_when:
 
 # プロダクトスコープ
 
-Clockhand は、ローカル AI agent の作業をスケジュールする macOS ファーストの desktop app である。現在の実装が起動できる runner は Codex CLI のみである。すでにローカル Git project から Codex を実行しているユーザーが、visible state、local log、一貫した execution profile を持つ recurring または delayed work を実行したい場合を想定している。
+Clockhand は、ローカル AI agent の作業をスケジュールする macOS、Windows、Linux 向けの desktop app である。現在の実装が起動できる runner は Codex CLI のみである。すでにローカル Git project から Codex を実行しているユーザーが、visible state、local log、一貫した execution profile を持つ recurring または delayed work を実行したい場合を想定している。
 
 app は、汎用 admin dashboard ではなく、AI work の local automation console のように感じられる必要がある。実装済み UI は、project、upcoming work、failed run、execution session、execution setting のために、compact で task-first な surface を使う。
 
@@ -41,13 +41,13 @@ desktop app には次の top-level page がある。
 
 現在の実装は local-only である。
 
-- scheduler daemon は desktop app と同じ Mac で動作する。
+- scheduler daemon は desktop app と同じ macOS、Windows、または Linux ホストで動作する。
 - scheduler は local SQLite に state を保存する。
 - run は local `codex exec` 経由で起動される。
 - repository task は registered project を対象にする。
 - cloud execution、multi-user sharing、team permission、hosted scheduler は実装されていない。
 
-この branch には `codex-schedulerd` と `codex-schedule` の release-profile sidecar packaging、GitHub Releases 向け ad-hoc 署名 ZIP / SHA-256 作成、Developer ID signing / notarization への移行手順も含まれる。
+この branch には `codex-schedulerd` と `codex-schedule` の release-profile sidecar packaging、macOS / Windows / Linux 向け GitHub Release asset と SHA-256 作成、プラットフォーム別の署名準備も含まれる。対応 target と artifact contract は [プラットフォーム対応](platform-support.md) で定義する。
 
 ## 既知の gap と制約
 

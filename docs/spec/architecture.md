@@ -16,8 +16,8 @@ Clockhand は、Next.js static frontend と Rust sidecar を持つ Tauri v2 desk
 repository は pnpm と Cargo の workspace である。
 
 - `apps/desktop`: Tauri v2 app、Next.js App Router frontend、shadcn-style UI primitive、Tailwind CSS、TypeScript IPC schema、Vitest test。
-- `crates/scheduler-core`: 共有 Rust data model、SQLite repository layer、migration、JSON-RPC contract、settings、ID、time utility、schedule engine。
-- `crates/schedulerd`: scheduler daemon、Unix-domain-socket JSON-RPC server、run queue、retention cleanup、task audit handling、Codex executor bridge。
+- `crates/scheduler-core`: 共有 Rust data model、SQLite repository layer、migration、JSON-RPC contract、platform data path / local transport adapter、settings、ID、time utility、schedule engine。
+- `crates/schedulerd`: scheduler daemon、platform-local JSON-RPC server、run queue、retention cleanup、task audit handling、Codex executor bridge。
 - `crates/codex-runner`: Codex CLI detection and invocation、prompt composition、workspace preparation、worktree handling、log capture、JSONL event extraction、environment redaction、timeout/cancel behavior、result normalization。
 - `crates/schedule-cli`: human と scheduled Codex session 向けの `codex-schedule` command line interface。
 
@@ -29,30 +29,34 @@ Tauri の初期 window は static export の `/projects/` を直接開く。root
 
 Tauri backend は daemon sidecar を管理する。
 
-- override env var、現在の app executable と同じ directory、Tauri の bundled resource / executable path、development build path、または `PATH` から `codex-schedulerd` を探す。release `.app` では `Contents/MacOS` にある app executable の隣を最優先する。
+- override env var、現在の app executable と同じ directory、Tauri の bundled resource / executable path、development build path、または `PATH` から platform の executable suffix を付けた `codex-schedulerd` を探す。bundle 内では app executable の隣と `binaries` directory を優先する。
 - `--data-dir` と `--socket-path` を指定して daemon を起動する。
 - transport failure を daemon respawn と command retry 1 回の signal として扱う。
-- app shutdown 時に daemon process group を終了する。
+- app shutdown 時に macOS / Linux では daemon process group、Windows では daemon process tree を終了する。
 - 主に daemon JSON-RPC method へ proxy する Tauri command を公開する。
 
 ## Daemon
 
-`codex-schedulerd` は same-user local service である。app data directory 配下の Unix domain socket に bind し、migration を実行し、interrupted run を recover し、scheduler loop と retention cleanup loop を開始し、newline-delimited JSON-RPC request を受け付ける。
+`codex-schedulerd` は same-user local service である。macOS / Linux では app data directory 配下の Unix domain socket、Windows では data directory identity から導出した named pipe に bind する。migration を実行し、interrupted run を recover し、scheduler loop と retention cleanup loop を開始し、newline-delimited JSON-RPC request を受け付ける。
 
-daemon socket は local control surface である。same-UID caller は、scheduled-run metadata と run-scoped token を提示しない限り local user として扱われる。scheduled Codex session の scheduler mutation restriction は capability check と task lock、project file isolation は run 固有 worktree によって enforcement される。Codex 自体は固定 full-access profile で実行する。
+local endpoint は local control surface である。Unix socket は `0700` data directory 内の `0600` file、Windows named pipe は remote client 拒否と current-user-only DACL で保護する。その user の caller は、scheduled-run metadata と run-scoped token を提示しない限り local user として扱われる。scheduled Codex session の scheduler mutation restriction は capability check と task lock、project file isolation は run 固有 worktree によって enforcement される。Codex 自体は固定 full-access profile で実行する。
 
 ## 実行時パス
 
-default app data directory は compatibility のため legacy product name を維持し、次を使う。
+default app data directory は compatibility のため legacy product name `Codex Scheduler` を維持し、OS 標準の local application data root 下に置く。
 
 ```text
-~/Library/Application Support/Codex Scheduler
+macOS   $HOME/Library/Application Support/Codex Scheduler
+Windows %LOCALAPPDATA%\Codex Scheduler
+Linux   $XDG_DATA_HOME/Codex Scheduler
 ```
+
+Linux で `XDG_DATA_HOME` がない場合は `$HOME/.local/share/Codex Scheduler` を使う。desktop、daemon、CLI は `scheduler-core` の同じ resolver を使う。
 
 その root 配下の重要な file と directory:
 
 - `scheduler.sqlite3`: SQLite database。
-- `scheduler.sock`: daemon Unix socket。
+- macOS / Linux の `scheduler.sock`、または Windows の path-derived named pipe: daemon local endpoint。
 - `logs/`: run ごとの log directory。
 - `worktrees/<task-slug>/wt-<UUIDv7>`: taskごとに整理され、実行ごとに timestamp-ordered random name を持つ isolated Git worktree。
 - `chat-workspaces/`: temporary chat-only workspace。
@@ -66,7 +70,7 @@ Tauri config は 2 つの Rust sidecar を bundle する。
 - `codex-schedulerd`
 - `codex-schedule`
 
-`pnpm sidecars:prepare` は Cargo `debug` profile、`pnpm sidecars:prepare:release` は Cargo `release` profile で binary を build し、target-triple suffix 付き executable を Tauri の `binaries/` directory にコピーする。Tauri dev は前者、Tauri build は後者を launch または packaging の前に実行する。repository root の同名 script は desktop package へ委譲する。
+`pnpm sidecars:prepare` は Cargo `debug` profile、`pnpm sidecars:prepare:release` は Cargo `release` profile で binary を build し、target-triple suffix と Windows の `.exe` suffix 付き executable を Tauri の `binaries/` directory にコピーする。Tauri dev は前者、Tauri build は後者を launch または packaging の前に実行する。repository root の同名 script は desktop package へ委譲する。`pnpm release:github` は target OS に応じて macOS app、Windows NSIS、Linux AppImage / deb を選び、binary architecture と checksum を検証する。
 
 ## 永続化
 

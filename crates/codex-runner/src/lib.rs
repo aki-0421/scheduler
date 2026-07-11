@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::ffi::CString;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -516,14 +515,7 @@ fn find_codex_binary(configured_path: Option<&Path>) -> Result<PathBuf> {
         return Err(RunnerError::CodexBinaryDoesNotExist(path.to_path_buf()));
     }
 
-    let path_var = std::env::var_os("PATH").ok_or(RunnerError::CodexBinaryNotFound)?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = dir.join("codex");
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-    Err(RunnerError::CodexBinaryNotFound)
+    scheduler_core::paths::find_executable_in_path("codex").ok_or(RunnerError::CodexBinaryNotFound)
 }
 
 fn canonicalize_existing_file(path: &Path) -> Result<PathBuf> {
@@ -929,30 +921,8 @@ fn existing_ancestor(path: &Path) -> PathBuf {
     current.to_path_buf()
 }
 
-#[cfg(unix)]
 fn available_space_bytes(path: &Path) -> io::Result<u64> {
-    use std::mem::MaybeUninit;
-    use std::os::unix::ffi::OsStrExt;
-
-    let path = CString::new(path.as_os_str().as_bytes())
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "path contains NUL byte"))?;
-    let mut stats = MaybeUninit::<libc::statvfs>::zeroed();
-    let rc = unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) };
-    if rc != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let stats = unsafe { stats.assume_init() };
-    let block_size = if stats.f_frsize == 0 {
-        stats.f_bsize
-    } else {
-        stats.f_frsize
-    };
-    Ok(u64::from(stats.f_bavail).saturating_mul(block_size))
-}
-
-#[cfg(not(unix))]
-fn available_space_bytes(_path: &Path) -> io::Result<u64> {
-    Ok(MIN_FREE_SPACE_BYTES)
+    fs2::available_space(path)
 }
 
 fn build_command_record(
@@ -1230,7 +1200,12 @@ async fn execute_codex(
 
     if exit_status.is_none() {
         if let Some(pid) = pid {
-            terminate_process_group(pid, libc::SIGTERM);
+            #[cfg(unix)]
+            terminate_process_tree(pid, false);
+            #[cfg(windows)]
+            if !terminate_process_tree(pid, false) {
+                child.start_kill()?;
+            }
         }
         let graceful = timeout(Duration::from_secs(30), child.wait()).await;
         match graceful {
@@ -1239,7 +1214,12 @@ async fn execute_codex(
             }
             Err(_) => {
                 if let Some(pid) = pid {
-                    terminate_process_group(pid, libc::SIGKILL);
+                    #[cfg(unix)]
+                    terminate_process_tree(pid, true);
+                    #[cfg(windows)]
+                    if !terminate_process_tree(pid, true) {
+                        child.start_kill()?;
+                    }
                 }
                 exit_status = Some(child.wait().await?);
             }
@@ -1286,15 +1266,20 @@ async fn execute_codex(
     })
 }
 
-fn terminate_process_group(pid: u32, signal: i32) {
-    #[cfg(unix)]
-    {
-        let _ = unsafe { libc::killpg(pid as libc::pid_t, signal) };
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (pid, signal);
-    }
+#[cfg(unix)]
+fn terminate_process_tree(pid: u32, force: bool) {
+    let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
+    let _ = unsafe { libc::killpg(pid as libc::pid_t, signal) };
+}
+
+#[cfg(windows)]
+fn terminate_process_tree(pid: u32, _force: bool) -> bool {
+    // Windows has no portable SIGTERM equivalent for an arbitrary detached
+    // console tree, so terminate the complete tree in one bounded operation.
+    std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn classify_exit_status(status: Option<ExitStatus>) -> (RunStatus, Option<String>) {

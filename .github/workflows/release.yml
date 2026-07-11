@@ -6,17 +6,18 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: macOS arm64
-    runs-on: macos-14
-    timeout-minutes: 60
+  prepare:
+    name: Verify release source
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -34,6 +35,54 @@ jobs:
             exit 1
           fi
 
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Verify tag and versions
+        id: version
+        run: node apps/desktop/scripts/verify-release-version.mjs "$GITHUB_REF_NAME"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            slug: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS x64
+            slug: macos-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: Windows x64
+            slug: windows-x64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+          - name: Linux x64
+            slug: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: Linux arm64
+            slug: linux-arm64
+            os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Linux bundle dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential libssl-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils libfuse2 file
+
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -45,97 +94,80 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install Rust
-        shell: bash
-        run: rustup toolchain install 1.88.0 --profile minimal --no-self-update
-
-      - name: Verify tag, version, and architecture
-        id: release
+      - name: Install Rust target
         shell: bash
         run: |
-          set -euo pipefail
-          version="$(node -p "require('./apps/desktop/package.json').version")"
-          expected_tag="v${version}"
-          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match application version ${version}." >&2
-            exit 1
-          fi
-          if [[ "$(uname -m)" != "arm64" || "$(node -p 'process.arch')" != "arm64" ]]; then
-            echo "Release workflow requires a native arm64 macOS runner." >&2
-            exit 1
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "artifact=dist/Clockhand-${version}-macos-arm64-adhoc.zip" >> "$GITHUB_OUTPUT"
-          echo "checksum=dist/Clockhand-${version}-macos-arm64-adhoc.zip.sha256" >> "$GITHUB_OUTPUT"
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup override set 1.88.0
+          rustup target add "${{ matrix.target }}"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build release artifact
+      - name: Build and package platform release
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
         run: pnpm release:github
 
-      - name: Verify release artifact
-        env:
-          ARTIFACT: ${{ steps.release.outputs.artifact }}
-          CHECKSUM: ${{ steps.release.outputs.checksum }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          app="target/release/bundle/macos/Clockhand.app"
-          test -f "$ARTIFACT"
-          test -f "$CHECKSUM"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          for executable in codex-scheduler-desktop codex-schedulerd codex-schedule; do
-            binary="$app/Contents/MacOS/$executable"
-            test -x "$binary"
-            if [[ "$(lipo -archs "$binary")" != "arm64" ]]; then
-              echo "$binary is not an arm64-only executable." >&2
-              exit 1
-            fi
-          done
-          (cd dist && shasum -a 256 -c "$(basename "$CHECKSUM")")
-          extract_dir="$(mktemp -d)"
-          trap 'rm -rf "$extract_dir"' EXIT
-          ditto -x -k "$ARTIFACT" "$extract_dir"
-          codesign --verify --deep --strict --verbose=2 "$extract_dir/Clockhand.app"
-
-      - name: Preserve workflow artifact
+      - name: Preserve platform artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Clockhand-${{ steps.release.outputs.version }}-macos-arm64-adhoc
-          path: |
-            ${{ steps.release.outputs.artifact }}
-            ${{ steps.release.outputs.checksum }}
+          name: release-${{ matrix.slug }}
+          path: dist/
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
 
+  publish:
+    name: Publish cross-platform release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify complete release set
+        run: node apps/desktop/scripts/verify-release-assets.mjs release-assets "${{ needs.prepare.outputs.version }}"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.release.outputs.version }}
-          ARTIFACT: ${{ steps.release.outputs.artifact }}
-          CHECKSUM: ${{ steps.release.outputs.checksum }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
           release_notes="$(cat <<'EOF'
-          ## macOS arm64版
+          ## 対応プラットフォーム
 
-          このリリースはApple Developer ID証明書を使わないad-hoc署名版です。Apple Silicon Macが対象です。
+          - macOS: Apple Silicon / Intel（ad-hoc署名の`.app.zip`）
+          - Windows: x64（NSIS installer）
+          - Linux: x64 / arm64（AppImage、Debian package）
 
-          ### ダウンロードの検証
+          各artifactには同名の`.sha256`があります。ダウンロード後にSHA-256を照合してください。
 
-          ZIPと同じリリースにある`.sha256`ファイルを同じフォルダへ保存し、ターミナルで`shasum -a 256 -c <ファイル名>.sha256`を実行してください。
+          ## 署名について
 
-          ### 初回起動
-
-          Finderで一度Clockhandを開いた後、macOSの「システム設定」→「プライバシーとセキュリティ」→「このまま開く」を選択してください。
+          この自動releaseはsecretを必要としないunsigned / ad-hoc buildです。macOSでは初回起動時に「プライバシーとセキュリティ」から許可が必要です。WindowsではSmartScreenの警告が表示される場合があります。
           EOF
           )"
           gh release create "$GITHUB_REF_NAME" \
-            "$ARTIFACT" \
-            "$CHECKSUM" \
+            release-assets/Clockhand-* \
             --title "Clockhand ${VERSION}" \
             --verify-tag \
             --fail-on-no-commits \

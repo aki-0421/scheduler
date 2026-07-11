@@ -208,6 +208,7 @@ export const daemonDiagnosticsSchema = z.object({
   dbSchemaVersion: z.number().int(),
   dataDir: z.string(),
   socketPath: z.string(),
+  dbPath: z.string(),
   dbSizeBytes: z.number().int(),
   logsSizeBytes: z.number().int(),
   taskCounts: z.record(z.number().int()),
